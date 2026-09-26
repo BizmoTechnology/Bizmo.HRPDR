@@ -1,12 +1,49 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import { randomUUID } from "node:crypto";
 import { prisma } from "../../lib/prisma.js";
-import { hashToken } from "../../lib/crypto.js";
+import { hashToken, tokenMatchesHash } from "../../lib/crypto.js";
+import { JWT_REFRESH_SECRET } from "../../env.js";
 import type { FastifyInstance } from "fastify";
 
 export function refreshSecret(): string {
-  return process.env["JWT_REFRESH_SECRET"] ?? process.env["JWT_SECRET"] ?? "dev-secret";
+  return JWT_REFRESH_SECRET;
 }
+
+/**
+ * Refresh token'ların SHA-256 özetleri kullanıcı kaydında virgülle ayrılmış
+ * liste olarak tutulur; böylece aynı hesap birden fazla cihazda açık kalabilir.
+ * En eski oturum, sınır aşılınca düşer. Çıkışta yalnızca ilgili token silinir.
+ */
+const MAX_ACTIVE_SESSIONS = 5;
+
+function parseTokenHashes(stored: string | null | undefined): string[] {
+  return stored ? stored.split(",").filter(Boolean) : [];
+}
+
+export function addRefreshTokenHash(stored: string | null | undefined, token: string): string {
+  const hash = hashToken(token);
+  return [hash, ...parseTokenHashes(stored).filter((h) => h !== hash)]
+    .slice(0, MAX_ACTIVE_SESSIONS)
+    .join(",");
+}
+
+export function hasRefreshTokenHash(stored: string | null | undefined, token: string): boolean {
+  return parseTokenHashes(stored).some((h) => tokenMatchesHash(token, h));
+}
+
+export function removeRefreshTokenHash(
+  stored: string | null | undefined,
+  token: string,
+): string | null {
+  const hash = hashToken(token);
+  const rest = parseTokenHashes(stored).filter((h) => h !== hash);
+  return rest.length > 0 ? rest.join(",") : null;
+}
+
+/** Portal access token ömrü (development.md §12.1: 60 dk oturum zaman aşımı) */
+export const PORTAL_ACCESS_TTL = "1h";
+const PORTAL_REFRESH_TTL_SEC = 60 * 60 * 24;
 
 const BCRYPT_ROUNDS = 12;
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 60 dakika
@@ -29,15 +66,20 @@ export async function signTokens(
     ? 60 * 60 * 24 * 30
     : parseInt(process.env["JWT_REFRESH_EXPIRES_SEC"] ?? `${60 * 60 * 24 * 7}`, 10);
 
+  // jwtid: aynı saniyede verilen token'lar da benzersiz olsun (oturum bazlı iptal için)
   const refreshToken = jwt.sign(
     { sub: payload.sub, type: "refresh" },
     refreshSecret(),
-    { expiresIn: refreshTtlSec }
+    { expiresIn: refreshTtlSec, jwtid: randomUUID() }
   );
 
+  const current = await prisma.user.findUnique({
+    where: { id: payload.sub },
+    select: { refreshToken: true },
+  });
   await prisma.user.update({
     where: { id: payload.sub },
-    data: { refreshToken: await bcrypt.hash(refreshToken, 4) },
+    data: { refreshToken: addRefreshTokenHash(current?.refreshToken, refreshToken) },
   });
 
   return { accessToken, refreshToken };
@@ -109,18 +151,20 @@ export async function portalLogin(
 
   const accessToken = fastify.jwt.sign(
     { sub: personnel.id, type: "portal", orgId: personnel.organizationId },
-    { expiresIn: "1h" }
+    { expiresIn: PORTAL_ACCESS_TTL }
   );
 
   const portalRefreshToken = jwt.sign(
     { sub: personnel.id, type: "portal_refresh" },
     refreshSecret(),
-    { expiresIn: 60 * 60 * 24 }
+    { expiresIn: PORTAL_REFRESH_TTL_SEC, jwtid: randomUUID() }
   );
 
   await prisma.personnel.update({
     where: { id: personnel.id },
-    data: { portalRefreshToken: await bcrypt.hash(portalRefreshToken, 4) },
+    data: {
+      portalRefreshToken: addRefreshTokenHash(personnel.portalRefreshToken, portalRefreshToken),
+    },
   });
 
   return {
@@ -170,10 +214,14 @@ export async function validateAndConsumeResetToken(token: string) {
     throw new Error("INVALID_OR_EXPIRED_TOKEN");
   }
 
-  await prisma.passwordResetToken.update({
-    where: { id: record.id },
+  // Aynı token'ın eşzamanlı iki istekte kullanılmasını engelle
+  const consumed = await prisma.passwordResetToken.updateMany({
+    where: { id: record.id, usedAt: null },
     data: { usedAt: new Date() },
   });
+  if (consumed.count !== 1) {
+    throw new Error("INVALID_OR_EXPIRED_TOKEN");
+  }
 
   return record;
 }

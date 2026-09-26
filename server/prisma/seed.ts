@@ -441,6 +441,7 @@ async function main() {
             latencyMs: 1420,
             requestType: "FULL_ANALYSIS",
             status: "OK",
+            organizationId: org.id,
             sessionId: sessionIdP003,
           },
           {
@@ -453,6 +454,7 @@ async function main() {
             latencyMs: 1180,
             requestType: "FULL_ANALYSIS",
             status: "OK",
+            organizationId: org.id,
           },
         ],
       });

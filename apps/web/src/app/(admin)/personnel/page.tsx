@@ -96,17 +96,20 @@ export default function PersonnelPage() {
 
   const updateFilter = useCallback(
     (key: string, value: string) => {
-      const sp = new URLSearchParams(searchParams.toString());
+      // Gecikmeli arama çağrısı eski bir render'dan gelebilir; güncel URL'den okunur
+      // (aksi halde arada değiştirilen departman/durum filtresi geri alınır)
+      const sp = new URLSearchParams(window.location.search);
       if (value) {
         sp.set(key, value);
       } else {
         sp.delete(key);
       }
       if (key !== "page") sp.delete("page");
-      router.push(`/personnel?${sp.toString()}`);
+      router.replace(`/personnel?${sp.toString()}`);
     },
-    [router, searchParams]
+    [router]
   );
+  const hasActiveFilters = !!(params.search || params.status || params.departmentId);
 
   const totalPages = data ? Math.ceil(data.total / data.pageSize) : 0;
   const currentPage = data?.page ?? 1;
@@ -233,11 +236,14 @@ export default function PersonnelPage() {
                         <div className="flex flex-col items-center justify-center text-muted-foreground">
                           <UserX className="h-10 w-10 mb-3 opacity-40" />
                           <p className="text-sm font-medium">
-                            Henüz personel eklenmemiş
+                            {hasActiveFilters
+                              ? "Filtrelerle eşleşen personel bulunamadı"
+                              : "Henüz personel eklenmemiş"}
                           </p>
                           <p className="text-xs mt-1">
-                            Yeni personel eklemek için yukarıdaki butonu
-                            kullanın
+                            {hasActiveFilters
+                              ? "Arama veya filtreleri değiştirmeyi deneyin"
+                              : "Yeni personel eklemek için yukarıdaki butonu kullanın"}
                           </p>
                         </div>
                       </td>

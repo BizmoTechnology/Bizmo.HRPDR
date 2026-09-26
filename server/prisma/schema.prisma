@@ -654,11 +654,13 @@ model AiUsageLog {
   errorCode    String?
   sessionId    String?
   userId       String?
+  organizationId String?
   metadata     Json?
   createdAt    DateTime   @default(now())
 
   @@index([createdAt])
   @@index([sessionId])
+  @@index([organizationId, createdAt])
 }
 
 // ─────────────────────────────────────────

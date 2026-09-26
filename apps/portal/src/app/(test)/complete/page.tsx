@@ -1,22 +1,20 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { CheckCircle2, BrainCircuit, Clock, Sparkles } from "lucide-react";
+import { CheckCircle2, BrainCircuit, Clock, Sparkles, LogIn } from "lucide-react";
 import { GlassCard } from "@ph/ui";
+import { getPersonnel, logout } from "@/lib/api";
 
 export default function CompletePage() {
+  const router = useRouter();
   const [personnel, setPersonnel] = useState<{ firstName: string } | null>(null);
 
   useEffect(() => {
-    const stored = sessionStorage.getItem("ph_personnel");
-    if (stored) {
-      try {
-        setPersonnel(JSON.parse(stored));
-      } catch {
-        // noop
-      }
-    }
+    setPersonnel(getPersonnel());
+    // Test bitti: ortak cihazda (kiosk/tablet) bir sonraki kişi bu oturumu kullanamasın
+    void logout();
   }, []);
 
   return (
@@ -87,10 +85,10 @@ export default function CompletePage() {
                 </div>
                 <div className="text-left">
                   <p className="text-sm font-semibold text-foreground">
-                    AI Analizi Kuyruğa Alındı
+                    Cevapların Kaydedildi
                   </p>
                   <p className="text-[11px] text-muted-foreground">
-                    Potansiyel raporun oluşturulmak üzere sıraya alındı
+                    Değerlendirme İK ekibi tarafından incelenecek
                   </p>
                 </div>
               </motion.div>
@@ -119,6 +117,14 @@ export default function CompletePage() {
               Zaman ayırdığın için teşekkür ederiz.{" "}
               <span className="text-primary font-medium">Bu, senin için!</span>
             </p>
+
+            <button
+              onClick={() => router.replace("/login")}
+              className="mt-5 inline-flex items-center gap-1.5 text-xs text-primary hover:underline underline-offset-4"
+            >
+              <LogIn className="h-3.5 w-3.5" />
+              Giriş ekranına dön
+            </button>
           </motion.div>
         </GlassCard>
       </motion.div>

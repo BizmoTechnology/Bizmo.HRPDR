@@ -1,32 +1,27 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   ClipboardList, Clock, MessageCircle, ArrowRight,
-  Shield, Loader2, AlertCircle,
+  Shield, Loader2, AlertCircle, LogOut, RotateCcw, ChevronDown,
 } from "lucide-react";
+import { toast } from "sonner";
 import { GlassCard } from "@ph/ui";
-import axios from "axios";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+import { api, errorMessage, getPersonnel, hasToken, logout } from "@/lib/api";
 
 interface ActiveSession {
   id: string;
-  status: string;
+  status: "NOT_STARTED" | "IN_PROGRESS";
+  dueAt?: string | null;
   assessment?: {
     title: string;
-    description?: string;
+    description?: string | null;
   };
-  questionSetSnapshot?: { questions?: unknown[] };
   questionCount?: number;
-  estimatedDuration?: number;
-}
-
-function getAuthHeaders(): Record<string, string> {
-  const token = sessionStorage.getItem("ph_portal_token");
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  questions?: unknown[];
+  answers?: unknown[];
 }
 
 export default function WelcomePage() {
@@ -38,60 +33,67 @@ export default function WelcomePage() {
   const [session, setSession] = useState<ActiveSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [noSession, setNoSession] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [consentChecked, setConsentChecked] = useState(false);
   const [aiConsentChecked, setAiConsentChecked] = useState(false);
+  const [showKvkk, setShowKvkk] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const { data } = await api.get("/api/sessions/portal/sessions/active");
+      const activeSession: ActiveSession | null = data?.data ?? null;
+      if (!activeSession?.id) {
+        setNoSession(true);
+      } else {
+        setNoSession(false);
+        setSession(activeSession);
+      }
+    } catch (err) {
+      setLoadError(errorMessage(err, "Değerlendirme bilgisi alınamadı"));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    const stored = sessionStorage.getItem("ph_personnel");
-    if (!stored) {
+    const stored = getPersonnel();
+    if (!stored || !hasToken()) {
       router.replace("/login");
       return;
     }
-    setPersonnel(JSON.parse(stored));
+    setPersonnel(stored);
+    void load();
+  }, [router, load]);
 
-    (async () => {
-      try {
-        const { data } = await axios.get(
-          `${API_BASE}/api/sessions/portal/sessions/active`,
-          { headers: getAuthHeaders() },
-        );
-        const activeSession = data?.data ?? data;
-        if (!activeSession || !activeSession.id) {
-          setNoSession(true);
-        } else {
-          setSession(activeSession);
-        }
-      } catch {
-        setNoSession(true);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [router]);
+  const isResume = session?.status === "IN_PROGRESS";
+  // AI analizi rızası isteğe bağlıdır (KVKK: açık rıza özgür iradeyle verilmeli);
+  // verilmezse cevaplar AI ile analiz edilmez.
+  const canStart = !!session && (isResume || consentChecked);
 
-  const canStart = consentChecked && aiConsentChecked && !!session;
-
-  const questionCount =
-    session?.questionCount ??
-    (session?.questionSetSnapshot as any)?.questions?.length ??
-    15;
-  const estimatedDuration = session?.estimatedDuration ?? Math.max(20, questionCount * 2);
+  const questionCount = session?.questionCount ?? session?.questions?.length ?? 0;
+  const answeredCount = session?.answers?.length ?? 0;
+  const estimatedDuration = Math.max(5, Math.round(questionCount * 1.5));
 
   const handleStart = async () => {
     if (!canStart || !session) return;
     setStarting(true);
     try {
-      await axios.post(
-        `${API_BASE}/api/sessions/portal/sessions/${session.id}/start`,
-        {},
-        { headers: getAuthHeaders() },
-      );
-      sessionStorage.setItem("ph_session", JSON.stringify(session));
+      await api.post(`/api/sessions/portal/sessions/${session.id}/start`, {
+        consents: { dataProcessing: consentChecked, aiAssessment: aiConsentChecked },
+      });
       router.push("/assessment");
-    } catch {
+    } catch (err) {
+      toast.error(errorMessage(err, "Değerlendirme başlatılamadı"));
       setStarting(false);
     }
+  };
+
+  const handleLogout = async () => {
+    await logout();
+    router.replace("/login");
   };
 
   return (
@@ -124,6 +126,20 @@ export default function WelcomePage() {
             <div className="flex flex-col items-center py-12">
               <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
               <p className="text-sm text-muted-foreground">Yükleniyor...</p>
+            </div>
+          ) : loadError ? (
+            <div className="flex flex-col items-center py-8">
+              <div className="h-14 w-14 rounded-xl bg-accent-red/10 flex items-center justify-center mb-4">
+                <AlertCircle className="h-7 w-7 text-accent-red" />
+              </div>
+              <p className="text-sm text-muted-foreground text-center mb-4">{loadError}</p>
+              <button
+                onClick={() => void load()}
+                className="inline-flex items-center gap-2 text-sm text-primary hover:underline underline-offset-4"
+              >
+                <RotateCcw className="h-4 w-4" />
+                Tekrar dene
+              </button>
             </div>
           ) : noSession ? (
             <div className="flex flex-col items-center py-8">
@@ -172,12 +188,12 @@ export default function WelcomePage() {
                 {[
                   {
                     icon: ClipboardList,
-                    label: `~${questionCount} Soru`,
-                    sub: "toplam",
+                    label: `${questionCount} Soru`,
+                    sub: isResume ? `${answeredCount} cevaplandı` : "toplam",
                   },
                   {
                     icon: Clock,
-                    label: `${estimatedDuration} dk`,
+                    label: `~${estimatedDuration} dk`,
                     sub: "tahmini süre",
                   },
                   { icon: MessageCircle, label: "Sohbet", sub: "tarzında" },
@@ -206,7 +222,8 @@ export default function WelcomePage() {
                 </p>
               </div>
 
-              {/* KVKK Consent */}
+              {/* KVKK Consent (devam ederken tekrar istenmez; rıza başlangıçta kaydedildi) */}
+              {!isResume && (
               <div className="space-y-3 mb-6">
                 <div className="flex items-start gap-3 p-3 rounded-xl bg-muted/30">
                   <input
@@ -225,12 +242,40 @@ export default function WelcomePage() {
                     </span>{" "}
                     6698 sayılı KVKK kapsamında kişisel verilerimin işlenmesine
                     ilişkin{" "}
-                    <button className="text-primary underline underline-offset-2">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setShowKvkk((v) => !v);
+                      }}
+                      className="text-primary underline underline-offset-2 inline-flex items-center gap-0.5"
+                    >
                       aydınlatma metnini
+                      <ChevronDown className={`h-3 w-3 transition-transform ${showKvkk ? "rotate-180" : ""}`} />
                     </button>{" "}
                     okudum ve onaylıyorum.
                   </label>
                 </div>
+
+                {showKvkk && (
+                  <div className="rounded-xl bg-muted/20 border border-border/40 p-3 text-[11px] leading-relaxed text-muted-foreground max-h-48 overflow-y-auto">
+                    <p className="font-semibold text-foreground mb-1">KVKK Aydınlatma Metni (sürüm 1.0)</p>
+                    <p className="mb-1">
+                      6698 sayılı Kişisel Verilerin Korunması Kanunu uyarınca; bu değerlendirme kapsamında
+                      verdiğiniz cevaplar, kimlik ve görev bilgileriniz, işvereniniz tarafından veri sorumlusu
+                      sıfatıyla yetkinlik ve gelişim değerlendirmesi, eğitim ve kariyer planlaması amaçlarıyla
+                      işlenecektir.
+                    </p>
+                    <p className="mb-1">
+                      Veriler yalnızca yetkili İK personeli ve yöneticilerle paylaşılır; yurt dışına aktarılmaz ve
+                      kurum saklama politikasında belirtilen süre boyunca saklanır.
+                    </p>
+                    <p>
+                      Kanunun 11. maddesi kapsamındaki haklarınızı (bilgi talep etme, düzeltme, silme vb.) İK
+                      birimine başvurarak kullanabilirsiniz.
+                    </p>
+                  </div>
+                )}
 
                 <div className="flex items-start gap-3 p-3 rounded-xl bg-muted/30">
                   <input
@@ -252,6 +297,7 @@ export default function WelcomePage() {
                   </label>
                 </div>
               </div>
+              )}
 
               {/* Privacy note */}
               <div className="flex items-center gap-2 text-xs text-muted-foreground mb-6">
@@ -279,20 +325,30 @@ export default function WelcomePage() {
                   </>
                 ) : (
                   <>
-                    Başlayalım
+                    {isResume ? "Kaldığın yerden devam et" : "Başlayalım"}
                     <ArrowRight className="h-4 w-4" />
                   </>
                 )}
               </motion.button>
 
-              {!canStart && !starting && (
+              {!canStart && !starting && !isResume && (
                 <p className="text-[11px] text-muted-foreground text-center mt-3">
-                  Başlamak için lütfen iki onay kutucuğunu işaretleyin
+                  Başlamak için KVKK aydınlatma metnini onaylayın. AI analizi onayı isteğe bağlıdır.
                 </p>
               )}
             </>
           )}
         </GlassCard>
+
+        <div className="flex justify-center mt-4">
+          <button
+            onClick={handleLogout}
+            className="inline-flex items-center gap-1.5 text-xs text-white/50 hover:text-white/80 transition-colors"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+            Çıkış yap
+          </button>
+        </div>
       </motion.div>
     </div>
   );

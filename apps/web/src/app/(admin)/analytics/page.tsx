@@ -160,11 +160,12 @@ export default function AnalyticsPage() {
     "name" | "avgDesc" | "sessionsDesc"
   >("avgDesc");
 
-  const dimensions = dimData ?? [];
+  // Sabit referans: veri yokken her render'da yeni [] üretip memo'ları bozmasın
+  const dimensions = useMemo(() => dimData ?? [], [dimData]);
   const trends = trendsData ?? [];
-  const byDeptSection = dashData?.byDepartment ?? [];
-  const deptBreakdown = deptDimData?.departments ?? [];
-  const monthlyPoints = monthlyDimData?.points ?? [];
+  const byDeptSection = useMemo(() => dashData?.byDepartment ?? [], [dashData]);
+  const deptBreakdown = useMemo(() => deptDimData?.departments ?? [], [deptDimData]);
+  const monthlyPoints = useMemo(() => monthlyDimData?.points ?? [], [monthlyDimData]);
 
   const dimByKey = useMemo(() => {
     const m = new Map<string, (typeof dimensions)[0]>();

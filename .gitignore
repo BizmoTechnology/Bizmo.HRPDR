@@ -8,8 +8,12 @@ build/
 .turbo/
 *.log
 npm-debug.log*
-uploads/
-reports/
+# Çalışma zamanı dosya klasörleri (UPLOAD_DIR / REPORTS_DIR). Kaynak koddaki
+# `reports` modül/sayfa klasörlerini yok saymamak için köke bağlı yazılır.
+/uploads/
+/reports/
+/server/uploads/
+/server/reports/
 postgres_data/
 redis_data/
 nginx/ssl/*.pem

@@ -5,10 +5,12 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   BrainCircuit, Plus, Pencil, Trash2, Loader2, AlertCircle,
   Star, X, Activity, DollarSign, Hash, Shield, RefreshCw,
-  FileText, Heart, Check,
+  FileText, Heart, Check, PlugZap,
 } from "lucide-react";
 import { GlassCard } from "@ph/ui";
 import { cn } from "@/lib/utils";
+import { apiErrorMessage } from "@/lib/api";
+import { usePermissions } from "@/lib/roles";
 import {
   useAiConfigList,
   useCreateAiConfig,
@@ -16,6 +18,7 @@ import {
   useDeleteAiConfig,
   useSetDefaultAiConfig,
   useAiUsageStats,
+  useTestAiConfig,
   useListAbacusModels,
   useAiPromptTemplates,
   useAiPromptDefaults,
@@ -78,16 +81,21 @@ interface AiConfig {
   modelName: string;
   purpose?: string;
   isDefault: boolean;
-  apiKey?: string;
+  isActive?: boolean;
+  /** Sunucu tarafından maskelenmiş anahtar (ör. ****abcd) */
+  maskedApiKey?: string;
 }
 
+/** GET /api/ai-config/usage yanıtı */
 interface UsageStats {
   totalCalls: number;
-  totalCost: number;
-  perProvider?: Array<{
+  totalCostUsd: number;
+  byProvider?: Array<{
     provider: string;
     calls: number;
-    cost: number;
+    costUsd: number;
+    inputTokens: number;
+    outputTokens: number;
   }>;
 }
 
@@ -99,9 +107,9 @@ const EMPTY_FORM = {
   isDefault: false,
 };
 
-function maskApiKey(key?: string): string {
-  if (!key || key.length < 4) return "****";
-  return `${"•".repeat(8)}${key.slice(-4)}`;
+function formatMaskedKey(masked?: string): string {
+  if (!masked) return "••••";
+  return masked.replace(/^\*+/, "•".repeat(8));
 }
 
 function ConfigFormDialog({
@@ -221,7 +229,7 @@ function ConfigFormDialog({
         { apiKey: trimmedKey },
         {
           onSuccess: mergeAbacusModels,
-          onError: () => toast.error("Abacus model listesi alınamadı"),
+          onError: (err) => toast.error(apiErrorMessage(err, "Abacus model listesi alınamadı")),
         },
       );
       return;
@@ -231,7 +239,7 @@ function ConfigFormDialog({
         { configId: editConfig.id },
         {
           onSuccess: mergeAbacusModels,
-          onError: () => toast.error("Abacus model listesi alınamadı"),
+          onError: (err) => toast.error(apiErrorMessage(err, "Abacus model listesi alınamadı")),
         },
       );
       return;
@@ -258,7 +266,8 @@ function ConfigFormDialog({
     const payload: Record<string, unknown> = {
       provider: form.provider,
       modelName: resolvedModelName,
-      purpose: form.purpose || undefined,
+      // Sunucu boş amaç için "general" varsayılanını kullanır
+      purpose: form.purpose.trim() || (isEditing ? undefined : "general"),
       isDefault: form.isDefault,
     };
     if (form.apiKey) payload.apiKey = form.apiKey;
@@ -271,11 +280,12 @@ function ConfigFormDialog({
             toast.success("Yapılandırma güncellendi");
             onClose();
           },
-          onError: () => toast.error("Güncelleme başarısız"),
+          onError: (err) => toast.error(apiErrorMessage(err, "Güncelleme başarısız")),
         },
       );
     } else {
-      if (!form.apiKey) {
+      // MOCK sağlayıcı gerçek çağrı yapmadığı için anahtar gerektirmez
+      if (!form.apiKey && form.provider !== "MOCK") {
         toast.error("API anahtarı zorunludur");
         return;
       }
@@ -284,7 +294,7 @@ function ConfigFormDialog({
           toast.success("Yeni sağlayıcı eklendi");
           onClose();
         },
-        onError: () => toast.error("Ekleme başarısız"),
+        onError: (err) => toast.error(apiErrorMessage(err, "Ekleme başarısız")),
       });
     }
   };
@@ -450,6 +460,20 @@ function ConfigFormDialog({
 }
 
 export default function AiConfigPage() {
+  const { canConfigureAi } = usePermissions();
+  if (!canConfigureAi) {
+    return (
+      <GlassCard hover={false} className="flex flex-col items-center justify-center py-16 text-center">
+        <Shield className="h-8 w-8 text-muted-foreground mb-3" />
+        <p className="text-sm font-medium text-foreground">AI yapılandırmasına erişim yetkiniz yok</p>
+        <p className="text-xs text-muted-foreground mt-1">Bu bölüm yalnızca yöneticiler içindir.</p>
+      </GlassCard>
+    );
+  }
+  return <AiConfigContent />;
+}
+
+function AiConfigContent() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editConfig, setEditConfig] = useState<AiConfig | null>(null);
 
@@ -457,6 +481,14 @@ export default function AiConfigPage() {
   const { data: usageData, isLoading: usageLoading } = useAiUsageStats();
   const deleteConfig = useDeleteAiConfig();
   const setDefault = useSetDefaultAiConfig();
+  const testConfig = useTestAiConfig();
+
+  const handleTest = (id: string) => {
+    testConfig.mutate(id, {
+      onSuccess: (res) => toast.success(`Bağlantı başarılı (${res.latencyMs} ms)`),
+      onError: (err) => toast.error(apiErrorMessage(err, "Bağlantı testi başarısız")),
+    });
+  };
 
   const configs: AiConfig[] = Array.isArray(configData) ? configData : (configData as any)?.data ?? [];
   const usage = usageData as UsageStats | undefined;
@@ -465,14 +497,14 @@ export default function AiConfigPage() {
     if (!confirm("Bu yapılandırmayı silmek istediğinize emin misiniz?")) return;
     deleteConfig.mutate(id, {
       onSuccess: () => toast.success("Yapılandırma silindi"),
-      onError: () => toast.error("Silme başarısız"),
+      onError: (err) => toast.error(apiErrorMessage(err, "Silme başarısız")),
     });
   };
 
   const handleSetDefault = (id: string) => {
     setDefault.mutate(id, {
       onSuccess: () => toast.success("Varsayılan sağlayıcı güncellendi"),
-      onError: () => toast.error("İşlem başarısız"),
+      onError: (err) => toast.error(apiErrorMessage(err, "İşlem başarısız")),
     });
   };
 
@@ -574,7 +606,7 @@ export default function AiConfigPage() {
                     <div className="flex items-center gap-1.5 mb-4">
                       <Shield className="h-3 w-3 text-muted-foreground/50" />
                       <span className="text-[11px] text-muted-foreground/60 font-mono">
-                        {maskApiKey(cfg.apiKey)}
+                        {cfg.provider === "MOCK" ? "anahtar gerekmez" : formatMaskedKey(cfg.maskedApiKey)}
                       </span>
                     </div>
 
@@ -590,6 +622,18 @@ export default function AiConfigPage() {
                         </button>
                       )}
                       <div className="flex-1" />
+                      <button
+                        onClick={() => handleTest(cfg.id)}
+                        disabled={testConfig.isPending}
+                        className="p-1.5 rounded-lg hover:bg-primary/10 transition-colors disabled:opacity-50"
+                        title="Bağlantıyı test et"
+                      >
+                        {testConfig.isPending && testConfig.variables === cfg.id ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                        ) : (
+                          <PlugZap className="h-3.5 w-3.5 text-primary" />
+                        )}
+                      </button>
                       <button
                         onClick={() => {
                           setEditConfig(cfg);
@@ -655,13 +699,13 @@ export default function AiConfigPage() {
                 <div>
                   <p className="text-xs text-muted-foreground">Toplam Maliyet</p>
                   <p className="text-xl font-bold tabular-nums">
-                    ${(usage.totalCost ?? 0).toFixed(2)}
+                    ${Number(usage.totalCostUsd ?? 0).toFixed(2)}
                   </p>
                 </div>
               </GlassCard>
             </div>
 
-            {usage.perProvider && usage.perProvider.length > 0 && (
+            {usage.byProvider && usage.byProvider.length > 0 && (
               <GlassCard hover={false}>
                 <h3 className="text-sm font-semibold text-foreground mb-3">
                   Sağlayıcı Bazlı Dağılım
@@ -670,7 +714,7 @@ export default function AiConfigPage() {
                   <table className="w-full">
                     <thead>
                       <tr className="border-b border-border/30">
-                        {["Sağlayıcı", "Çağrı Sayısı", "Maliyet"].map((h) => (
+                        {["Sağlayıcı", "Çağrı Sayısı", "Token (girdi/çıktı)", "Maliyet"].map((h) => (
                           <th key={h} className="text-left text-xs font-medium text-muted-foreground uppercase pb-3 pr-4">
                             {h}
                           </th>
@@ -678,7 +722,7 @@ export default function AiConfigPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border/20">
-                      {usage.perProvider.map((row) => {
+                      {usage.byProvider.map((row) => {
                         const meta = PROVIDER_META[row.provider as Provider];
                         return (
                           <tr key={row.provider} className="hover:bg-muted/30 transition-colors">
@@ -692,9 +736,14 @@ export default function AiConfigPage() {
                                 {row.calls.toLocaleString("tr-TR")}
                               </span>
                             </td>
+                            <td className="py-3 pr-4">
+                              <span className="text-sm tabular-nums text-muted-foreground">
+                                {row.inputTokens.toLocaleString("tr-TR")} / {row.outputTokens.toLocaleString("tr-TR")}
+                              </span>
+                            </td>
                             <td className="py-3">
                               <span className="text-sm tabular-nums text-muted-foreground">
-                                ${row.cost.toFixed(2)}
+                                ${Number(row.costUsd ?? 0).toFixed(2)}
                               </span>
                             </td>
                           </tr>
@@ -755,7 +804,7 @@ function PromptTemplatesSection() {
     if (!confirm("Bu prompt şablonunu silmek istediğinize emin misiniz?")) return;
     deleteTemplate.mutate(id, {
       onSuccess: () => toast.success("Prompt şablonu silindi"),
-      onError: () => toast.error("Silme başarısız"),
+      onError: (err) => toast.error(apiErrorMessage(err, "Silme başarısız")),
     });
   };
 
@@ -954,7 +1003,7 @@ function PromptTemplateFormDialog({
             toast.success("Prompt şablonu güncellendi");
             onClose();
           },
-          onError: () => toast.error("Güncelleme başarısız"),
+          onError: (err) => toast.error(apiErrorMessage(err, "Güncelleme başarısız")),
         },
       );
     } else {
@@ -963,7 +1012,7 @@ function PromptTemplateFormDialog({
           toast.success("Yeni prompt şablonu oluşturuldu");
           onClose();
         },
-        onError: () => toast.error("Oluşturma başarısız"),
+        onError: (err) => toast.error(apiErrorMessage(err, "Oluşturma başarısız")),
       });
     }
   };

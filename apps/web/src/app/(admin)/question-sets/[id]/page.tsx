@@ -24,6 +24,7 @@ import {
 import { toast } from "sonner";
 import { GlassCard, PortalModal } from "@ph/ui";
 import { cn } from "@/lib/utils";
+import { apiErrorMessage } from "@/lib/api";
 import {
   useQuestionSet,
   useDeleteQuestionSet,
@@ -73,6 +74,25 @@ const WEIGHT_MAP: { key: string; field: string }[] = [
   { key: "GROWTH_POTENTIAL", field: "weightGrowth" },
   { key: "DOMAIN_ALIGNMENT", field: "weightDomain" },
 ];
+
+/**
+ * Mevcut öğelere yeni soruları ekler: sette zaten olan sorular atlanır ve
+ * sıra numaraları 1..n olarak yeniden verilir (sunucuda soru ve sıra tekil).
+ */
+function buildItemsPayload(currentItems: QuestionSetItemRow[], newQuestionIds: string[]) {
+  const sorted = [...currentItems].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  const existingIds = new Set(sorted.map((item) => item.question.id));
+  const additions = [...new Set(newQuestionIds)].filter((qId) => !existingIds.has(qId));
+  const items = [
+    ...sorted.map((item) => ({
+      questionId: item.question.id,
+      isRequired: item.isRequired,
+      customWeight: item.customWeight ?? undefined,
+    })),
+    ...additions.map((questionId) => ({ questionId, isRequired: true, customWeight: undefined })),
+  ].map((item, i) => ({ ...item, order: i + 1 }));
+  return { items, addedCount: additions.length };
+}
 
 export default function QuestionSetDetailPage() {
   const params = useParams();
@@ -176,27 +196,13 @@ export default function QuestionSetDetailPage() {
   const handleAddQuestions = async () => {
     if (selectedQuestions.length === 0) return;
     try {
-      const currentItems = qs?.items ?? [];
-      const existingPayload = currentItems.map((item: QuestionSetItemRow) => ({
-        questionId: item.question.id,
-        order: item.order,
-        isRequired: item.isRequired,
-        customWeight: item.customWeight ?? undefined,
-      }));
-      const newItems = selectedQuestions.map((qId, i) => ({
-        questionId: qId,
-        order: currentItems.length + i + 1,
-        isRequired: true as const,
-      }));
-      await updateMutation.mutateAsync({
-        id,
-        data: { items: [...existingPayload, ...newItems] },
-      });
-      toast.success(`${selectedQuestions.length} soru eklendi`);
+      const { items: payload, addedCount } = buildItemsPayload(qs?.items ?? [], selectedQuestions);
+      await updateMutation.mutateAsync({ id, data: { items: payload } });
+      toast.success(`${addedCount} soru eklendi`);
       setAddOpen(false);
       setSelectedQuestions([]);
-    } catch {
-      toast.error("Soru ekleme başarısız");
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Soru ekleme başarısız"));
     }
   };
 
@@ -362,7 +368,7 @@ export default function QuestionSetDetailPage() {
           </div>
         ) : (
           <div className="space-y-2">
-            {items
+            {[...items]
               .sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0))
               .map((item: any, idx: number) => {
                 const q = item.question;
@@ -617,6 +623,9 @@ function AddQuestionDialog({
   questionSetId: string;
 }) {
   const [tab, setTab] = useState<AddTab>("pool");
+  // Sette zaten bulunan sorular seçim listesinde gösterilmez
+  const existingQuestionIds = new Set(existingItems.map((item) => item.question.id));
+  const availableQuestions = allQuestions.filter((q) => !existingQuestionIds.has(q.id));
   const [aiDimension, setAiDimension] = useState<string>(ALL_DIMENSIONS[0]!);
   const [aiTypes, setAiTypes] = useState<string[]>([]);
   const [aiCount, setAiCount] = useState(5);
@@ -644,7 +653,7 @@ function AddQuestionDialog({
           toast.success(`${data.length} soru AI tarafından üretildi`);
         },
         onError: (err) => {
-          toast.error(err instanceof Error ? err.message : "AI soru üretimi başarısız");
+          toast.error(apiErrorMessage(err, "AI soru üretimi başarısız"));
         },
       },
     );
@@ -665,25 +674,12 @@ function AddQuestionDialog({
   const handleAddGenerated = async () => {
     if (selectedGenerated.length === 0) return;
     try {
-      const currentPayload = existingItems.map((item: QuestionSetItemRow) => ({
-        questionId: item.question.id,
-        order: item.order,
-        isRequired: item.isRequired,
-        customWeight: item.customWeight ?? undefined,
-      }));
-      const newItems = selectedGenerated.map((qId, i) => ({
-        questionId: qId,
-        order: existingItems.length + i + 1,
-        isRequired: true as const,
-      }));
-      await updateQsMutation.mutateAsync({
-        id: questionSetId,
-        data: { items: [...currentPayload, ...newItems] },
-      });
-      toast.success(`${selectedGenerated.length} AI sorusu sete eklendi`);
+      const { items: payload, addedCount } = buildItemsPayload(existingItems, selectedGenerated);
+      await updateQsMutation.mutateAsync({ id: questionSetId, data: { items: payload } });
+      toast.success(`${addedCount} AI sorusu sete eklendi`);
       onClose();
-    } catch {
-      toast.error("Soru ekleme başarısız");
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Soru ekleme başarısız"));
     }
   };
 
@@ -766,10 +762,12 @@ function AddQuestionDialog({
                 )}
               </div>
               <div className="flex-1 space-y-1 px-5 pb-2">
-                {allQuestions.length === 0 ? (
-                  <p className="py-8 text-center text-sm text-muted-foreground">Soru bulunamadı</p>
+                {availableQuestions.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-muted-foreground">
+                    {allQuestions.length > 0 ? "Listelenen soruların tümü zaten sette" : "Soru bulunamadı"}
+                  </p>
                 ) : (
-                  allQuestions.map((q: QuestionRow) => {
+                  availableQuestions.map((q: QuestionRow) => {
                     const selected = selectedQuestions.includes(q.id);
                     const dimColors = DIMENSION_COLORS[q.dimension] ?? DEFAULT_DIM_COLOR;
                     return (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { motion } from "framer-motion";
 import { Eye, EyeOff, Loader2, AlertCircle, Lock } from "lucide-react";
@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import axios from "axios";
+import { api, errorMessage, saveSession } from "@/lib/api";
 
 const portalLoginSchema = z.object({
   employeeId: z.string().min(1, "Sicil numarası zorunlu"),
@@ -26,23 +26,22 @@ export default function PortalLoginPage() {
     resolver: zodResolver(portalLoginSchema),
   });
 
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("expired")) {
+      toast.info("Oturumunuzun süresi doldu. Lütfen tekrar giriş yapın.");
+    }
+  }, []);
+
   const onSubmit = async (data: PortalLoginInput) => {
     setIsLoading(true);
     try {
-      const res = await axios.post(
-        `${process.env["NEXT_PUBLIC_API_URL"] ?? "http://localhost:3001"}/api/auth/portal/login`,
-        data
-      );
+      const res = await api.post("/api/auth/portal/login", data);
       const { accessToken, refreshToken, personnel } = res.data.data;
-      sessionStorage.setItem("ph_portal_token", accessToken);
-      sessionStorage.setItem("ph_portal_refresh", refreshToken);
-      sessionStorage.setItem("ph_personnel", JSON.stringify(personnel));
+      saveSession({ accessToken, refreshToken, personnel });
       toast.success(`Hoş geldiniz, ${personnel.firstName}!`);
-      router.push("/welcome");
+      router.replace("/welcome");
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
-        ?? "Sicil numarası veya şifre hatalı";
-      toast.error(msg);
+      toast.error(errorMessage(err, "Sicil numarası veya şifre hatalı"));
     } finally {
       setIsLoading(false);
     }

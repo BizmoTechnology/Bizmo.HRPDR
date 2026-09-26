@@ -125,6 +125,15 @@ export function useDeletePersonnel() {
 
 /* ─── Departments & Teams ─── */
 
+export function useSetPortalPassword() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, password }: { id: string; password: string }) =>
+      api.post(`/api/personnel/${id}/portal-password`, { password }).then((r) => r.data.data),
+    onSuccess: (_, { id }) => qc.invalidateQueries({ queryKey: qk.personnelDetail(id) }),
+  });
+}
+
 export function useDepartmentList() {
   return useQuery({
     queryKey: qk.departments,
@@ -328,7 +337,13 @@ export function useSessionEvents(id: string) {
 }
 export function useSubmitReview() {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: ({ id, data }: { id: string; data: { status: string; comment?: string } }) => api.post(`/api/sessions/${id}/review`, data).then(r => r.data.data), onSuccess: () => qc.invalidateQueries({ queryKey: ["sessions"] }) });
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: { status: "PENDING" | "APPROVED" | "REJECTED"; comment?: string } }) =>
+      api.post(`/api/sessions/${id}/review`, data).then((r) => r.data.data),
+    onSuccess: (_, { id }) => {
+      void qc.invalidateQueries({ queryKey: ["sessions", id] });
+    },
+  });
 }
 
 /* ─── Analytics ─── */
@@ -372,9 +387,27 @@ export function useReportList(params: Record<string, unknown> = {}) {
 export function useReport(id: string) {
   return useQuery({ queryKey: ["reports", id], queryFn: () => get<ReportDetail>(`/api/reports/${id}`), enabled: !!id });
 }
+export function useSessionReport(sessionId: string | null) {
+  return useQuery({
+    queryKey: ["reports", "by-session", sessionId],
+    queryFn: () =>
+      get<{ id: string; status: string; generatedAt: string | null } | null>(
+        `/api/reports/by-session/${sessionId}`,
+      ),
+    enabled: !!sessionId,
+  });
+}
 export function useGenerateReport() {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: (sessionId: string) => api.post(`/api/reports/generate/${sessionId}`).then(r => r.data.data), onSuccess: () => qc.invalidateQueries({ queryKey: ["reports"] }) });
+  return useMutation({
+    mutationFn: (sessionId: string) =>
+      api.post<{ data: ReportDetail }>(`/api/reports/generate/${sessionId}`).then((r) => r.data.data),
+    onSuccess: (report) => {
+      void qc.invalidateQueries({ queryKey: ["reports"] });
+      void qc.invalidateQueries({ queryKey: ["sessions", report.session?.id] });
+      void qc.invalidateQueries({ queryKey: ["personnel"] });
+    },
+  });
 }
 export function useDeleteReport() {
   const qc = useQueryClient();
@@ -396,6 +429,14 @@ export function useCreateAiConfig() {
 export function useUpdateAiConfig() {
   const qc = useQueryClient();
   return useMutation({ mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) => api.put(`/api/ai-config/${id}`, data).then(r => r.data.data), onSuccess: () => qc.invalidateQueries({ queryKey: ["ai-config"] }) });
+}
+export function useTestAiConfig() {
+  return useMutation({
+    mutationFn: (id: string) =>
+      api
+        .post<{ data: { ok: boolean; latencyMs: number; sample: string } }>(`/api/ai-config/${id}/test`)
+        .then((r) => r.data.data),
+  });
 }
 export function useDeleteAiConfig() {
   const qc = useQueryClient();
@@ -537,7 +578,7 @@ export interface DashboardStats {
   inProgressSessions: number;
   pendingSessions: number;
   completionRate: number;
-  avgScore: number;
+  avgScore: number | null;
   recentSessions: RecentSession[];
   topPerformers: TopPerformer[];
   byDepartment: DepartmentStat[];
@@ -598,15 +639,17 @@ export interface PersonnelDetail {
   team: { id: string; name: string } | null;
   sessions: SessionBrief[];
   avgScore: number | null;
+  hasPortalPassword: boolean;
 }
 
 export interface SessionBrief {
   id: string;
-  assessment: { title: string };
+  assessment: { id: string; title: string };
   status: string;
   avgScore: number | null;
   completedAt: string | null;
   createdAt: string;
+  reportId: string | null;
 }
 
 /** GET /api/personnel/stats yanıtı */
@@ -723,6 +766,13 @@ export interface SessionDetail {
   completedAt: string | null;
   hrPdrAnalysis: Record<string, unknown> | null;
   psychologicalAnalysis: Record<string, unknown> | null;
+  analysisError?: string | null;
+  requiresHrReview?: boolean;
+  analysisReview?: {
+    status: "PENDING" | "APPROVED" | "REJECTED";
+    comment: string | null;
+    decidedAt: string | null;
+  } | null;
 }
 
 export interface AnswerRow {
@@ -790,6 +840,8 @@ export interface ReportRow {
   };
   generatedAt: string | null;
   createdAt: string;
+  overallScore?: number | null;
+  executiveSummary?: string | null;
 }
 
 export interface ReportAnswerRow {
@@ -812,8 +864,14 @@ export interface ReportAnswerRow {
 
 export interface ReportDetail extends Omit<ReportRow, "session" | "personnel"> {
   executiveSummary: string | null;
-  fullReportJson: Record<string, unknown> | null;
+  fullReportJson: {
+    overallScore?: number | null;
+    dimensionScores?: Record<string, number> | null;
+    dimensionWeights?: Record<string, number> | null;
+    [key: string]: unknown;
+  } | null;
   pdfUrl: string | null;
+  generatedBy?: { id: string; name: string } | null;
   personnel: {
     id: string;
     firstName: string;
@@ -837,7 +895,13 @@ export interface ReportDetail extends Omit<ReportRow, "session" | "personnel"> {
     hrPdrAnalysis?: Record<string, unknown> | null;
     psychologicalAnalysis?: Record<string, unknown> | null;
     answers?: ReportAnswerRow[];
-    assessment: { id: string; title: string; description?: string };
+    assessment: { id: string; title: string; description?: string | null };
+    analysisReview?: {
+      status: string;
+      comment: string | null;
+      decidedAt: string | null;
+      reviewer?: { name: string } | null;
+    } | null;
   } | null;
 }
 
@@ -873,15 +937,33 @@ export interface AiConfigRow {
   modelName: string;
   purpose: string;
   isDefault: boolean;
-  maskedKey: string;
+  isActive?: boolean;
+  maskedApiKey: string;
   createdAt: string;
 }
 
 export interface AiUsageData {
   totalCalls: number;
-  totalCost: number;
-  byProvider: { provider: string; calls: number; cost: number }[];
-  recentLogs: { id: string; provider: string; model: string; tokensUsed: number; cost: number; createdAt: string }[];
+  totalCostUsd: number;
+  byProvider: {
+    provider: string;
+    calls: number;
+    costUsd: number;
+    inputTokens: number;
+    outputTokens: number;
+  }[];
+  recentLogs: {
+    id: string;
+    provider: string;
+    modelName: string;
+    purpose: string;
+    status: string;
+    inputTokens: number | null;
+    outputTokens: number | null;
+    costUsd: number | null;
+    latencyMs: number | null;
+    createdAt: string;
+  }[];
 }
 
 /* ─── AI Prompt Template Types ─── */

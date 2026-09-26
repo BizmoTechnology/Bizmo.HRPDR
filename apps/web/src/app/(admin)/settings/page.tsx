@@ -8,6 +8,8 @@ import {
 } from "lucide-react";
 import { GlassCard } from "@ph/ui";
 import { cn } from "@/lib/utils";
+import { api, apiErrorMessage } from "@/lib/api";
+import { ROLE_LABELS } from "@ph/shared";
 import { useAuthStore } from "@/store/auth.store";
 import {
   useNotificationList,
@@ -32,6 +34,7 @@ export default function SettingsPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showCurrent, setShowCurrent] = useState(false);
   const [showNew, setShowNew] = useState(false);
+  const [changingPassword, setChangingPassword] = useState(false);
 
   const { data: notifData, isLoading: notifLoading } = useNotificationList({ pageSize: 10 });
   const markRead = useMarkNotificationRead();
@@ -47,7 +50,7 @@ export default function SettingsPage() {
     }),
   );
 
-  const handlePasswordSubmit = (e: React.FormEvent) => {
+  const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentPassword || !newPassword || !confirmPassword) {
       toast.error("Tüm alanları doldurun");
@@ -57,14 +60,22 @@ export default function SettingsPage() {
       toast.error("Yeni şifreler eşleşmiyor");
       return;
     }
-    if (newPassword.length < 8) {
-      toast.error("Şifre en az 8 karakter olmalıdır");
+    if (newPassword.length < 8 || !/[A-Z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
+      toast.error("Şifre en az 8 karakter olmalı, bir büyük harf ve bir rakam içermelidir");
       return;
     }
-    toast.info("Yakında aktif olacak");
-    setCurrentPassword("");
-    setNewPassword("");
-    setConfirmPassword("");
+    setChangingPassword(true);
+    try {
+      await api.post("/api/auth/change-password", { currentPassword, newPassword });
+      toast.success("Şifreniz güncellendi");
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Şifre güncellenemedi"));
+    } finally {
+      setChangingPassword(false);
+    }
   };
 
   const handleMarkAllRead = () => {
@@ -83,11 +94,7 @@ export default function SettingsPage() {
     show: { opacity: 1, y: 0, transition: { duration: 0.35 } },
   };
 
-  const roleLabels: Record<string, string> = {
-    ADMIN: "Yönetici",
-    HR_MANAGER: "İK Yöneticisi",
-    VIEWER: "Görüntüleyici",
-  };
+  const roleLabels: Record<string, string> = ROLE_LABELS;
 
   return (
     <motion.div
@@ -234,12 +241,13 @@ export default function SettingsPage() {
 
             <motion.button
               type="submit"
+              disabled={changingPassword}
               className="h-10 px-6 rounded-xl bg-primary text-primary-foreground text-sm font-semibold
-                hover:bg-primary/90 transition-all flex items-center gap-2"
+                hover:bg-primary/90 transition-all flex items-center gap-2 disabled:opacity-60"
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
             >
-              <Lock className="h-4 w-4" />
+              {changingPassword ? <Loader2 className="h-4 w-4 animate-spin" /> : <Lock className="h-4 w-4" />}
               Şifreyi Güncelle
             </motion.button>
           </form>

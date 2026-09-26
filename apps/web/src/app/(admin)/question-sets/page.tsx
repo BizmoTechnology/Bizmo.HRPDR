@@ -142,12 +142,18 @@ export default function QuestionSetsPage() {
                     <td className="py-3.5 pr-4 hidden lg:table-cell">
                       <div className="flex items-center gap-1.5">
                         {WEIGHT_KEYS.map(({ key, field }) => {
+                          // Ağırlıklar 0–100 aralığında (toplam 100); çubuk satırdaki en büyük ağırlığa göre ölçeklenir
                           const w = (qs[field] ?? 0) as number;
+                          const maxW = Math.max(
+                            1,
+                            ...WEIGHT_KEYS.map(({ field: f }) => (qs[f] ?? 0) as number),
+                          );
+                          const ratio = w / maxW;
                           return (
                             <div
                               key={key}
                               className="flex flex-col items-center gap-0.5"
-                              title={`${DIMENSION_SHORT_LABELS[key]}: ${w}`}
+                              title={`${DIMENSION_SHORT_LABELS[key]}: %${w}`}
                             >
                               <div className="w-6 h-3 rounded-sm overflow-hidden bg-muted/60">
                                 <div
@@ -156,8 +162,8 @@ export default function QuestionSetsPage() {
                                     DIMENSION_COLORS[key],
                                   )}
                                   style={{
-                                    width: `${Math.min(w * 10, 100)}%`,
-                                    opacity: 0.7 + w * 0.03,
+                                    width: `${Math.round(ratio * 100)}%`,
+                                    opacity: 0.55 + ratio * 0.45,
                                   }}
                                 />
                               </div>

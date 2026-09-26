@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useEffect } from "react";
 import dynamic from "next/dynamic";
@@ -26,6 +26,7 @@ import {
 import { toast } from "sonner";
 import { GlassCard, PortalModal } from "@ph/ui";
 import { cn } from "@/lib/utils";
+import { apiErrorMessage } from "@/lib/api";
 import { toDatetimeLocalString } from "@/lib/datetime-local";
 import { DateTimePicker } from "@/components/ui/datetime-picker";
 import {
@@ -47,21 +48,21 @@ const SessionDetailPanel = dynamic(
 const STATUS_BADGE: Record<string, { label: string; className: string }> = {
   DRAFT: { label: "Taslak", className: "bg-muted text-muted-foreground" },
   ACTIVE: { label: "Aktif", className: "bg-accent-green/10 text-accent-green" },
-  PAUSED: { label: "DuraklatÄ±ldÄ±", className: "bg-amber-500/10 text-amber-500" },
-  COMPLETED: { label: "TamamlandÄ±", className: "bg-sky-500/10 text-sky-500" },
-  ARCHIVED: { label: "ArÅŸiv", className: "bg-muted text-muted-foreground" },
+  PAUSED: { label: "Duraklatıldı", className: "bg-amber-500/10 text-amber-500" },
+  COMPLETED: { label: "Tamamlandı", className: "bg-sky-500/10 text-sky-500" },
+  ARCHIVED: { label: "Arşiv", className: "bg-muted text-muted-foreground" },
 };
 
 const SESSION_STATUS: Record<string, { label: string; className: string }> = {
-  NOT_STARTED: { label: "BaÅŸlamadÄ±", className: "bg-muted text-muted-foreground" },
+  NOT_STARTED: { label: "Başlamadı", className: "bg-muted text-muted-foreground" },
   IN_PROGRESS: { label: "Devam Ediyor", className: "bg-amber-500/10 text-amber-500" },
-  PAUSED: { label: "DuraklatÄ±ldÄ±", className: "bg-amber-500/10 text-amber-500" },
-  COMPLETED: { label: "TamamlandÄ±", className: "bg-accent-green/10 text-accent-green" },
-  EXPIRED: { label: "SÃ¼resi Doldu", className: "bg-destructive/10 text-destructive" },
+  PAUSED: { label: "Duraklatıldı", className: "bg-amber-500/10 text-amber-500" },
+  COMPLETED: { label: "Tamamlandı", className: "bg-accent-green/10 text-accent-green" },
+  EXPIRED: { label: "Süresi Doldu", className: "bg-destructive/10 text-destructive" },
 };
 
 function formatDate(date: string | null) {
-  if (!date) return "â€”";
+  if (!date) return "—";
   return new Intl.DateTimeFormat("tr-TR", {
     day: "2-digit",
     month: "short",
@@ -73,7 +74,7 @@ function formatDate(date: string | null) {
 
 const editSchema = z
   .object({
-    title: z.string().min(2, "BaÅŸlÄ±k en az 2 karakter").max(200),
+    title: z.string().min(2, "Başlık en az 2 karakter").max(200),
     description: z.string().max(2000).optional(),
     status: z.enum(["DRAFT", "ACTIVE", "PAUSED", "COMPLETED", "ARCHIVED"]),
     startsAt: z.string().optional(),
@@ -85,7 +86,7 @@ const editSchema = z
         return new Date(d.endsAt) > new Date(d.startsAt);
       return true;
     },
-    { message: "BitiÅŸ tarihi baÅŸlangÄ±Ã§tan sonra olmalÄ±", path: ["endsAt"] },
+    { message: "Bitiş tarihi başlangıçtan sonra olmalı", path: ["endsAt"] },
   );
 
 type EditFormValues = z.infer<typeof editSchema>;
@@ -128,38 +129,44 @@ export default function AssessmentDetailPage() {
   const personnelList = personnelData?.items ?? [];
 
   const handleDelete = async () => {
-    if (!confirm("Bu deÄŸerlendirmeyi silmek istediÄŸinizden emin misiniz?"))
+    if (!confirm("Bu değerlendirmeyi silmek istediğinizden emin misiniz?"))
       return;
     try {
       await deleteMutation.mutateAsync(id);
-      toast.success("DeÄŸerlendirme silindi");
+      toast.success("Değerlendirme silindi");
       router.push("/assessments");
-    } catch {
-      toast.error("Silme iÅŸlemi baÅŸarÄ±sÄ±z");
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Silme işlemi başarısız"));
     }
   };
 
   const handleActivate = async () => {
     try {
       await activateMutation.mutateAsync(id);
-      toast.success("DeÄŸerlendirme aktifleÅŸtirildi");
-    } catch {
-      toast.error("AktifleÅŸtirme baÅŸarÄ±sÄ±z");
+      toast.success("Değerlendirme aktifleştirildi");
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Aktifleştirme başarısız"));
     }
   };
 
   const handleAssign = async () => {
     if (selectedPersonnel.length === 0) return;
     try {
-      await assignMutation.mutateAsync({
+      const result = (await assignMutation.mutateAsync({
         id,
         data: { personnelIds: selectedPersonnel },
-      });
-      toast.success(`${selectedPersonnel.length} personel atandÄ±`);
+      })) as { createdCount?: number; skippedCount?: number } | undefined;
+      const created = result?.createdCount ?? selectedPersonnel.length;
+      const skipped = result?.skippedCount ?? 0;
+      toast.success(
+        skipped > 0
+          ? `${created} personel atandı, ${skipped} personel zaten atanmıştı`
+          : `${created} personel atandı`,
+      );
       setAssignOpen(false);
       setSelectedPersonnel([]);
-    } catch {
-      toast.error("Atama baÅŸarÄ±sÄ±z");
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Atama başarısız"));
     }
   };
 
@@ -208,20 +215,17 @@ export default function AssessmentDetailPage() {
         id,
         data: {
           title: values.title,
-          description: values.description?.trim() || undefined,
+          // Boş bırakılan alanlar temizlenir (null)
+          description: values.description?.trim() || null,
           status: values.status,
-          ...(values.startsAt && {
-            startsAt: new Date(values.startsAt).toISOString(),
-          }),
-          ...(values.endsAt && {
-            endsAt: new Date(values.endsAt).toISOString(),
-          }),
+          startsAt: values.startsAt ? new Date(values.startsAt).toISOString() : null,
+          endsAt: values.endsAt ? new Date(values.endsAt).toISOString() : null,
         },
       });
-      toast.success("DeÄŸerlendirme gÃ¼ncellendi");
+      toast.success("Değerlendirme güncellendi");
       setEditOpen(false);
-    } catch {
-      toast.error("GÃ¼ncelleme baÅŸarÄ±sÄ±z");
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Güncelleme başarısız"));
     }
   };
 
@@ -245,13 +249,13 @@ export default function AssessmentDetailPage() {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-center">
         <p className="text-sm text-muted-foreground">
-          DeÄŸerlendirme bulunamadÄ±
+          Değerlendirme bulunamadı
         </p>
         <button
           onClick={() => router.push("/assessments")}
           className="mt-3 text-sm text-primary hover:underline"
         >
-          Listeye dÃ¶n
+          Listeye dön
         </button>
       </div>
     );
@@ -272,7 +276,7 @@ export default function AssessmentDetailPage() {
           className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-4"
         >
           <ArrowLeft className="h-4 w-4" />
-          DeÄŸerlendirmeler
+          Değerlendirmeler
         </button>
 
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
@@ -298,7 +302,7 @@ export default function AssessmentDetailPage() {
                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-accent-green/10 text-accent-green text-sm font-medium hover:bg-accent-green/20 transition-colors disabled:opacity-50"
               >
                 <Play className="h-3.5 w-3.5" />
-                AktifleÅŸtir
+                Aktifleştir
               </button>
             )}
             <button
@@ -314,7 +318,7 @@ export default function AssessmentDetailPage() {
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-muted-foreground hover:bg-muted/60 transition-colors"
             >
               <Pencil className="h-3.5 w-3.5" />
-              DÃ¼zenle
+              Düzenle
             </button>
             <button
               onClick={handleDelete}
@@ -336,12 +340,12 @@ export default function AssessmentDetailPage() {
               Soru Seti
             </p>
             <p className="text-sm font-semibold text-foreground">
-              {assessment.questionSet?.name ?? "â€”"}
+              {assessment.questionSet?.name ?? "—"}
             </p>
           </div>
           <div>
             <p className="text-xs text-muted-foreground font-medium mb-1">
-              BaÅŸlangÄ±Ã§
+              Başlangıç
             </p>
             <p className="text-sm text-foreground">
               {formatDate(assessment.startsAt)}
@@ -349,7 +353,7 @@ export default function AssessmentDetailPage() {
           </div>
           <div>
             <p className="text-xs text-muted-foreground font-medium mb-1">
-              BitiÅŸ
+              Bitiş
             </p>
             <p className="text-sm text-foreground">
               {formatDate(assessment.endsAt)}
@@ -357,7 +361,7 @@ export default function AssessmentDetailPage() {
           </div>
           <div>
             <p className="text-xs text-muted-foreground font-medium mb-1">
-              OluÅŸturulma
+              Oluşturulma
             </p>
             <p className="text-sm text-foreground">
               {formatDate(assessment.createdAt)}
@@ -400,10 +404,10 @@ export default function AssessmentDetailPage() {
           <div className="flex flex-col items-center justify-center py-12 text-center">
             <Calendar className="h-8 w-8 text-muted-foreground/40 mb-3" />
             <p className="text-sm text-muted-foreground">
-              HenÃ¼z oturum bulunmuyor
+              Henüz oturum bulunmuyor
             </p>
             <p className="text-xs text-muted-foreground/60 mt-1">
-              Personel atayarak oturumlarÄ± baÅŸlatÄ±n
+              Personel atayarak oturumları başlatın
             </p>
           </div>
         ) : (
@@ -422,10 +426,10 @@ export default function AssessmentDetailPage() {
                       Puan
                     </th>
                     <th className="text-left text-xs font-medium text-muted-foreground uppercase pb-3 pr-4 hidden lg:table-cell">
-                      BaÅŸlangÄ±Ã§
+                      Başlangıç
                     </th>
                     <th className="text-left text-xs font-medium text-muted-foreground uppercase pb-3 hidden lg:table-cell">
-                      BitiÅŸ
+                      Bitiş
                     </th>
                     <th className="pb-3 w-16" />
                   </tr>
@@ -493,7 +497,7 @@ export default function AssessmentDetailPage() {
                             </span>
                           ) : (
                             <span className="text-xs text-muted-foreground">
-                              â€”
+                              —
                             </span>
                           )}
                         </td>
@@ -562,7 +566,7 @@ export default function AssessmentDetailPage() {
         )}
       </GlassCard>
 
-      {/* Personel ata â€” viewport ortasÄ±nda (body portal) */}
+      {/* Personel ata — viewport ortasında (body portal) */}
       <AnimatePresence>
         {assignOpen && (
           <PortalModal key="assign">
@@ -611,7 +615,7 @@ export default function AssessmentDetailPage() {
                 </div>
                 {selectedPersonnel.length > 0 && (
                   <p className="text-xs text-primary mt-2">
-                    {selectedPersonnel.length} personel seÃ§ildi
+                    {selectedPersonnel.length} personel seçildi
                   </p>
                 )}
               </div>
@@ -619,7 +623,7 @@ export default function AssessmentDetailPage() {
               <div className="flex-1 min-h-0 overflow-y-auto px-5 pb-2 space-y-1">
                 {personnelList.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-8">
-                    Personel bulunamadÄ±
+                    Personel bulunamadı
                   </p>
                 ) : (
                   personnelList.map((p: {
@@ -655,7 +659,7 @@ export default function AssessmentDetailPage() {
                             {p.firstName} {p.lastName}
                           </p>
                           <p className="text-[11px] text-muted-foreground truncate">
-                            {p.position} Â· {p.department?.name ?? "â€”"}
+                            {p.position} · {p.department?.name ?? "—"}
                           </p>
                         </div>
                       </button>
@@ -670,7 +674,7 @@ export default function AssessmentDetailPage() {
                   onClick={() => setAssignOpen(false)}
                   className="px-4 py-2 rounded-xl text-sm font-medium text-muted-foreground hover:bg-muted/60 transition-colors"
                 >
-                  Ä°ptal
+                  İptal
                 </button>
                 <button
                   type="button"
@@ -704,7 +708,7 @@ export default function AssessmentDetailPage() {
         )}
       </AnimatePresence>
 
-      {/* DeÄŸerlendirme dÃ¼zenle */}
+      {/* Değerlendirme düzenle */}
       <AnimatePresence>
         {editOpen && assessment && (
           <PortalModal key="edit">
@@ -729,7 +733,7 @@ export default function AssessmentDetailPage() {
               >
                 <div className="flex items-center justify-between mb-5">
                   <h3 id="edit-dialog-title" className="text-lg font-semibold text-foreground">
-                    DeÄŸerlendirmeyi DÃ¼zenle
+                    Değerlendirmeyi Düzenle
                   </h3>
                   <button
                     type="button"
@@ -746,7 +750,7 @@ export default function AssessmentDetailPage() {
                 >
                   <div>
                     <label className="block text-sm font-medium text-foreground mb-1">
-                      BaÅŸlÄ±k <span className="text-destructive">*</span>
+                      Başlık <span className="text-destructive">*</span>
                     </label>
                     <input
                       {...registerEdit("title")}
@@ -762,7 +766,7 @@ export default function AssessmentDetailPage() {
 
                   <div>
                     <label className="block text-sm font-medium text-foreground mb-1">
-                      AÃ§Ä±klama
+                      Açıklama
                     </label>
                     <textarea
                       {...registerEdit("description")}
@@ -781,16 +785,16 @@ export default function AssessmentDetailPage() {
                     >
                       <option value="DRAFT">Taslak</option>
                       <option value="ACTIVE">Aktif</option>
-                      <option value="PAUSED">DuraklatÄ±ldÄ±</option>
-                      <option value="COMPLETED">TamamlandÄ±</option>
-                      <option value="ARCHIVED">ArÅŸiv</option>
+                      <option value="PAUSED">Duraklatıldı</option>
+                      <option value="COMPLETED">Tamamlandı</option>
+                      <option value="ARCHIVED">Arşiv</option>
                     </select>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-foreground mb-1">
-                        BaÅŸlangÄ±Ã§
+                        Başlangıç
                       </label>
                       <Controller
                         name="startsAt"
@@ -799,14 +803,14 @@ export default function AssessmentDetailPage() {
                           <DateTimePicker
                             value={field.value}
                             onChange={field.onChange}
-                            placeholder="BaÅŸlangÄ±Ã§ seÃ§in"
+                            placeholder="Başlangıç seçin"
                           />
                         )}
                       />
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-foreground mb-1">
-                        BitiÅŸ
+                        Bitiş
                       </label>
                       <Controller
                         name="endsAt"
@@ -815,7 +819,7 @@ export default function AssessmentDetailPage() {
                           <DateTimePicker
                             value={field.value}
                             onChange={field.onChange}
-                            placeholder="BitiÅŸ seÃ§in"
+                            placeholder="Bitiş seçin"
                             error={Boolean(editErrors.endsAt)}
                           />
                         )}
@@ -827,7 +831,7 @@ export default function AssessmentDetailPage() {
                   </div>
 
                   <p className="text-xs text-muted-foreground rounded-xl bg-muted/30 px-3 py-2">
-                    Soru seti bu ekrandan deÄŸiÅŸtirilemez; gerekirse yeni bir deÄŸerlendirme oluÅŸturun.
+                    Soru seti bu ekrandan değiştirilemez; gerekirse yeni bir değerlendirme oluşturun.
                   </p>
 
                   <div className="flex justify-end gap-2 pt-2">
@@ -836,7 +840,7 @@ export default function AssessmentDetailPage() {
                       onClick={() => setEditOpen(false)}
                       className="px-4 py-2.5 rounded-xl text-sm font-medium text-muted-foreground hover:bg-muted/60 transition-colors"
                     >
-                      Ä°ptal
+                      İptal
                     </button>
                     <button
                       type="submit"

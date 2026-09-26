@@ -8,6 +8,8 @@
     "server"
   ],
   "scripts": {
+    "postinstall": "npm run build -w packages/shared",
+    "predev": "npm run build -w packages/shared",
     "dev": "concurrently -n \"api,web,portal\" -c \"blue,green,cyan\" \"npm run dev -w server\" \"npm run dev -w web\" \"npm run dev -w portal\"",
     "dev:api": "npm run dev -w server",
     "dev:web": "npm run dev -w web",
@@ -19,7 +21,8 @@
     "db:seed": "npm run prisma:seed -w server",
     "db:studio": "npm run prisma:studio -w server",
     "docker:dev": "docker compose up -d postgres redis",
-    "docker:down": "docker compose down"
+    "docker:down": "docker compose down",
+    "pretype-check": "npm run build -w packages/shared"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",

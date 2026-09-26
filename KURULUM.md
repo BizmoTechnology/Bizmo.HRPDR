@@ -15,10 +15,12 @@ npm install
 ## 2. Ortam Değişkenlerini Hazırla
 
 ```bash
-cp .env.example .env
+cp .env.example server/.env
 ```
 
-`.env` dosyasını açıp şu alanları doldurun:
+> Prisma CLI ve API `server/.env` dosyasını okur (API ek olarak kökteki `.env` dosyasına da bakar).
+
+`server/.env` dosyasını açıp şu alanları doldurun:
 - `JWT_SECRET` ve `JWT_REFRESH_SECRET` → en az 64 karakter
 - `ENCRYPTION_KEY` → tam 64 hex karakter (32 byte)
 
@@ -49,12 +51,21 @@ psql -h localhost -p 4455 -U postgres -d postgres -c 'CREATE DATABASE "Bizmo.HRP
 
 ## 4. Prisma şemasını veritabanına uygula
 
-İlk kurulumda migrasyon klasörü yoksa `db push` kullanın; sonra `migrate dev` ile kalıcı migrasyon üretebilirsiniz.
+Migrasyon geçmişi `server/prisma/migrations` altında tam olarak tutulur (başlangıç şeması `20250101000000_init`).
 
 ```bash
 cd server
 npx prisma generate
-npx prisma db push
+npx prisma migrate deploy
+```
+
+**Daha önce `prisma db push` ile oluşturulmuş bir veritabanınız varsa** mevcut şemayı yeniden oluşturmaya çalışmaması için eski migrasyonları uygulanmış olarak işaretleyin, ardından yenileri uygulayın:
+
+```bash
+npx prisma migrate resolve --applied 20250101000000_init
+npx prisma migrate resolve --applied 20250420120000_ai_chat_conversations
+npx prisma migrate resolve --applied 20260219120000_assessment_session_optional_columns
+npx prisma migrate deploy
 ```
 
 ## 5. Örnek Verileri Ekle (Seed)
@@ -81,6 +92,24 @@ npm run dev
 - Admin:  http://localhost:3000
 - Portal: http://localhost:3002
 - API Docs: http://localhost:3001/api/docs
+
+> `npm install` ve `npm run dev` paylaşılan `@ph/shared` paketini otomatik derler.
+
+## Temel Akış
+
+1. **Personel** oluştururken "Portal Şifresi" belirleyin (veya personel detayında *Portal Şifresi Belirle*). Şifresi olmayan personel portala giremez.
+2. **Değerlendirme** oluşturun, *Aktifleştir* ve personele *ata*. Portal yalnızca **aktif** ve tarih aralığındaki değerlendirmeleri gösterir.
+3. Personel portalda KVKK onayıyla testi başlatır; cevaplar her soruda sunucuya kaydedilir, yarıda kalan test kaldığı yerden devam eder.
+4. Test tamamlanınca skala sorularından boyut skorları hesaplanır; aktif bir AI yapılandırması ve personelin AI rızası varsa HR PDR analizi arka planda çalışır ve boyut skorları güncellenir.
+5. Oturum detayında İK analizi **onaylar**, ardından **Rapor oluştur** ile rapor üretilir (Raporlar sayfasından yazdırma/PDF ve Excel indirme).
+
+## Roller
+
+| İşlem | SUPER_ADMIN | ADMIN | HR_MANAGER | ANALYST | VIEWER |
+|---|:-:|:-:|:-:|:-:|:-:|
+| Personel / soru / soru seti / değerlendirme yazma | ✓ | ✓ | ✓ | ✗ | ✗ |
+| AI analizi, İK onayı, rapor | ✓ | ✓ | ✓ | ✓ | ✗ |
+| AI yapılandırması | ✓ | ✓ | ✗ | ✗ | ✗ |
 
 ## Klasör Yapısı
 

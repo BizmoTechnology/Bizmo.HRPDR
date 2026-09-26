@@ -1,11 +1,11 @@
-import type { FastifyPluginAsync } from "fastify";
-import bcrypt from "bcryptjs";
+import type { FastifyPluginAsync, FastifyRequest } from "fastify";
 import jwt from "jsonwebtoken";
 import {
   loginBodySchema,
   portalLoginBodySchema,
   forgotPasswordBodySchema,
   resetPasswordBodySchema,
+  changePasswordBodySchema,
 } from "./auth.schema.js";
 import {
   adminLogin,
@@ -14,12 +14,47 @@ import {
   createPasswordResetToken,
   validateAndConsumeResetToken,
   refreshSecret,
+  PORTAL_ACCESS_TTL,
+  hasRefreshTokenHash,
+  removeRefreshTokenHash,
 } from "./auth.service.js";
+import bcrypt from "bcryptjs";
 import { prisma } from "../../lib/prisma.js";
+import { sendMail } from "../../lib/mailer.js";
+
+/** development.md §12.1 — auth endpoint'leri için IP başına sınır */
+const authRateLimit = {
+  config: { rateLimit: { max: 10, timeWindow: "1 minute" } },
+};
+
+/** Token yenileme httpOnly çerez gerektirir; ortak IP'deki ofisler için daha geniş sınır */
+const refreshRateLimit = {
+  config: { rateLimit: { max: 60, timeWindow: "1 minute" } },
+};
+
+/**
+ * Giriş denemeleri IP + hesap kimliği ile sınırlandırılır; fabrikada ortak
+ * kiosk/IP kullanan personel birbirini kilitlemez.
+ */
+function loginRateLimit(field: "email" | "employeeId") {
+  return {
+    config: {
+      rateLimit: {
+        max: 10,
+        timeWindow: "1 minute",
+        keyGenerator: (request: FastifyRequest) => {
+          const body = request.body as Record<string, unknown> | undefined;
+          const account = typeof body?.[field] === "string" ? String(body[field]).toLowerCase() : "";
+          return `${request.ip}:${account}`;
+        },
+      },
+    },
+  };
+}
 
 const authRoutes: FastifyPluginAsync = async (fastify) => {
   // ── Admin Giriş ──────────────────────────────
-  fastify.post("/login", async (request, reply) => {
+  fastify.post("/login", loginRateLimit("email"), async (request, reply) => {
     const body = loginBodySchema.parse(request.body);
 
     try {
@@ -57,16 +92,46 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
       if (!sub) {
         return reply.status(401).send({ code: "UNAUTHORIZED", message: "Oturum bulunamadı", traceId: request.traceId });
       }
+      // Yalnızca bu cihazın oturumu kapatılır; çerez yoksa tüm oturumlar sonlandırılır
+      const cookieToken = request.cookies?.["refreshToken"];
+      const user = await prisma.user.findUnique({ where: { id: sub }, select: { refreshToken: true } });
       await prisma.user.update({
         where: { id: sub },
-        data: { refreshToken: null },
+        data: {
+          refreshToken: cookieToken ? removeRefreshTokenHash(user?.refreshToken, cookieToken) : null,
+        },
       });
       reply.clearCookie("refreshToken", { path: "/api/auth" }).send({ data: { ok: true } });
     }
   );
 
+  // ── Admin Şifre Değiştirme (oturum açıkken) ──
+  fastify.post(
+    "/change-password",
+    { onRequest: [fastify.authenticate], ...authRateLimit },
+    async (request, reply) => {
+      const { currentPassword, newPassword } = changePasswordBodySchema.parse(request.body);
+
+      const user = await prisma.user.findUnique({ where: { id: request.user.sub } });
+      if (!user || !(await bcrypt.compare(currentPassword, user.password))) {
+        return reply.status(400).send({
+          code: "INVALID_CURRENT_PASSWORD",
+          message: "Mevcut şifre hatalı",
+          traceId: request.traceId,
+        });
+      }
+
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { password: await hashPassword(newPassword) },
+      });
+
+      return reply.send({ data: { message: "Şifreniz güncellendi" } });
+    }
+  );
+
   // ── Admin Token Yenileme ─────────────────────
-  fastify.post("/refresh", async (request, reply) => {
+  fastify.post("/refresh", refreshRateLimit, async (request, reply) => {
     const rawToken =
       request.cookies?.["refreshToken"] ??
       (request.body as { refreshToken?: string })?.refreshToken;
@@ -90,12 +155,11 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
         include: { organization: true },
       });
 
-      if (!user || !user.isActive) {
+      if (!user || !user.isActive || user.deletedAt) {
         return reply.status(401).send({ code: "INVALID_REFRESH_TOKEN", message: "Geçersiz token", traceId: request.traceId });
       }
 
-      const valid = bcrypt.compareSync(rawToken, user.refreshToken ?? "");
-      if (!valid) {
+      if (!hasRefreshTokenHash(user.refreshToken, rawToken)) {
         return reply.status(401).send({ code: "INVALID_REFRESH_TOKEN", message: "Geçersiz token", traceId: request.traceId });
       }
 
@@ -112,16 +176,38 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // ── Admin Şifre Sıfırlama Talebi ─────────────
-  fastify.post("/forgot-password", async (request, reply) => {
+  fastify.post("/forgot-password", authRateLimit, async (request, reply) => {
     const { email } = forgotPasswordBodySchema.parse(request.body);
 
     const user = await prisma.user.findFirst({
-      where: { email, deletedAt: null },
+      where: { email, deletedAt: null, isActive: true },
     });
 
     if (user) {
       const token = await createPasswordResetToken(user.id);
-      fastify.log.info({ action: "password_reset_requested", userId: user.id, token });
+      const appUrl = (process.env["APP_URL"] ?? "http://localhost:3000").replace(/\/$/, "");
+      const resetUrl = `${appUrl}/reset-password?token=${encodeURIComponent(token)}`;
+
+      try {
+        const sent = await sendMail({
+          to: user.email,
+          subject: "Şifre sıfırlama talebi",
+          text:
+            `Merhaba ${user.name},\n\n` +
+            `Şifrenizi sıfırlamak için aşağıdaki bağlantıyı 60 dakika içinde kullanın:\n${resetUrl}\n\n` +
+            "Bu talebi siz yapmadıysanız bu e-postayı yok sayabilirsiniz.",
+        });
+        if (!sent) {
+          if (process.env["NODE_ENV"] === "production") {
+            request.log.warn({ userId: user.id }, "SMTP yapılandırılmadığı için sıfırlama e-postası gönderilemedi");
+          } else {
+            // Yalnızca geliştirme: SMTP yokken bağlantı log'a yazılır
+            request.log.info({ userId: user.id, resetUrl }, "password_reset_requested (dev)");
+          }
+        }
+      } catch (err) {
+        request.log.error({ err, userId: user.id }, "Şifre sıfırlama e-postası gönderilemedi");
+      }
     }
 
     // Güvenlik: kullanıcı var/yok fark etmeksizin aynı yanıt
@@ -131,7 +217,7 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // ── Admin Şifre Sıfırlama ─────────────────────
-  fastify.post("/reset-password", async (request, reply) => {
+  fastify.post("/reset-password", authRateLimit, async (request, reply) => {
     const { token, password } = resetPasswordBodySchema.parse(request.body);
 
     try {
@@ -153,7 +239,7 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // ── Portal Giriş ──────────────────────────────
-  fastify.post("/portal/login", async (request, reply) => {
+  fastify.post("/portal/login", loginRateLimit("employeeId"), async (request, reply) => {
     const body = portalLoginBodySchema.parse(request.body);
 
     try {
@@ -169,7 +255,7 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // ── Portal Token Yenileme ─────────────────────
-  fastify.post("/portal/refresh", async (request, reply) => {
+  fastify.post("/portal/refresh", refreshRateLimit, async (request, reply) => {
     const rawToken = (request.body as { refreshToken?: string })?.refreshToken;
     if (!rawToken) {
       return reply.status(401).send({ code: "NO_REFRESH_TOKEN", message: "Token bulunamadı", traceId: request.traceId });
@@ -189,21 +275,17 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
         where: { id: payload.sub },
       });
 
-      if (!personnel || personnel.status !== "ACTIVE") {
+      if (!personnel || personnel.deletedAt || personnel.status !== "ACTIVE") {
         return reply.status(401).send({ code: "INVALID_REFRESH_TOKEN", message: "Geçersiz token", traceId: request.traceId });
       }
 
-      const refreshOk = bcrypt.compareSync(
-        rawToken,
-        personnel.portalRefreshToken ?? ""
-      );
-      if (!refreshOk) {
+      if (!hasRefreshTokenHash(personnel.portalRefreshToken, rawToken)) {
         return reply.status(401).send({ code: "INVALID_REFRESH_TOKEN", message: "Geçersiz token", traceId: request.traceId });
       }
 
       const accessToken = fastify.jwt.sign(
         { sub: personnel.id, type: "portal", orgId: personnel.organizationId },
-        { expiresIn: "1h" }
+        { expiresIn: PORTAL_ACCESS_TTL }
       );
 
       return reply.send({ data: { accessToken } });
@@ -211,6 +293,28 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
       return reply.status(401).send({ code: "INVALID_REFRESH_TOKEN", message: "Geçersiz token", traceId: request.traceId });
     }
   });
+
+  // ── Portal Çıkış ──────────────────────────────
+  fastify.post(
+    "/portal/logout",
+    { onRequest: [fastify.authenticatePortal] },
+    async (request, reply) => {
+      const bodyToken = (request.body as { refreshToken?: string } | undefined)?.refreshToken;
+      const personnel = await prisma.personnel.findUnique({
+        where: { id: request.user.sub },
+        select: { portalRefreshToken: true },
+      });
+      await prisma.personnel.update({
+        where: { id: request.user.sub },
+        data: {
+          portalRefreshToken: bodyToken
+            ? removeRefreshTokenHash(personnel?.portalRefreshToken, bodyToken)
+            : null,
+        },
+      });
+      return reply.send({ data: { ok: true } });
+    }
+  );
 };
 
 export default authRoutes;

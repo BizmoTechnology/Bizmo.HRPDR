@@ -96,7 +96,7 @@ async function exportToExcel(report: ReportDetail) {
     ["Değerlendirme", s?.assessment.title ?? ""],
     ["Tamamlanma", s?.completedAt ? formatDate(s.completedAt, true) : ""],
     ["Rapor Tarihi", report.generatedAt ? formatDate(report.generatedAt, true) : ""],
-    ["Genel Skor", report.fullReportJson?.overallScore ?? ""],
+    ["Genel Skor", report.overallScore ?? report.fullReportJson?.overallScore ?? ""],
     [],
     ["Yönetici Özeti", report.executiveSummary ?? ""],
   ];
@@ -159,7 +159,7 @@ export default function ReportDetailPage() {
   const scores = (report.fullReportJson?.dimensionScores ?? s?.dimensionScores ?? null) as
     | Record<string, number>
     | null;
-  const overall = report.fullReportJson?.overallScore ?? null;
+  const overall = report.overallScore ?? report.fullReportJson?.overallScore ?? null;
   const swot = s?.swotAnalysis ?? null;
   const career = s?.careerPaths ?? null;
   const hr = (s?.hrPdrAnalysis ?? null) as Record<string, unknown> | null;

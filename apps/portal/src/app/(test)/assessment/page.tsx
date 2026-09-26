@@ -291,6 +291,7 @@ export default function AssessmentPage() {
         <div className="w-full h-1.5 bg-white/10 rounded-full mb-6 overflow-hidden">
           <motion.div
             className="h-full bg-primary rounded-full"
+            initial={{ width: 0 }}
             animate={{ width: `${progress}%` }}
             transition={{ duration: 0.4, ease: "easeOut" }}
           />

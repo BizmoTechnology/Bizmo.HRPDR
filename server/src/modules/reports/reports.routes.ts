@@ -91,6 +91,23 @@ const reportDetailInclude = {
   },
 } satisfies Prisma.ReportInclude;
 
+/**
+ * Rapor detayına genel skoru ekler: rapor üretilirken kaydedilen değer, yoksa
+ * (ör. eski/seed raporlar) oturumun boyut skorlarından hesaplanan değer.
+ */
+function withOverallScore<
+  T extends { fullReportJson: Prisma.JsonValue; session: { dimensionScores: Prisma.JsonValue } | null },
+>(report: T): T & { overallScore: number | null } {
+  const stored = (report.fullReportJson as { overallScore?: unknown } | null)?.overallScore;
+  return {
+    ...report,
+    overallScore:
+      typeof stored === "number"
+        ? stored
+        : computeOverallScore(readDimensionScores(report.session?.dimensionScores)),
+  };
+}
+
 /** Özet metni: AI özeti > İK içgörüsü > skorlardan üretilen kısa özet */
 function buildExecutiveSummary(params: {
   fullName: string;
@@ -323,11 +340,11 @@ const reportsRoutes: FastifyPluginAsync = async (fastify) => {
       return saved;
     });
 
-    const detail = await prisma.report.findUnique({
+    const detail = await prisma.report.findUniqueOrThrow({
       where: { id: report.id },
       include: reportDetailInclude,
     });
-    return { status: 201, body: { data: detail } };
+    return { status: 201, body: { data: withOverallScore(detail) } };
   };
 
   fastify.post("/generate", async (request, reply) => {
@@ -367,7 +384,7 @@ const reportsRoutes: FastifyPluginAsync = async (fastify) => {
       });
     }
 
-    return reply.send({ data: report });
+    return reply.send({ data: withOverallScore(report) });
   });
 
   // ── DELETE /:id — Rapor sil ───────────────────

@@ -1,51 +1,117 @@
-import axios from "axios";
+import axios, { type AxiosError, type InternalAxiosRequestConfig } from "axios";
+
+const API_BASE = process.env["NEXT_PUBLIC_API_URL"] ?? "http://localhost:3001";
 
 export const api = axios.create({
-  baseURL: process.env["NEXT_PUBLIC_API_URL"] ?? "http://localhost:3001",
+  baseURL: API_BASE,
   withCredentials: true,
   timeout: 15_000,
 });
 
+/** LLM çağrıları uzun sürebilir; bu endpoint'ler için zaman aşımı uzatılır. */
+const AI_ENDPOINT =
+  /\/(ai-generate|ai-suggest|ai-analysis|messages|list-abacus-models|test)(\?|$)|\/api\/reports\/generate/;
+const AI_TIMEOUT_MS = 180_000;
+
 let accessToken: string | null = null;
+let onAuthFailure: (() => void) | null = null;
+
+/**
+ * 401 yanıtında yenilenmeyecek kimlik doğrulama çağrıları (ör. hatalı şifre).
+ * logout / change-password gibi oturum gerektiren çağrılar bu listede değildir.
+ */
+const PUBLIC_AUTH_ENDPOINT = /\/api\/auth\/(login|refresh|forgot-password|reset-password)(\?|$)/;
+
+/** Kalıcı oturum bilgisi (auth store, localStorage "ph-auth") var mı? */
+function hasSessionHint(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem("ph-auth")?.includes('"isAuthenticated":true') ?? false;
+  } catch {
+    return false;
+  }
+}
 
 export function setAccessToken(token: string | null) {
   accessToken = token;
 }
 
-api.interceptors.request.use((config) => {
+/** Oturum yenilenemediğinde çağrılır (ör. auth store'u temizlemek için). */
+export function setAuthFailureHandler(handler: () => void) {
+  onAuthFailure = handler;
+}
+
+api.interceptors.request.use(async (config) => {
+  // Access token yalnızca bellekte tutulur; sayfa yenilendiğinde ilk istekten önce
+  // (paralel sorguların hepsi 401 alıp ayrı ayrı yenilemesin diye) bir kez yenilenir.
+  if (!accessToken && hasSessionHint() && !PUBLIC_AUTH_ENDPOINT.test(config.url ?? "")) {
+    await refreshAccessToken();
+  }
   if (accessToken) {
     config.headers["Authorization"] = `Bearer ${accessToken}`;
+  }
+  if (config.url && AI_ENDPOINT.test(config.url) && (config.timeout ?? 0) < AI_TIMEOUT_MS) {
+    config.timeout = AI_TIMEOUT_MS;
   }
   return config;
 });
 
+let refreshPromise: Promise<string | null> | null = null;
+
+/** Paralel 401'ler tek bir yenileme isteğini paylaşır. */
+export function refreshAccessToken(): Promise<string | null> {
+  if (refreshPromise) return refreshPromise;
+
+  refreshPromise = axios
+    .post(`${API_BASE}/api/auth/refresh`, {}, { withCredentials: true })
+    .then(({ data }) => {
+      const token: string | undefined = data?.data?.accessToken;
+      setAccessToken(token ?? null);
+      return token ?? null;
+    })
+    .catch(() => null)
+    .finally(() => {
+      refreshPromise = null;
+    });
+
+  return refreshPromise;
+}
+
 api.interceptors.response.use(
   (res) => res,
-  async (error) => {
-    const originalRequest = error.config as typeof error.config & {
-      _retry?: boolean;
-    };
+  async (error: AxiosError) => {
+    const originalRequest = error.config as
+      | (InternalAxiosRequestConfig & { _retry?: boolean })
+      | undefined;
 
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    // Giriş/yenileme çağrılarında 401 normal bir sonuçtur (ör. hatalı şifre)
+    const isAuthCall = PUBLIC_AUTH_ENDPOINT.test(originalRequest?.url ?? "");
+
+    if (error.response?.status === 401 && originalRequest && !originalRequest._retry && !isAuthCall) {
       originalRequest._retry = true;
 
-      try {
-        const { data } = await axios.post(
-          `${process.env["NEXT_PUBLIC_API_URL"] ?? "http://localhost:3001"}/api/auth/refresh`,
-          {},
-          { withCredentials: true }
-        );
-        setAccessToken(data.data.accessToken);
-        originalRequest.headers["Authorization"] = `Bearer ${data.data.accessToken}`;
+      const token = await refreshAccessToken();
+      if (token) {
+        originalRequest.headers["Authorization"] = `Bearer ${token}`;
         return api(originalRequest);
-      } catch {
-        setAccessToken(null);
-        if (typeof window !== "undefined") {
-          window.location.href = "/login";
-        }
+      }
+
+      setAccessToken(null);
+      onAuthFailure?.();
+      if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
+        window.location.href = "/login";
       }
     }
 
     return Promise.reject(error);
   }
 );
+
+/** Sunucunun standart hata gövdesinden kullanıcıya gösterilecek mesaj */
+export function apiErrorMessage(err: unknown, fallback: string): string {
+  const e = err as AxiosError<{ message?: string }>;
+  if (e?.response?.status === 403) {
+    return e.response.data?.message ?? "Bu işlem için yetkiniz yok";
+  }
+  return e?.response?.data?.message ?? fallback;
+}

@@ -1,7 +1,14 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { decrypt } from "../lib/crypto.js";
 import { HttpError } from "../lib/http-error.js";
 import { completeChat } from "../lib/llm.js";
+import { normalizeQuestionOptions } from "../lib/question-options.js";
+import {
+  mergeDimensionScores,
+  readDimensionScores,
+  scoresFromHrPdrAnalysis,
+} from "./scoring.service.js";
 
 const DEFAULT_HR_PDR_PROMPT = `Sen deneyimli bir İnsan Kaynakları uzmanısın. Görevin, bir çalışanın performans değerlendirme oturumundaki cevaplarını analiz ederek kapsamlı bir HR PDR (Performans Değerlendirme Raporu) hazırlamaktır.
 
@@ -13,11 +20,13 @@ Analiz kapsamı:
 5. **Hedef Önerileri**: Kısa vadeli (3 ay), orta vadeli (6 ay), uzun vadeli (1 yıl) hedef önerileri
 6. **Genel Değerlendirme**: Terfi/yatay geçiş/eğitim önerileri
 
+Her boyut için competencyAnalysis içinde bir kayıt üret; "dimension" alanında yalnızca belirtilen İngilizce anahtarları kullan, "score" 0-10 arasında olsun.
+
 Çıktı YALNIZCA geçerli bir JSON nesnesi olmalı:
 {
   "performanceScore": number,
   "performanceSummary": string,
-  "competencyAnalysis": [{ "dimension": string, "score": number, "strengths": string[], "improvements": string[] }],
+  "competencyAnalysis": [{ "dimension": "LOGICAL_ALGORITHMIC" | "LEADERSHIP" | "SOCIAL_INTELLIGENCE" | "GROWTH_POTENTIAL" | "DOMAIN_ALIGNMENT", "score": number (0-10), "strengths": string[], "improvements": string[] }],
   "strengths": string[],
   "developmentAreas": [{ "area": string, "recommendation": string }],
   "goals": { "shortTerm": string[], "midTerm": string[], "longTerm": string[] },
@@ -72,7 +81,14 @@ export function extractJson(text: string): string {
 }
 
 function formatAnswersForAi(answers: Array<{
-  question: { text: string; dimension: string; type: string; phase: string } | null;
+  question: {
+    text: string;
+    dimension: string;
+    type: string;
+    phase: string;
+    options: Prisma.JsonValue;
+    maxScale: number | null;
+  } | null;
   textAnswer: string | null;
   scaleValue: number | null;
   choiceKey: string | null;
@@ -83,8 +99,11 @@ function formatAnswersForAi(answers: Array<{
     .map((a, i) => {
       let answer = "";
       if (a.textAnswer) answer = a.textAnswer;
-      else if (a.scaleValue !== null) answer = `Puan: ${a.scaleValue}/10`;
-      else if (a.choiceKey) answer = `Seçim: ${a.choiceKey}`;
+      else if (a.scaleValue !== null) answer = `Puan: ${a.scaleValue}/${a.question!.maxScale ?? 10}`;
+      else if (a.choiceKey) {
+        const label = normalizeQuestionOptions(a.question!.options)?.[a.choiceKey];
+        answer = `Seçim: ${a.choiceKey}${label ? ` — ${label}` : ""}`;
+      }
       else answer = "(Cevap verilmedi)";
 
       let followUp = "";
@@ -93,6 +112,33 @@ function formatAnswersForAi(answers: Array<{
       return `${i + 1}. [${a.question!.dimension}/${a.question!.type}] ${a.question!.text}\n   Cevap: ${answer}${followUp}`;
     })
     .join("\n\n");
+}
+
+/**
+ * Oturum için AI analizi rızası var mı?
+ * - AI_ASSESSMENT: yeni portal akışında ayrı onay kutusu.
+ * - ASSESSMENT_CONSENT: eski portal akışı; AI onay kutusu zorunluydu ve bu kayıt
+ *   yazılıyordu, bu yüzden AI rızası sayılır.
+ * - Hiç rıza kaydı olmayan eski/seed oturumlar geriye dönük uyumluluk için hariç.
+ */
+export async function hasAiConsent(sessionId: string): Promise<boolean> {
+  const consents = await prisma.consentRecord.findMany({
+    where: { sessionId },
+    select: { consentType: true, accepted: true },
+  });
+  if (consents.length === 0) return true;
+  return consents.some(
+    (c) =>
+      c.accepted &&
+      (c.consentType === "AI_ASSESSMENT" || c.consentType === "ASSESSMENT_CONSENT"),
+  );
+}
+
+export function getActiveAiConfig(organizationId: string) {
+  return prisma.aiConfig.findFirst({
+    where: { organizationId, isActive: true },
+    orderBy: [{ isDefault: "desc" }, { updatedAt: "desc" }],
+  });
 }
 
 export async function runSessionAnalysis(params: {
@@ -112,7 +158,14 @@ export async function runSessionAnalysis(params: {
         orderBy: { answeredAt: "asc" },
         include: {
           question: {
-            select: { text: true, dimension: true, type: true, phase: true },
+            select: {
+              text: true,
+              dimension: true,
+              type: true,
+              phase: true,
+              options: true,
+              maxScale: true,
+            },
           },
         },
       },
@@ -144,10 +197,16 @@ export async function runSessionAnalysis(params: {
     );
   }
 
-  const aiConfig = await prisma.aiConfig.findFirst({
-    where: { organizationId, isActive: true },
-    orderBy: [{ isDefault: "desc" }, { updatedAt: "desc" }],
-  });
+  // KVKK (development.md §12.3): AI analizi yalnızca AI rızası varsa çalışır.
+  if (!(await hasAiConsent(sessionId))) {
+    throw new HttpError(
+      "Personel AI destekli değerlendirmeye rıza vermediği için analiz çalıştırılamaz.",
+      403,
+      "AI_CONSENT_MISSING",
+    );
+  }
+
+  const aiConfig = await getActiveAiConfig(organizationId);
 
   if (!aiConfig) {
     throw new HttpError(
@@ -174,53 +233,239 @@ Değerlendirme: ${session.assessment.title}`;
 
   const userMessage = `${personnelInfo}\n\n--- CEVAPLAR ---\n\n${answersFormatted}`;
 
+  const field = analysisType === "HR_PDR_ANALYSIS" ? "hrPdrAnalysis" : "psychologicalAnalysis";
+  let parsed: Record<string, unknown>;
+
   if (aiConfig.provider === "MOCK") {
-    const mockResult = analysisType === "HR_PDR_ANALYSIS"
+    parsed = analysisType === "HR_PDR_ANALYSIS"
       ? generateMockHrPdr(session.personnel)
       : generateMockPsychological(session.personnel);
+  } else {
+    const startedAt = Date.now();
+    let raw: string;
+    try {
+      raw = await completeChat({
+        provider: aiConfig.provider,
+        apiKey,
+        modelName: aiConfig.modelName,
+        system: systemPrompt,
+        user: userMessage,
+      });
+    } catch (err) {
+      await logUsage({
+        aiConfig,
+        organizationId,
+        sessionId,
+        purpose: analysisType,
+        status: "FAILED",
+        latencyMs: Date.now() - startedAt,
+        errorCode: err instanceof Error ? err.name : "UNKNOWN",
+      });
+      throw err;
+    }
 
-    const field = analysisType === "HR_PDR_ANALYSIS" ? "hrPdrAnalysis" : "psychologicalAnalysis";
-    await prisma.assessmentSession.update({
-      where: { id: sessionId },
-      data: { [field]: mockResult as any },
-    });
+    try {
+      parsed = JSON.parse(extractJson(raw));
+    } catch {
+      await logUsage({
+        aiConfig,
+        organizationId,
+        sessionId,
+        purpose: analysisType,
+        status: "FAILED",
+        latencyMs: Date.now() - startedAt,
+        errorCode: "AI_INVALID_JSON",
+      });
+      throw new HttpError("AI yanıtı geçerli JSON değil", 502, "AI_INVALID_JSON");
+    }
 
-    return mockResult;
-  }
-
-  const raw = await completeChat({
-    provider: aiConfig.provider,
-    apiKey,
-    modelName: aiConfig.modelName,
-    system: systemPrompt,
-    user: userMessage,
-  });
-
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = JSON.parse(extractJson(raw));
-  } catch {
-    throw new HttpError("AI yanıtı geçerli JSON değil", 502, "AI_INVALID_JSON");
-  }
-
-  const field = analysisType === "HR_PDR_ANALYSIS" ? "hrPdrAnalysis" : "psychologicalAnalysis";
-  await prisma.assessmentSession.update({
-    where: { id: sessionId },
-    data: { [field]: parsed as any },
-  });
-
-  await prisma.aiUsageLog.create({
-    data: {
-      provider: aiConfig.provider,
-      modelName: aiConfig.modelName,
-      purpose: analysisType,
-      requestType: "session_analysis",
-      status: "SUCCESS",
+    await logUsage({
+      aiConfig,
+      organizationId,
       sessionId,
-    },
-  });
+      purpose: analysisType,
+      status: "SUCCESS",
+      latencyMs: Date.now() - startedAt,
+    });
+  }
+
+  const data: Prisma.AssessmentSessionUpdateInput = {
+    [field]: parsed as Prisma.InputJsonValue,
+    analysisModel: `${aiConfig.provider}:${aiConfig.modelName}`,
+  };
+
+  if (analysisType === "HR_PDR_ANALYSIS") {
+    Object.assign(data, deriveFieldsFromHrPdr(session, parsed));
+  }
+
+  await prisma.assessmentSession.update({ where: { id: sessionId }, data });
 
   return parsed;
+}
+
+/**
+ * HR PDR çıktısından boyut skorları, SWOT, kariyer yolu ve özet üretir.
+ * Mevcut (ör. İK tarafından girilmiş) SWOT/kariyer/özet alanları ezilmez.
+ */
+function deriveFieldsFromHrPdr(
+  session: {
+    dimensionScores: Prisma.JsonValue;
+    swotAnalysis: Prisma.JsonValue;
+    careerPaths: Prisma.JsonValue;
+    keyInsights: string | null;
+  },
+  analysis: Record<string, unknown>,
+): Prisma.AssessmentSessionUpdateInput {
+  const out: Prisma.AssessmentSessionUpdateInput = {};
+
+  const aiScores = scoresFromHrPdrAnalysis(analysis);
+  if (Object.keys(aiScores).length > 0) {
+    out.dimensionScores = mergeDimensionScores(
+      readDimensionScores(session.dimensionScores),
+      aiScores,
+    ) as Prisma.InputJsonValue;
+  }
+
+  const strings = (v: unknown): string[] =>
+    Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+
+  if (!session.swotAnalysis) {
+    const developmentAreas = Array.isArray(analysis["developmentAreas"])
+      ? (analysis["developmentAreas"] as Array<{ area?: unknown }>)
+          .map((d) => (typeof d?.area === "string" ? d.area : null))
+          .filter((x): x is string => !!x)
+      : [];
+    out.swotAnalysis = {
+      strengths: strings(analysis["strengths"]),
+      weaknesses: developmentAreas,
+      opportunities: strings(analysis["trainingNeeds"]),
+      threats: [],
+    };
+  }
+
+  const goals = analysis["goals"] as Record<string, unknown> | undefined;
+  if (!session.careerPaths && goals && typeof goals === "object") {
+    out.careerPaths = {
+      shortTerm: strings(goals["shortTerm"]).join(" "),
+      midTerm: strings(goals["midTerm"]).join(" "),
+      longTerm: strings(goals["longTerm"]).join(" "),
+    };
+  }
+
+  if (!session.keyInsights && typeof analysis["performanceSummary"] === "string") {
+    out.keyInsights = analysis["performanceSummary"];
+  }
+
+  return out;
+}
+
+async function logUsage(params: {
+  aiConfig: { provider: Prisma.AiUsageLogCreateInput["provider"]; modelName: string };
+  organizationId: string;
+  sessionId: string;
+  purpose: string;
+  status: "SUCCESS" | "FAILED";
+  latencyMs: number;
+  errorCode?: string;
+}) {
+  try {
+    await prisma.aiUsageLog.create({
+      data: {
+        provider: params.aiConfig.provider,
+        modelName: params.aiConfig.modelName,
+        purpose: params.purpose,
+        requestType: "session_analysis",
+        status: params.status,
+        latencyMs: params.latencyMs,
+        errorCode: params.errorCode ?? null,
+        sessionId: params.sessionId,
+        organizationId: params.organizationId,
+      },
+    });
+  } catch {
+    // Kullanım logu yazılamaması analizi başarısız saymamalı
+  }
+}
+
+/** Bu süreden eski QUEUED/RUNNING kayıtlar yarıda kalmış sayılır (süreç yeniden başladı vb.). */
+const STALE_ANALYSIS_MS = 10 * 60 * 1000;
+
+/**
+ * Sunucu yeniden başladığında veya kuyruğa alma adımı başarısız olduğunda
+ * QUEUED/RUNNING'de kalan oturumları yeniden kuyruğa alır.
+ */
+export async function requeueStaleAnalyses(log: {
+  info: (obj: unknown, msg?: string) => void;
+  error: (obj: unknown, msg?: string) => void;
+}): Promise<void> {
+  const stale = await prisma.assessmentSession.findMany({
+    where: {
+      status: "COMPLETED",
+      analysisPipeline: { in: ["QUEUED", "RUNNING"] },
+      updatedAt: { lt: new Date(Date.now() - STALE_ANALYSIS_MS) },
+    },
+    select: { id: true, assessment: { select: { organizationId: true } } },
+    take: 50,
+  });
+  for (const s of stale) {
+    queueSessionAnalysis(s.id, s.assessment.organizationId, log);
+  }
+  if (stale.length > 0) {
+    log.info({ count: stale.length }, "stale session analyses requeued");
+  }
+}
+
+/**
+ * Oturum tamamlandığında çağrılır: HR PDR analizini arka planda çalıştırır ve
+ * `analysisPipeline` durumunu günceller. İstek yanıtını bekletmez.
+ */
+export function queueSessionAnalysis(
+  sessionId: string,
+  organizationId: string,
+  log: { error: (obj: unknown, msg?: string) => void },
+): void {
+  setImmediate(() => {
+    void (async () => {
+      await prisma.$transaction([
+        prisma.assessmentSession.update({
+          where: { id: sessionId },
+          data: { analysisPipeline: "RUNNING", analysisError: null },
+        }),
+        prisma.sessionEvent.create({
+          data: { sessionId, type: "ANALYSIS_QUEUED" },
+        }),
+      ]);
+
+      try {
+        await runSessionAnalysis({
+          sessionId,
+          organizationId,
+          analysisType: "HR_PDR_ANALYSIS",
+        });
+        await prisma.$transaction([
+          prisma.assessmentSession.update({
+            where: { id: sessionId },
+            data: { analysisPipeline: "COMPLETED" },
+          }),
+          prisma.sessionEvent.create({
+            data: { sessionId, type: "ANALYSIS_COMPLETED" },
+          }),
+        ]);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "AI analizi başarısız";
+        log.error({ err, sessionId }, "background session analysis failed");
+        await prisma.$transaction([
+          prisma.assessmentSession.update({
+            where: { id: sessionId },
+            data: { analysisPipeline: "FAILED", analysisError: message.slice(0, 1000) },
+          }),
+          prisma.sessionEvent.create({
+            data: { sessionId, type: "ANALYSIS_FAILED", payload: { message: message.slice(0, 500) } },
+          }),
+        ]);
+      }
+    })().catch((err) => log.error({ err, sessionId }, "analysis pipeline update failed"));
+  });
 }
 
 function generateMockHrPdr(personnel: { firstName: string; lastName: string }) {

@@ -2,8 +2,10 @@ import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { decrypt } from "../lib/crypto.js";
+import { normalizeQuestionOptions } from "../lib/question-options.js";
 
 const generatedQuestionSchema = z.object({
   text: z.string().min(5).max(2000),
@@ -145,7 +147,22 @@ export async function generateAiQuestions(params: {
   }
 
   if (aiConfig.provider === "MOCK") {
-    return generateMockQuestions(dimension, count);
+    // Mock sorular da havuza kaydedilir; aksi halde soru setine eklenemezler.
+    const mock = generateMockQuestions(dimension, count);
+    const saved: Array<Record<string, unknown>> = [];
+    for (const q of mock) {
+      const { id: _id, _mock, dimension: _dim, ...rest } = q;
+      const question = await prisma.question.create({
+        data: {
+          ...(rest as Omit<Prisma.QuestionUncheckedCreateInput, "organizationId" | "dimension">),
+          dimension: dimension as Prisma.QuestionUncheckedCreateInput["dimension"],
+          options: Prisma.DbNull,
+          organizationId,
+        },
+      });
+      saved.push(question as unknown as Record<string, unknown>);
+    }
+    return saved;
   }
 
   const apiKey = decrypt(aiConfig.encryptedApiKey);
@@ -216,7 +233,7 @@ Kurallar:
         phase: q.phase as any,
         weight: q.weight,
         followUpPrompt: q.followUpPrompt ?? null,
-        options: q.options ?? null,
+        options: normalizeQuestionOptions(q.options) ?? Prisma.DbNull,
         minScale: q.type === "SCALE" ? (q.minScale ?? 1) : null,
         maxScale: q.type === "SCALE" ? (q.maxScale ?? 10) : null,
         isActive: true,
@@ -237,6 +254,7 @@ Kurallar:
       purpose: "question_generation",
       requestType: "question_ai_generate",
       status: "SUCCESS",
+      organizationId,
       metadata: { dimension, count: savedQuestions.length } as any,
     },
   });

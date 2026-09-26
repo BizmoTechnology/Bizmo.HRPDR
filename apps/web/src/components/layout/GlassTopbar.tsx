@@ -23,10 +23,12 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth.store";
 import { api } from "@/lib/api";
+import { usePermissions } from "@/lib/roles";
 import { ROLE_LABELS } from "@ph/shared";
 import {
   useNotificationList,
@@ -39,6 +41,7 @@ type QuickNavItem = {
   group: string;
   icon: React.ElementType;
   keywords?: string[];
+  requires?: "analyze" | "aiConfig";
 };
 
 const QUICK_NAV: QuickNavItem[] = [
@@ -83,6 +86,7 @@ const QUICK_NAV: QuickNavItem[] = [
     group: "Analiz",
     icon: FileText,
     keywords: ["pdf", "çıktı"],
+    requires: "analyze",
   },
   {
     label: "AI Asistan",
@@ -97,6 +101,7 @@ const QUICK_NAV: QuickNavItem[] = [
     group: "Sistem",
     icon: BrainCircuit,
     keywords: ["yapay zeka", "openai", "model"],
+    requires: "aiConfig",
   },
   {
     label: "Ayarlar",
@@ -131,23 +136,22 @@ export function GlassTopbar() {
   const clearAuth = useAuthStore((s) => s.clearAuth);
   const router = useRouter();
 
+  const queryClient = useQueryClient();
   const notifParams = useMemo(() => ({ pageSize: 8 }), []);
   const { data: notifBundle, isLoading: notifLoading } = useNotificationList(
     notifParams,
-    {
-      select: (data) => ({
-        previewItems: data.items,
-        unreadCount: data.items.reduce(
-          (acc, n) => acc + (n.readAt ? 0 : 1),
-          0,
-        ),
-      }),
-    },
+    { select: (data) => ({ previewItems: data.items }) },
   );
+  // Okunmamış sayısı yalnızca önizlemedeki 8 kayıttan değil, sunucudaki toplamdan gelir
+  const unreadParams = useMemo(() => ({ unreadOnly: true, pageSize: 1 }), []);
+  const { data: unreadTotal } = useNotificationList(unreadParams, {
+    select: (data) => data.total,
+    refetchInterval: 60_000,
+  });
   const markRead = useMarkNotificationRead();
 
   const notifPreview = notifBundle?.previewItems;
-  const unreadCount = notifBundle?.unreadCount ?? 0;
+  const unreadCount = unreadTotal ?? 0;
 
   useEffect(() => {
     const stored = localStorage.getItem("theme");
@@ -170,10 +174,17 @@ export function GlassTopbar() {
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
+  const { canAnalyze, canConfigureAi } = usePermissions();
   const filteredNav = useMemo(() => {
+    const allowed = QUICK_NAV.filter(
+      (item) =>
+        !item.requires ||
+        (item.requires === "analyze" && canAnalyze) ||
+        (item.requires === "aiConfig" && canConfigureAi),
+    );
     const q = paletteQ.trim().toLowerCase();
-    if (!q) return QUICK_NAV;
-    return QUICK_NAV.filter((item) => {
+    if (!q) return allowed;
+    return allowed.filter((item) => {
       const hay = [
         item.label,
         item.href,
@@ -184,7 +195,7 @@ export function GlassTopbar() {
         .toLowerCase();
       return hay.includes(q);
     });
-  }, [paletteQ]);
+  }, [paletteQ, canAnalyze, canConfigureAi]);
 
   useEffect(() => {
     setPaletteIndex(0);
@@ -260,8 +271,10 @@ export function GlassTopbar() {
       // Hata olsa bile local'i temizle
     }
     clearAuth();
+    // Sonraki kullanıcı önbellekteki verileri görmesin
+    queryClient.clear();
     toast.success("Oturumunuz kapatıldı");
-    router.push("/login");
+    router.replace("/login");
   };
 
   const initials = user

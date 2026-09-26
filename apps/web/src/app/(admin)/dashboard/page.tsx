@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   Users,
@@ -74,6 +76,7 @@ function TableSkeleton({ rows = 5 }: { rows?: number }) {
 
 export default function DashboardPage() {
   const { data: stats, isLoading } = useDashboardStats();
+  const router = useRouter();
 
   return (
     <div className="space-y-6 w-full">
@@ -108,7 +111,7 @@ export default function DashboardPage() {
               <StatCard
                 title="Toplam Personel"
                 value={stats?.totalPersonnel ?? 0}
-                subtitle="bu ay"
+                subtitle={`${stats?.activePersonnel ?? 0} aktif`}
                 icon={Users}
               />
             </motion.div>
@@ -116,7 +119,7 @@ export default function DashboardPage() {
               <StatCard
                 title="Tamamlanan Test"
                 value={stats?.completedSessions ?? 0}
-                subtitle="bu ay"
+                subtitle={`%${(stats?.completionRate ?? 0).toLocaleString("tr-TR")} tamamlanma`}
                 icon={ClipboardCheck}
               />
             </motion.div>
@@ -131,8 +134,8 @@ export default function DashboardPage() {
             <motion.div variants={item}>
               <StatCard
                 title="Bekleyen Test"
-                value={stats?.pendingSessions ?? 0}
-                subtitle="atanmış, bekleniyor"
+                value={(stats?.pendingSessions ?? 0) + (stats?.inProgressSessions ?? 0)}
+                subtitle={`${stats?.inProgressSessions ?? 0} devam ediyor`}
                 icon={Clock}
               />
             </motion.div>
@@ -159,10 +162,13 @@ export default function DashboardPage() {
                   Son Tamamlanan Testler
                 </h2>
               </div>
-              <button className="flex items-center gap-1 text-xs text-primary hover:underline underline-offset-4">
+              <Link
+                href="/assessments"
+                className="flex items-center gap-1 text-xs text-primary hover:underline underline-offset-4"
+              >
                 Tümünü gör
                 <ArrowRight className="h-3 w-3" />
-              </button>
+              </Link>
             </div>
 
             {isLoading ? (
@@ -286,6 +292,12 @@ export default function DashboardPage() {
                 {stats.topPerformers.map((p, idx) => (
                   <div
                     key={p.id}
+                    role="link"
+                    tabIndex={0}
+                    onClick={() => router.push(`/personnel/${p.id}`)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") router.push(`/personnel/${p.id}`);
+                    }}
                     className="flex items-center gap-3 p-3 rounded-xl bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer"
                   >
                     <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
@@ -319,10 +331,13 @@ export default function DashboardPage() {
               </div>
             )}
 
-            <button className="w-full mt-4 flex items-center justify-center gap-1.5 text-xs text-primary hover:underline underline-offset-4">
+            <Link
+              href="/analytics"
+              className="w-full mt-4 flex items-center justify-center gap-1.5 text-xs text-primary hover:underline underline-offset-4"
+            >
               Tüm analizleri gör
               <ArrowRight className="h-3 w-3" />
-            </button>
+            </Link>
           </GlassCard>
         </motion.div>
       </motion.div>

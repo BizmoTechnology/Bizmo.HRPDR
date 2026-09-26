@@ -1,27 +1,44 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { prisma } from "../../lib/prisma.js";
+import { requireRole, ROLE_GROUPS } from "../../middleware/authenticate.js";
 import { encrypt, decrypt } from "../../lib/crypto.js";
+import { completeChat } from "../../lib/llm.js";
 import { fetchAbacusRouteLLMModels } from "../../services/abacus-route-llm.service.js";
 import { DEFAULT_HR_PDR_PROMPT, DEFAULT_PSYCHOLOGICAL_PROMPT } from "../../services/session-analysis.service.js";
 
 const AiProviderEnum = z.enum(["CLAUDE", "OPENAI", "GEMINI", "ABACUS", "MOCK"]);
 
-const createSchema = z.object({
-  provider: AiProviderEnum,
-  modelName: z.string().min(1).max(200),
-  apiKey: z.string().min(1),
-  purpose: z.string().min(1).max(200),
-  isDefault: z.boolean().optional().default(false),
-  config: z.record(z.unknown()).optional(),
-});
+const DEFAULT_PURPOSE = "general";
+
+const createSchema = z
+  .object({
+    provider: AiProviderEnum,
+    modelName: z.string().trim().min(1).max(200),
+    /** MOCK sağlayıcı için gerekmez */
+    apiKey: z.string().trim().optional(),
+    purpose: z
+      .string()
+      .trim()
+      .max(200)
+      .optional()
+      .transform((v) => v || DEFAULT_PURPOSE),
+    isDefault: z.boolean().optional().default(false),
+    isActive: z.boolean().optional().default(true),
+    config: z.record(z.unknown()).optional(),
+  })
+  .refine((v) => v.provider === "MOCK" || (v.apiKey?.length ?? 0) > 0, {
+    message: "API anahtarı zorunlu",
+    path: ["apiKey"],
+  });
 
 const updateSchema = z.object({
   provider: AiProviderEnum.optional(),
-  modelName: z.string().min(1).max(200).optional(),
-  apiKey: z.string().min(1).optional(),
-  purpose: z.string().min(1).max(200).optional(),
+  modelName: z.string().trim().min(1).max(200).optional(),
+  apiKey: z.string().trim().min(1).optional(),
+  purpose: z.string().trim().min(1).max(200).optional(),
   isDefault: z.boolean().optional(),
+  isActive: z.boolean().optional(),
   config: z.record(z.unknown()).optional(),
 });
 
@@ -55,6 +72,7 @@ function maskApiKey(encryptedKey: string): string {
 
 const aiConfigRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.addHook("onRequest", fastify.authenticate);
+  fastify.addHook("preHandler", requireRole(ROLE_GROUPS.aiConfig));
 
   // GET / — list AI configs for org
   fastify.get("/", async (request, reply) => {
@@ -97,7 +115,7 @@ const aiConfigRoutes: FastifyPluginAsync = async (fastify) => {
     try {
       const body = createSchema.parse(request.body);
 
-      const encryptedApiKey = encrypt(body.apiKey);
+      const encryptedApiKey = encrypt(body.apiKey ?? "");
 
       if (body.isDefault) {
         await prisma.aiConfig.updateMany({
@@ -113,7 +131,7 @@ const aiConfigRoutes: FastifyPluginAsync = async (fastify) => {
           encryptedApiKey,
           purpose: body.purpose,
           isDefault: body.isDefault,
-          isActive: true,
+          isActive: body.isActive,
           config: body.config ? (body.config as Record<string, unknown>) as any : undefined,
           organizationId: orgId,
         },
@@ -168,6 +186,7 @@ const aiConfigRoutes: FastifyPluginAsync = async (fastify) => {
       if (body.modelName !== undefined) updateData.modelName = body.modelName;
       if (body.purpose !== undefined) updateData.purpose = body.purpose;
       if (body.isDefault !== undefined) updateData.isDefault = body.isDefault;
+      if (body.isActive !== undefined) updateData.isActive = body.isActive;
       if (body.config !== undefined) updateData.config = body.config;
       if (body.apiKey !== undefined) updateData.encryptedApiKey = encrypt(body.apiKey);
 
@@ -274,6 +293,44 @@ const aiConfigRoutes: FastifyPluginAsync = async (fastify) => {
       return reply.status(500).send({
         code: "INTERNAL_ERROR",
         message: "Varsayılan yapılandırma ayarlanırken hata oluştu",
+        traceId: request.traceId,
+      });
+    }
+  });
+
+  // POST /:id/test — bağlantı testi (kısa bir istem gönderir)
+  fastify.post<{ Params: { id: string } }>("/:id/test", async (request, reply) => {
+    const orgId = request.user.orgId!;
+    const cfg = await prisma.aiConfig.findFirst({
+      where: { id: request.params.id, organizationId: orgId },
+    });
+    if (!cfg) {
+      return reply.status(404).send({
+        code: "NOT_FOUND",
+        message: "AI yapılandırması bulunamadı",
+        traceId: request.traceId,
+      });
+    }
+
+    const startedAt = Date.now();
+    try {
+      const text = await completeChat({
+        provider: cfg.provider,
+        apiKey: cfg.provider === "MOCK" ? "" : decrypt(cfg.encryptedApiKey),
+        modelName: cfg.modelName,
+        system: "Bağlantı testi. Yalnızca 'OK' yaz.",
+        user: "ping",
+        responseFormat: "text",
+      });
+      return reply.send({
+        data: { ok: true, latencyMs: Date.now() - startedAt, sample: text.slice(0, 200) },
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Bağlantı başarısız";
+      request.log.warn({ err }, "aiConfig.test failed");
+      return reply.status(502).send({
+        code: "AI_CONNECTION_FAILED",
+        message,
         traceId: request.traceId,
       });
     }
@@ -497,12 +554,17 @@ const aiConfigRoutes: FastifyPluginAsync = async (fastify) => {
     Querystring: { from?: string; to?: string };
   }>("/usage", async (request, reply) => {
     try {
+      const orgId = request.user.orgId!;
       const { from, to } = request.query;
 
       const dateFilter: Record<string, Date> = {};
-      if (from) dateFilter.gte = new Date(from);
-      if (to) dateFilter.lte = new Date(to);
-      const createdAtWhere = Object.keys(dateFilter).length > 0 ? { createdAt: dateFilter } : {};
+      if (from && !Number.isNaN(Date.parse(from))) dateFilter.gte = new Date(from);
+      if (to && !Number.isNaN(Date.parse(to))) dateFilter.lte = new Date(to);
+      // Kullanım kayıtları organizasyona göre ayrılır (çok kiracılı)
+      const createdAtWhere = {
+        organizationId: orgId,
+        ...(Object.keys(dateFilter).length > 0 && { createdAt: dateFilter }),
+      };
 
       const [totalCalls, costAgg, byProvider, recentLogs] = await Promise.all([
         prisma.aiUsageLog.count({ where: createdAtWhere }),
@@ -526,18 +588,24 @@ const aiConfigRoutes: FastifyPluginAsync = async (fastify) => {
         }),
       ]);
 
+      // Prisma Decimal JSON'da metne dönüşür; istemciye sayı olarak gönder
+      const toNumber = (v: unknown) => (v === null || v === undefined ? 0 : Number(v));
+
       return reply.send({
         data: {
           totalCalls,
-          totalCostUsd: costAgg._sum.costUsd ?? 0,
+          totalCostUsd: toNumber(costAgg._sum.costUsd),
           byProvider: byProvider.map((bp) => ({
             provider: bp.provider,
             calls: bp._count.id,
-            costUsd: bp._sum.costUsd ?? 0,
+            costUsd: toNumber(bp._sum.costUsd),
             inputTokens: bp._sum.inputTokens ?? 0,
             outputTokens: bp._sum.outputTokens ?? 0,
           })),
-          recentLogs,
+          recentLogs: recentLogs.map((log) => ({
+            ...log,
+            costUsd: log.costUsd === null ? null : Number(log.costUsd),
+          })),
         },
       });
     } catch (err) {

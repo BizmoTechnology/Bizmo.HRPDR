@@ -1,4 +1,10 @@
-import { createCipheriv, createDecipheriv, randomBytes, createHash } from "crypto";
+import {
+  createCipheriv,
+  createDecipheriv,
+  randomBytes,
+  createHash,
+  timingSafeEqual,
+} from "crypto";
 
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 16;
@@ -37,4 +43,15 @@ export function decrypt(ciphertext: string): string {
 
 export function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
+}
+
+/**
+ * Ham token'ı saklanan SHA-256 özetiyle sabit zamanlı karşılaştırır.
+ * (bcrypt yalnızca ilk 72 baytı kullandığından JWT gibi uzun token'lar için uygun değildir.)
+ */
+export function tokenMatchesHash(token: string, storedHash: string | null | undefined): boolean {
+  if (!storedHash) return false;
+  const a = Buffer.from(hashToken(token), "hex");
+  const b = Buffer.from(storedHash, "hex");
+  return a.length === b.length && timingSafeEqual(a, b);
 }

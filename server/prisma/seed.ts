@@ -1,3 +1,5 @@
+// server/.env (ve kök .env) yüklensin: `npm run db:seed` tsx ile doğrudan çalışır
+import "../src/env.js";
 import { PrismaClient, Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { encrypt } from "../src/lib/crypto.js";
@@ -441,6 +443,7 @@ async function main() {
             latencyMs: 1420,
             requestType: "FULL_ANALYSIS",
             status: "OK",
+            organizationId: org.id,
             sessionId: sessionIdP003,
           },
           {
@@ -453,6 +456,7 @@ async function main() {
             latencyMs: 1180,
             requestType: "FULL_ANALYSIS",
             status: "OK",
+            organizationId: org.id,
           },
         ],
       });

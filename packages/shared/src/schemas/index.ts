@@ -54,22 +54,53 @@ const personnelShiftEnum = z.enum([
   "ROTATING",
 ]);
 
+/** Formlardaki boş metin alanlarını ("") `null` olarak normalize eder. */
+const emptyToNull = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess(
+    (v) => (typeof v === "string" && v.trim() === "" ? null : v),
+    schema,
+  );
+
+/** `datetime-local` ("2026-01-05T09:30") dahil ayrıştırılabilir tarih metni */
+const optionalDateString = emptyToNull(
+  z
+    .string()
+    .refine((v) => !Number.isNaN(Date.parse(v)), "Geçerli bir tarih girin")
+    .nullable()
+    .optional(),
+);
+
+/** İlişki kimlikleri (seed verilerinde cuid dışı kimlikler de bulunur) */
+const optionalId = emptyToNull(z.string().min(1).nullable().optional());
+
 export const createPersonnelSchema = z.object({
-  employeeId: z.string().min(1, "Sicil numarası zorunlu"),
-  firstName: z.string().min(1, "Ad zorunlu"),
-  lastName: z.string().min(1, "Soyad zorunlu"),
+  employeeId: z.string().trim().min(1, "Sicil numarası zorunlu").max(50),
+  firstName: z.string().trim().min(1, "Ad zorunlu").max(100),
+  lastName: z.string().trim().min(1, "Soyad zorunlu").max(100),
   email: emailSchema,
-  phone: z.string().optional(),
-  position: z.string().min(1, "Pozisyon zorunlu"),
-  experienceYear: z.number().int().min(0).default(0),
+  phone: emptyToNull(z.string().max(30).nullable().optional()),
+  position: z.string().trim().min(1, "Pozisyon zorunlu").max(200),
+  experienceYear: z.preprocess(
+    (v) => (v === "" || (typeof v === "number" && Number.isNaN(v)) ? 0 : v),
+    z.number().int().min(0, "Deneyim negatif olamaz").default(0),
+  ),
   status: personnelStatusEnum.default("ACTIVE"),
-  departmentId: z.string().cuid().optional().nullable(),
-  teamId: z.string().cuid().optional().nullable(),
+  departmentId: optionalId,
+  teamId: optionalId,
   shift: personnelShiftEnum.default("NONE"),
   preferredLanguage: z.string().length(2).default("tr"),
-  hireDate: z.string().datetime().optional().nullable(),
-  birthDate: z.string().datetime().optional().nullable(),
-  notes: z.string().optional().nullable(),
+  hireDate: optionalDateString,
+  birthDate: optionalDateString,
+  notes: emptyToNull(z.string().max(2000).nullable().optional()),
+  /** Personel portalı giriş şifresi (boş bırakılırsa değiştirilmez) */
+  portalPassword: emptyToNull(
+    z
+      .string()
+      .min(6, "Portal şifresi en az 6 karakter olmalı")
+      .max(128)
+      .nullable()
+      .optional(),
+  ),
 });
 
 export const updatePersonnelSchema = createPersonnelSchema.partial();

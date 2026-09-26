@@ -10,12 +10,16 @@ import {
   Menu, X, ChevronRight, Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { usePermissions } from "@/lib/roles";
+import { useAuthStore } from "@/store/auth.store";
 
 interface NavItem {
   label: string;
   href?: string;
   icon: React.ElementType;
   children?: NavItem[];
+  /** Menü öğesini yalnızca yetkili rollere göster (sunucu da ayrıca denetler) */
+  requires?: "analyze" | "aiConfig";
 }
 
 const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
@@ -37,14 +41,14 @@ const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
     title: "Analiz",
     items: [
       { label: "Analitik", href: "/analytics", icon: BarChart3 },
-      { label: "Raporlar", href: "/reports", icon: FileText },
+      { label: "Raporlar", href: "/reports", icon: FileText, requires: "analyze" },
       { label: "AI Asistan", href: "/ai-chat", icon: Sparkles },
     ],
   },
   {
     title: "Sistem",
     items: [
-      { label: "AI Yapılandırma", href: "/ai-config", icon: BrainCircuit },
+      { label: "AI Yapılandırma", href: "/ai-config", icon: BrainCircuit, requires: "aiConfig" },
       { label: "Ayarlar", href: "/settings", icon: Settings },
     ],
   },
@@ -185,9 +189,20 @@ function SidebarNavSections({
   setExpandedGroups: Dispatch<SetStateAction<string[]>>;
   pathname: string;
 }) {
+  const { canAnalyze, canConfigureAi } = usePermissions();
+  const visibleGroups = NAV_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter(
+      (item) =>
+        !item.requires ||
+        (item.requires === "analyze" && canAnalyze) ||
+        (item.requires === "aiConfig" && canConfigureAi),
+    ),
+  })).filter((group) => group.items.length > 0);
+
   return (
     <nav className="py-4 px-3 space-y-3 overflow-y-auto flex-1 scrollbar-none">
-      {NAV_GROUPS.map((group) => (
+      {visibleGroups.map((group) => (
         <div key={group.title}>
           {(!collapsed || inMobile) && (
             <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 px-3 mb-1">
@@ -218,6 +233,12 @@ export function GlassSidebar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
   const pathname = usePathname();
+  const organizationName = useAuthStore((s) => s.user?.organization?.name);
+
+  // Mobil menü bir bağlantıya tıklanınca (sayfa değişince) kapansın
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
 
   useEffect(() => {
     const stored = localStorage.getItem("sidebarCollapsed");
@@ -281,22 +302,19 @@ export function GlassSidebar() {
         {/* Org Seçici */}
         {!collapsed && (
           <div className="px-3 mb-2 pt-2">
-            <button
-              type="button"
-              className="w-full rounded-xl px-2.5 py-2.5 hover:bg-accent/60 transition-colors flex items-center gap-2.5"
-            >
+            <div className="w-full rounded-xl px-2.5 py-2.5 flex items-center gap-2.5">
               <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center flex-shrink-0">
                 <Building2 className="h-4 w-4 text-primary-foreground" />
               </div>
               <div className="flex-1 min-w-0 text-left">
                 <p className="text-sm font-bold leading-tight truncate text-foreground">
-                  Demo Şirket
+                  {organizationName ?? "Organizasyon"}
                 </p>
                 <p className="text-[10px] text-muted-foreground">
                   Organizasyon
                 </p>
               </div>
-            </button>
+            </div>
             <div className="h-px bg-border/50 mx-0 mt-2" />
           </div>
         )}

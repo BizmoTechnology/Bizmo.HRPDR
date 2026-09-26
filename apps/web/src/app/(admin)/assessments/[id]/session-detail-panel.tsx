@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   X,
@@ -14,12 +15,21 @@ import {
   ChevronDown,
   ChevronUp,
   Loader2,
+  CheckCircle2,
+  XCircle,
+  FileDown,
+  AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { apiErrorMessage } from "@/lib/api";
+import { usePermissions } from "@/lib/roles";
 import {
   useSession,
   useRunSessionAiAnalysis,
+  useSubmitReview,
+  useGenerateReport,
+  useSessionReport,
   type SessionDetail,
   type AnswerRow,
 } from "@/hooks/use-api";
@@ -68,8 +78,7 @@ export function SessionDetailPanel({
       { id: sessionId, analysisType: type },
       {
         onSuccess: () => toast.success("AI analizi tamamlandı"),
-        onError: (err) =>
-          toast.error(err instanceof Error ? err.message : "Analiz başarısız"),
+        onError: (err) => toast.error(apiErrorMessage(err, "Analiz başarısız")),
       },
     );
   };
@@ -118,6 +127,10 @@ export function SessionDetailPanel({
             <X className="h-4 w-4 text-muted-foreground" />
           </button>
         </div>
+
+        {session && session.status === "COMPLETED" && (
+          <ReviewAndReportBar session={session} sessionId={sessionId} />
+        )}
 
         <div className="flex gap-1 px-6 pt-3 pb-0 shrink-0">
           {ANALYSIS_TABS.map((tab) => (
@@ -329,6 +342,146 @@ export function SessionDetailPanel({
           )}
         </div>
       </motion.div>
+    </div>
+  );
+}
+
+const PIPELINE_LABELS: Record<string, { label: string; className: string }> = {
+  NOT_QUEUED: { label: "Analiz bekliyor", className: "bg-muted text-muted-foreground" },
+  QUEUED: { label: "Analiz sırada", className: "bg-amber-500/10 text-amber-600" },
+  RUNNING: { label: "Analiz sürüyor", className: "bg-amber-500/10 text-amber-600" },
+  COMPLETED: { label: "Analiz tamam", className: "bg-accent-green/10 text-accent-green" },
+  FAILED: { label: "Analiz başarısız", className: "bg-destructive/10 text-destructive" },
+};
+
+const REVIEW_LABELS: Record<string, { label: string; className: string }> = {
+  PENDING: { label: "İK onayı bekliyor", className: "bg-amber-500/10 text-amber-600" },
+  APPROVED: { label: "İK onaylı", className: "bg-accent-green/10 text-accent-green" },
+  REJECTED: { label: "İK reddetti", className: "bg-destructive/10 text-destructive" },
+};
+
+/** Tamamlanan oturum için analiz durumu, İK onayı ve rapor işlemleri */
+function ReviewAndReportBar({
+  session,
+  sessionId,
+}: {
+  session: SessionDetail;
+  sessionId: string;
+}) {
+  const { canAnalyze } = usePermissions();
+  const submitReview = useSubmitReview();
+  const generateReport = useGenerateReport();
+  const { data: report } = useSessionReport(canAnalyze ? sessionId : null);
+  const [comment, setComment] = useState(session.analysisReview?.comment ?? "");
+
+  const reviewStatus = session.analysisReview?.status ?? "PENDING";
+  const needsReview = session.requiresHrReview !== false;
+  const canGenerate = !needsReview || reviewStatus === "APPROVED";
+  const pipeline = PIPELINE_LABELS[session.analysisPipeline] ?? {
+    label: session.analysisPipeline,
+    className: "bg-muted text-muted-foreground",
+  };
+  const review = REVIEW_LABELS[reviewStatus]!;
+
+  const decide = (status: "APPROVED" | "REJECTED") => {
+    submitReview.mutate(
+      { id: sessionId, data: { status, comment: comment.trim() || undefined } },
+      {
+        onSuccess: () =>
+          toast.success(status === "APPROVED" ? "Analiz onaylandı" : "Analiz reddedildi"),
+        onError: (err) => toast.error(apiErrorMessage(err, "İnceleme kaydedilemedi")),
+      },
+    );
+  };
+
+  const handleGenerate = () => {
+    generateReport.mutate(sessionId, {
+      onSuccess: () => toast.success("Rapor oluşturuldu"),
+      onError: (err) => toast.error(apiErrorMessage(err, "Rapor oluşturulamadı")),
+    });
+  };
+
+  return (
+    <div className="px-6 py-3 border-b border-border/30 space-y-2 shrink-0 bg-muted/10">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className={cn("text-[11px] px-2 py-0.5 rounded-md font-medium", pipeline.className)}>
+          {pipeline.label}
+        </span>
+        {needsReview && (
+          <span className={cn("text-[11px] px-2 py-0.5 rounded-md font-medium", review.className)}>
+            {review.label}
+          </span>
+        )}
+        {session.analysisPipeline === "FAILED" && session.analysisError && (
+          <span className="inline-flex items-center gap-1 text-[11px] text-destructive">
+            <AlertTriangle className="h-3 w-3" />
+            {session.analysisError}
+          </span>
+        )}
+        {session.analysisPipeline === "NOT_QUEUED" && session.analysisError && (
+          <span className="text-[11px] text-muted-foreground">{session.analysisError}</span>
+        )}
+
+        {canAnalyze && (
+          <div className="ml-auto flex items-center gap-2">
+            {report ? (
+              <Link
+                href={`/reports/${report.id}`}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-primary/10 text-primary hover:bg-primary/15 transition-colors"
+              >
+                <FileText className="h-3.5 w-3.5" />
+                Raporu aç
+              </Link>
+            ) : null}
+            <button
+              type="button"
+              onClick={handleGenerate}
+              disabled={!canGenerate || generateReport.isPending}
+              title={canGenerate ? undefined : "Rapor için önce İK onayı gerekli"}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              {generateReport.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <FileDown className="h-3.5 w-3.5" />
+              )}
+              {report ? "Raporu yenile" : "Rapor oluştur"}
+            </button>
+          </div>
+        )}
+      </div>
+
+      {canAnalyze && needsReview && (
+        <div className="flex flex-col sm:flex-row gap-2">
+          <input
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            placeholder="İK yorumu (isteğe bağlı)"
+            maxLength={5000}
+            className="flex-1 h-8 px-3 rounded-lg bg-background border border-border/50 text-xs focus:outline-none focus:ring-2 focus:ring-primary/30"
+          />
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => decide("APPROVED")}
+              disabled={submitReview.isPending}
+              className="inline-flex items-center gap-1 px-3 h-8 rounded-lg text-xs font-medium bg-accent-green/10 text-accent-green hover:bg-accent-green/20 disabled:opacity-50 transition-colors"
+            >
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              Onayla
+            </button>
+            <button
+              type="button"
+              onClick={() => decide("REJECTED")}
+              disabled={submitReview.isPending}
+              className="inline-flex items-center gap-1 px-3 h-8 rounded-lg text-xs font-medium bg-destructive/10 text-destructive hover:bg-destructive/20 disabled:opacity-50 transition-colors"
+            >
+              <XCircle className="h-3.5 w-3.5" />
+              Reddet
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

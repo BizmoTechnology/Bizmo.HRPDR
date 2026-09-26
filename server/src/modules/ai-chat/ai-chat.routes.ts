@@ -250,6 +250,7 @@ const aiChatRoutes: FastifyPluginAsync = async (fastify) => {
             requestType: "ai_chat",
             status: "SUCCESS",
             userId,
+            organizationId: orgId,
             metadata: {
               conversationId,
               assistantMessageId: assistantMsg.id,

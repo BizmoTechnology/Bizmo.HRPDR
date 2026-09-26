@@ -1,6 +1,9 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { prisma } from "../../lib/prisma.js";
+import { HttpError, isHttpError } from "../../lib/http-error.js";
+import { assertQuestionsInOrg } from "../../lib/tenant.js";
+import { requireRoleForWrites, ROLE_GROUPS } from "../../middleware/authenticate.js";
 import { suggestQuestionSetFromAi } from "../../services/question-set-ai-suggest.service.js";
 
 const aiSuggestSchema = z.object({
@@ -33,8 +36,32 @@ const createSchema = z.object({
 
 const updateSchema = createSchema.partial();
 
+/** Öğelerin aynı organizasyona ait, tekrarsız soru ve sıra içerdiğini doğrular */
+async function validateItems(
+  organizationId: string,
+  items: Array<{ questionId: string; order: number }>,
+  questionSetId?: string,
+) {
+  const orders = items.map((i) => i.order);
+  if (new Set(orders).size !== orders.length) {
+    throw new HttpError("Soru sıraları tekil olmalı", 400, "DUPLICATE_ORDER");
+  }
+  const existing = questionSetId
+    ? await prisma.questionSetItem.findMany({
+        where: { questionSetId },
+        select: { questionId: true },
+      })
+    : [];
+  await assertQuestionsInOrg(
+    organizationId,
+    items.map((i) => i.questionId),
+    new Set(existing.map((e) => e.questionId)),
+  );
+}
+
 const questionSetRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.addHook("onRequest", fastify.authenticate);
+  fastify.addHook("preHandler", requireRoleForWrites(ROLE_GROUPS.manage));
 
   // GET / — list question sets with item count
   fastify.get<{
@@ -98,8 +125,15 @@ const questionSetRoutes: FastifyPluginAsync = async (fastify) => {
     try {
       const body = createSchema.parse(request.body);
       const { items, ...meta } = body;
+      await validateItems(orgId, items);
 
       const questionSet = await prisma.$transaction(async (tx) => {
+        if (meta.isDefault) {
+          await tx.questionSet.updateMany({
+            where: { organizationId: orgId, isDefault: true },
+            data: { isDefault: false },
+          });
+        }
         const qs = await tx.questionSet.create({
           data: {
             ...meta,
@@ -137,6 +171,7 @@ const questionSetRoutes: FastifyPluginAsync = async (fastify) => {
 
       return reply.status(201).send({ data: questionSet });
     } catch (err) {
+      if (isHttpError(err)) throw err;
       if (err instanceof z.ZodError) {
         return reply.status(400).send({
           code: "VALIDATION_ERROR",
@@ -256,11 +291,23 @@ const questionSetRoutes: FastifyPluginAsync = async (fastify) => {
         });
       }
 
+      if (items !== undefined) await validateItems(orgId, items, id);
+
       const updated = await prisma.$transaction(async (tx) => {
-        if (Object.keys(meta).length > 0) {
+        if (meta.isDefault) {
+          await tx.questionSet.updateMany({
+            where: { organizationId: orgId, isDefault: true, id: { not: id } },
+            data: { isDefault: false },
+          });
+        }
+        if (Object.keys(meta).length > 0 || items !== undefined) {
           await tx.questionSet.update({
             where: { id },
-            data: meta,
+            data: {
+              ...meta,
+              // İçerik değiştiğinde sürüm artar (oturumlar başlangıçtaki anlık görüntüyü kullanır)
+              ...(items !== undefined && { version: { increment: 1 } }),
+            },
           });
         }
 
@@ -299,6 +346,7 @@ const questionSetRoutes: FastifyPluginAsync = async (fastify) => {
 
       return reply.send({ data: updated });
     } catch (err) {
+      if (isHttpError(err)) throw err;
       if (err instanceof z.ZodError) {
         return reply.status(400).send({
           code: "VALIDATION_ERROR",

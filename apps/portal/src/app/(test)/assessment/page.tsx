@@ -4,14 +4,13 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  ChevronRight, ChevronLeft, Loader2, BrainCircuit,
+  ChevronRight, ChevronLeft, Loader2,
   CheckCircle2, AlertCircle,
 } from "lucide-react";
+import { toast } from "sonner";
 import { GlassCard } from "@ph/ui";
 import { cn } from "@/lib/utils";
-import axios from "axios";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
+import { api, errorCode, errorMessage, hasToken } from "@/lib/api";
 
 interface Question {
   id: string;
@@ -22,21 +21,49 @@ interface Question {
   options?: Record<string, string> | null;
   minScale?: number | null;
   maxScale?: number | null;
-  followUpPrompt?: string | null;
+  isRequired?: boolean;
 }
 
-interface SessionData {
+interface SavedAnswer {
+  questionId: string;
+  textAnswer: string | null;
+  scaleValue: number | null;
+  choiceKey: string | null;
+}
+
+interface ActiveSessionResponse {
   id: string;
-  questionSetSnapshot?: { questions?: Question[] };
-  questions?: Question[];
+  status: "NOT_STARTED" | "IN_PROGRESS";
+  questions: Question[];
+  answers: SavedAnswer[];
 }
 
-function getAuthHeaders(): Record<string, string> {
-  const token = sessionStorage.getItem("ph_portal_token");
-  return token ? { Authorization: `Bearer ${token}` } : {};
+type AnswerValue = string | number;
+
+function scaleBounds(q: Question) {
+  return { min: q.minScale ?? 1, max: q.maxScale ?? 10 };
+}
+
+function defaultAnswer(q: Question): AnswerValue {
+  if (q.type !== "SCALE") return "";
+  const { min, max } = scaleBounds(q);
+  return Math.round((min + max) / 2);
+}
+
+function savedToValue(q: Question, a: SavedAnswer): AnswerValue | undefined {
+  if (q.type === "SCALE") return a.scaleValue ?? undefined;
+  if (q.type === "MULTIPLE_CHOICE") return a.choiceKey ?? undefined;
+  return a.textAnswer ?? undefined;
+}
+
+function answerPayload(q: Question, value: AnswerValue) {
+  if (q.type === "SCALE") return { scaleValue: Number(value) };
+  if (q.type === "MULTIPLE_CHOICE") return { choiceKey: String(value) };
+  return { textAnswer: String(value).trim() };
 }
 
 function generateDedupeKey(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
     const r = (Math.random() * 16) | 0;
     const v = c === "x" ? r : (r & 0x3) | 0x8;
@@ -46,54 +73,85 @@ function generateDedupeKey(): string {
 
 export default function AssessmentPage() {
   const router = useRouter();
-  const [session, setSession] = useState<SessionData | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [answers, setAnswers] = useState<Record<string, string | number>>({});
-  const [currentAnswer, setCurrentAnswer] = useState<string | number>("");
+  const [answers, setAnswers] = useState<Record<string, AnswerValue>>({});
+  const [currentAnswer, setCurrentAnswer] = useState<AnswerValue>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isCompleting, setIsCompleting] = useState(false);
   const [direction, setDirection] = useState(1);
-  const [loadError, setLoadError] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  // Soru başına sabit anahtar: aynı cevabın tekrar gönderimi idempotent olur
   const dedupeKeysRef = useRef<Record<string, string>>({});
+  const questionShownAtRef = useRef<number>(Date.now());
 
   useEffect(() => {
-    const stored = sessionStorage.getItem("ph_session");
-    if (!stored) {
-      router.replace("/welcome");
+    if (!hasToken()) {
+      router.replace("/login");
       return;
     }
-    try {
-      const parsed: SessionData = JSON.parse(stored);
-      setSession(parsed);
 
-      const q =
-        parsed.questions ??
-        parsed.questionSetSnapshot?.questions ??
-        [];
-      if (q.length === 0) {
-        setLoadError(true);
-      } else {
-        setQuestions(q);
+    (async () => {
+      try {
+        const { data } = await api.get<{ data: ActiveSessionResponse | null }>(
+          "/api/sessions/portal/sessions/active",
+        );
+        const active = data.data;
+        if (!active) {
+          router.replace("/welcome");
+          return;
+        }
+        if (active.status !== "IN_PROGRESS") {
+          // Başlatılmamış oturum: rıza adımı karşılama sayfasında
+          router.replace("/welcome");
+          return;
+        }
+        if (active.questions.length === 0) {
+          setLoadError("Bu değerlendirmede soru bulunmuyor.");
+          return;
+        }
+
+        const restored: Record<string, AnswerValue> = {};
+        for (const a of active.answers) {
+          const q = active.questions.find((x) => x.id === a.questionId);
+          const v = q ? savedToValue(q, a) : undefined;
+          if (q && v !== undefined) restored[q.id] = v;
+        }
+
+        setSessionId(active.id);
+        setQuestions(active.questions);
+        setAnswers(restored);
+        // Kaldığı yerden: ilk cevaplanmamış soru
+        const firstOpen = active.questions.findIndex((q) => restored[q.id] === undefined);
+        setCurrentIndex(firstOpen === -1 ? active.questions.length - 1 : firstOpen);
+      } catch (err) {
+        setLoadError(errorMessage(err, "Sorular yüklenemedi"));
       }
-    } catch {
-      setLoadError(true);
-    }
+    })();
   }, [router]);
 
   const currentQuestion = questions[currentIndex];
   const total = questions.length;
-  const progress = total > 0 ? ((currentIndex) / total) * 100 : 0;
+  const answeredCount = Object.keys(answers).length;
+  const progress = total > 0 ? (answeredCount / total) * 100 : 0;
 
   useEffect(() => {
     if (!currentQuestion) return;
     const saved = answers[currentQuestion.id];
-    setCurrentAnswer(saved ?? (currentQuestion.type === "SCALE" ? 5 : ""));
-  }, [currentIndex, currentQuestion, answers]);
+    setCurrentAnswer(saved ?? defaultAnswer(currentQuestion));
+    questionShownAtRef.current = Date.now();
+    // Yalnızca soru değiştiğinde çalışır; `answers` güncellemesi yazılan cevabı ezmesin
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentQuestion?.id]);
 
   const isAnswerValid = useCallback(() => {
     if (!currentQuestion) return false;
-    if (currentQuestion.type === "SCALE") return true;
+    if (currentQuestion.type === "SCALE") {
+      const { min, max } = scaleBounds(currentQuestion);
+      const v = Number(currentAnswer);
+      return Number.isInteger(v) && v >= min && v <= max;
+    }
     if (currentQuestion.type === "MULTIPLE_CHOICE") return String(currentAnswer).length > 0;
     return String(currentAnswer).trim().length >= 3;
   }, [currentAnswer, currentQuestion]);
@@ -105,45 +163,49 @@ export default function AssessmentPage() {
     return dedupeKeysRef.current[questionId];
   };
 
-  const submitAnswer = async (questionId: string, answer: string | number) => {
-    if (!session) return;
+  /** Cevabı kaydeder; başarısızsa kullanıcıyı bilgilendirir ve ilerlemeyi durdurur. */
+  const submitAnswer = async (question: Question, value: AnswerValue): Promise<boolean> => {
+    if (!sessionId) return false;
     try {
-      await axios.post(
-        `${API_BASE}/api/sessions/portal/sessions/${session.id}/answer`,
-        {
-          questionId,
-          answer: String(answer),
-          clientDedupeKey: getDedupeKey(questionId),
-        },
-        { headers: getAuthHeaders() },
-      );
-      dedupeKeysRef.current[questionId] = generateDedupeKey();
-    } catch {
-      // Silently continue — answers are stored locally and retry on next navigation
+      await api.post(`/api/sessions/portal/sessions/${sessionId}/answer`, {
+        questionId: question.id,
+        ...answerPayload(question, value),
+        durationSec: Math.round((Date.now() - questionShownAtRef.current) / 1000),
+        clientDedupeKey: getDedupeKey(question.id),
+      });
+      return true;
+    } catch (err) {
+      toast.error(errorMessage(err, "Cevabın kaydedilemedi. Lütfen tekrar dene."));
+      return false;
     }
   };
 
   const handleNext = async () => {
-    if (!isAnswerValid() || !currentQuestion || !session) return;
+    if (!isAnswerValid() || !currentQuestion || !sessionId) return;
+
+    setIsSubmitting(true);
+    const saved = await submitAnswer(currentQuestion, currentAnswer);
+    setIsSubmitting(false);
+    if (!saved) return;
 
     const updatedAnswers = { ...answers, [currentQuestion.id]: currentAnswer };
     setAnswers(updatedAnswers);
 
-    setIsSubmitting(true);
-    await submitAnswer(currentQuestion.id, currentAnswer);
-    setIsSubmitting(false);
-
     if (currentIndex === total - 1) {
       setIsCompleting(true);
       try {
-        await axios.post(
-          `${API_BASE}/api/sessions/portal/sessions/${session.id}/complete`,
-          {},
-          { headers: getAuthHeaders() },
-        );
-        router.push("/complete");
-      } catch {
+        await api.post(`/api/sessions/portal/sessions/${sessionId}/complete`);
+        router.replace("/complete");
+      } catch (err) {
         setIsCompleting(false);
+        if (errorCode(err) === "MISSING_ANSWERS") {
+          const firstMissing = questions.findIndex((q) => updatedAnswers[q.id] === undefined);
+          if (firstMissing !== -1) {
+            setDirection(-1);
+            setCurrentIndex(firstMissing);
+          }
+        }
+        toast.error(errorMessage(err, "Değerlendirme tamamlanamadı. Lütfen tekrar dene."));
       }
       return;
     }
@@ -154,7 +216,6 @@ export default function AssessmentPage() {
 
   const handleBack = () => {
     if (currentIndex === 0 || !currentQuestion) return;
-    setAnswers((prev) => ({ ...prev, [currentQuestion.id]: currentAnswer }));
     setDirection(-1);
     setCurrentIndex((i) => i - 1);
   };
@@ -165,7 +226,7 @@ export default function AssessmentPage() {
     exit: (dir: number) => ({ opacity: 0, x: dir > 0 ? -48 : 48 }),
   };
 
-  if (loadError || (session && questions.length === 0 && !currentQuestion)) {
+  if (loadError) {
     return (
       <div
         className="min-h-screen flex items-center justify-center p-4"
@@ -179,9 +240,7 @@ export default function AssessmentPage() {
           <h2 className="text-lg font-semibold text-foreground mb-2">
             Sorular Yüklenemedi
           </h2>
-          <p className="text-sm text-muted-foreground mb-4">
-            Oturum verilerinde bir sorun oluştu. Lütfen tekrar giriş yapın.
-          </p>
+          <p className="text-sm text-muted-foreground mb-4">{loadError}</p>
           <button
             onClick={() => router.replace("/welcome")}
             className="text-sm text-primary hover:underline underline-offset-4"
@@ -193,7 +252,7 @@ export default function AssessmentPage() {
     );
   }
 
-  if (!session || !currentQuestion) {
+  if (!sessionId || !currentQuestion) {
     return (
       <div
         className="min-h-screen flex items-center justify-center"
@@ -232,6 +291,7 @@ export default function AssessmentPage() {
         <div className="w-full h-1.5 bg-white/10 rounded-full mb-6 overflow-hidden">
           <motion.div
             className="h-full bg-primary rounded-full"
+            initial={{ width: 0 }}
             animate={{ width: `${progress}%` }}
             transition={{ duration: 0.4, ease: "easeOut" }}
           />
@@ -318,12 +378,12 @@ export default function AssessmentPage() {
                     <div className="space-y-4">
                       <div className="flex items-center gap-4">
                         <span className="text-sm text-muted-foreground w-16 text-right tabular-nums">
-                          {currentQuestion.minScale ?? 1}
+                          {scaleBounds(currentQuestion).min}
                         </span>
                         <input
                           type="range"
-                          min={currentQuestion.minScale ?? 1}
-                          max={currentQuestion.maxScale ?? 10}
+                          min={scaleBounds(currentQuestion).min}
+                          max={scaleBounds(currentQuestion).max}
                           value={Number(currentAnswer)}
                           onChange={(e) => setCurrentAnswer(Number(e.target.value))}
                           className="flex-1 h-2 rounded-full accent-primary cursor-pointer"
@@ -337,7 +397,7 @@ export default function AssessmentPage() {
                           {currentAnswer}
                         </span>
                         <span className="text-lg text-muted-foreground">
-                          /{currentQuestion.maxScale ?? 10}
+                          /{scaleBounds(currentQuestion).max}
                         </span>
                       </div>
                     </div>
@@ -345,12 +405,19 @@ export default function AssessmentPage() {
 
                   {/* Multiple Choice */}
                   {currentQuestion.type === "MULTIPLE_CHOICE" &&
+                    !currentQuestion.options && (
+                      <p className="text-sm text-muted-foreground">
+                        Bu soru için seçenek tanımlanmamış. Lütfen İK ile iletişime geçin.
+                      </p>
+                    )}
+                  {currentQuestion.type === "MULTIPLE_CHOICE" &&
                     currentQuestion.options && (
                       <div className="grid gap-2">
                         {Object.entries(currentQuestion.options).map(
                           ([key, val]) => (
                             <button
                               key={key}
+                              type="button"
                               onClick={() => setCurrentAnswer(key)}
                               className={cn(
                                 "w-full text-left px-4 py-3 rounded-xl border text-sm font-medium transition-all",
@@ -369,15 +436,6 @@ export default function AssessmentPage() {
                 </div>
               </GlassCard>
 
-              {/* AI Follow-up placeholder */}
-              {currentQuestion.followUpPrompt && (
-                <div className="rounded-xl bg-accent-purple/5 border border-accent-purple/10 p-3 mb-4 flex items-start gap-2">
-                  <BrainCircuit className="h-4 w-4 text-accent-purple mt-0.5 flex-shrink-0" />
-                  <p className="text-xs text-accent-purple/80">
-                    AI takip sorusu hazırlanıyor...
-                  </p>
-                </div>
-              )}
             </motion.div>
           </AnimatePresence>
         </div>
@@ -386,7 +444,7 @@ export default function AssessmentPage() {
         <div className="flex items-center gap-3 mt-2">
           <button
             onClick={handleBack}
-            disabled={currentIndex === 0}
+            disabled={currentIndex === 0 || isSubmitting || isCompleting}
             className="h-12 px-4 rounded-xl border border-border/50 text-sm font-medium text-muted-foreground
               hover:bg-accent hover:text-foreground transition-all disabled:opacity-30 disabled:cursor-not-allowed
               flex items-center gap-1.5"

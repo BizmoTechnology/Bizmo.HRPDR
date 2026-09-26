@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { prisma } from "../../lib/prisma.js";
+import { requireRoleForWrites, ROLE_GROUPS } from "../../middleware/authenticate.js";
 import { generateAiQuestions } from "../../services/question-ai-generate.service.js";
 
 const DEFAULT_PAGE_SIZE = 20;
@@ -53,6 +54,7 @@ function parsePagination(query: { page?: string; pageSize?: string }) {
 
 const questionRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.addHook("onRequest", fastify.authenticate);
+  fastify.addHook("preHandler", requireRoleForWrites(ROLE_GROUPS.manage));
 
   // GET / — list questions (paginated)
   fastify.get<{

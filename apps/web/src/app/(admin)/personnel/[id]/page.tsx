@@ -22,10 +22,17 @@ import {
   AlertTriangle,
   Loader2,
   X,
+  KeyRound,
 } from "lucide-react";
 import { GlassCard, ScoreGauge, PortalModal } from "@ph/ui";
 import { cn } from "@/lib/utils";
-import { usePersonnel, useDeletePersonnel } from "@/hooks/use-api";
+import { apiErrorMessage } from "@/lib/api";
+import { usePermissions } from "@/lib/roles";
+import {
+  usePersonnel,
+  useDeletePersonnel,
+  useSetPortalPassword,
+} from "@/hooks/use-api";
 
 const STATUS_MAP: Record<string, { label: string; class: string }> = {
   ACTIVE: { label: "Aktif", class: "text-accent-green bg-accent-green/10" },
@@ -53,12 +60,16 @@ const SESSION_STATUS_MAP: Record<string, { label: string; class: string }> = {
     label: "Devam Ediyor",
     class: "text-primary bg-primary/10",
   },
-  PENDING: {
-    label: "Bekliyor",
+  NOT_STARTED: {
+    label: "Başlamadı",
     class: "text-accent-orange bg-accent-orange/10",
   },
-  CANCELLED: {
-    label: "İptal",
+  PAUSED: {
+    label: "Duraklatıldı",
+    class: "text-accent-orange bg-accent-orange/10",
+  },
+  EXPIRED: {
+    label: "Süresi Doldu",
     class: "text-accent-red bg-accent-red/10",
   },
 };
@@ -127,17 +138,35 @@ export default function PersonnelDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { data: person, isLoading } = usePersonnel(id);
   const deleteMutation = useDeletePersonnel();
+  const setPortalPassword = useSetPortalPassword();
+  const { canManage, canAnalyze } = usePermissions();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showPortalDialog, setShowPortalDialog] = useState(false);
+  const [portalPassword, setPortalPasswordValue] = useState("");
+
+  const handleSetPortalPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (portalPassword.length < 6) {
+      toast.error("Portal şifresi en az 6 karakter olmalı");
+      return;
+    }
+    try {
+      await setPortalPassword.mutateAsync({ id, password: portalPassword });
+      toast.success("Portal şifresi güncellendi");
+      setShowPortalDialog(false);
+      setPortalPasswordValue("");
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Portal şifresi güncellenemedi"));
+    }
+  };
 
   const handleDelete = async () => {
     try {
       await deleteMutation.mutateAsync(id);
       toast.success("Personel başarıyla silindi");
       router.push("/personnel");
-    } catch (err: any) {
-      toast.error(
-        err?.response?.data?.message ?? "Personel silinirken hata oluştu"
-      );
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Personel silinirken hata oluştu"));
     }
   };
 
@@ -199,7 +228,16 @@ export default function PersonnelDetailPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        {canManage && (
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => setShowPortalDialog(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-muted/40 text-sm font-medium text-foreground hover:bg-muted/60 transition-colors"
+            title={person.hasPortalPassword ? "Portal şifresini sıfırla" : "Portal şifresi belirle"}
+          >
+            <KeyRound className="h-4 w-4" />
+            {person.hasPortalPassword ? "Portal Şifresini Sıfırla" : "Portal Şifresi Belirle"}
+          </button>
           <Link
             href={`/personnel/${id}/edit`}
             className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-muted/40 text-sm font-medium text-foreground hover:bg-muted/60 transition-colors"
@@ -215,7 +253,18 @@ export default function PersonnelDetailPage() {
             Sil
           </button>
         </div>
+        )}
       </motion.div>
+
+      {!person.hasPortalPassword && (
+        <div className="flex items-start gap-2 rounded-xl border border-accent-orange/30 bg-accent-orange/5 px-4 py-3 text-sm text-accent-orange">
+          <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+          <span>
+            Bu personelin portal şifresi yok; atanan değerlendirmelere giriş yapamaz.
+            {canManage && " “Portal Şifresi Belirle” ile şifre oluşturun."}
+          </span>
+        </div>
+      )}
 
       <motion.div
         className="grid grid-cols-1 lg:grid-cols-3 gap-4"
@@ -358,9 +407,21 @@ export default function PersonnelDetailPage() {
                         className="hover:bg-muted/30 transition-colors"
                       >
                         <td className="py-3 pr-4">
-                          <span className="text-sm font-medium text-foreground">
+                          <Link
+                            href={`/assessments/${s.assessment.id}`}
+                            className="text-sm font-medium text-foreground hover:text-primary transition-colors"
+                          >
                             {s.assessment.title}
-                          </span>
+                          </Link>
+                          {s.reportId && canAnalyze && (
+                            <Link
+                              href={`/reports/${s.reportId}`}
+                              className="ml-2 inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
+                            >
+                              <FileText className="h-3 w-3" />
+                              Rapor
+                            </Link>
+                          )}
                         </td>
                         <td className="py-3 pr-4">
                           <span
@@ -421,6 +482,74 @@ export default function PersonnelDetailPage() {
           )}
         </GlassCard>
       </motion.div>
+
+      {/* Portal Şifresi */}
+      <AnimatePresence>
+        {showPortalDialog && (
+          <PortalModal>
+            <motion.div
+              className="fixed inset-0 z-50 flex items-center justify-center"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            >
+              <div
+                className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+                onClick={() => setShowPortalDialog(false)}
+              />
+              <motion.form
+                onSubmit={handleSetPortalPassword}
+                className="relative glass-surface rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl space-y-4"
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+              >
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-semibold text-foreground">Portal Şifresi</h3>
+                  <button
+                    type="button"
+                    onClick={() => setShowPortalDialog(false)}
+                    className="p-1.5 rounded-lg hover:bg-muted/40 text-muted-foreground"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {person.firstName} {person.lastName} portala sicil numarası (
+                  <span className="font-medium text-foreground">{person.employeeId}</span>) ve bu
+                  şifreyle giriş yapar. Mevcut portal oturumları sonlandırılır.
+                </p>
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  value={portalPassword}
+                  onChange={(e) => setPortalPasswordValue(e.target.value)}
+                  placeholder="En az 6 karakter"
+                  className="w-full h-10 px-3 rounded-xl bg-muted/40 border border-border/30 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  autoFocus
+                />
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowPortalDialog(false)}
+                    className="px-4 py-2 rounded-xl text-sm font-medium text-muted-foreground hover:bg-muted/40"
+                  >
+                    İptal
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={setPortalPassword.isPending}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
+                  >
+                    {setPortalPassword.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                    Kaydet
+                  </button>
+                </div>
+              </motion.form>
+            </motion.div>
+          </PortalModal>
+        )}
+      </AnimatePresence>
 
       {/* Delete Confirmation Dialog */}
       <AnimatePresence>

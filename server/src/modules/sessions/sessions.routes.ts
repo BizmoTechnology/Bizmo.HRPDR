@@ -4,6 +4,7 @@ import { z } from "zod";
 import { prisma } from "../../lib/prisma.js";
 import {
   getActiveAiConfig,
+  hasAiConsent,
   queueSessionAnalysis,
   runSessionAnalysis,
 } from "../../services/session-analysis.service.js";
@@ -541,7 +542,7 @@ export const sessionPortalRoutes: FastifyPluginAsync = async (fastify) => {
         textAnswer = null;
         choiceKey = null;
       } else if (question.type === "MULTIPLE_CHOICE") {
-        if (!choiceKey || (question.options && !(choiceKey in question.options))) {
+        if (!choiceKey || (question.options && !Object.hasOwn(question.options, choiceKey))) {
           return reply.status(400).send({
             code: "INVALID_ANSWER",
             message: "Lütfen seçeneklerden birini seçin",
@@ -649,11 +650,8 @@ export const sessionPortalRoutes: FastifyPluginAsync = async (fastify) => {
 
       const organizationId = session.assessment.organizationId;
       const aiConfig = await getActiveAiConfig(organizationId);
-      const aiConsent = await prisma.consentRecord.findFirst({
-        where: { sessionId: session.id, consentType: "AI_ASSESSMENT", accepted: true },
-        select: { id: true },
-      });
-      const willAnalyze = !!aiConfig && !!aiConsent;
+      const aiConsent = await hasAiConsent(session.id);
+      const willAnalyze = !!aiConfig && aiConsent;
 
       const now = new Date();
       const durationSec = session.startedAt

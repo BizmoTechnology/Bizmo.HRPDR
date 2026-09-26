@@ -16,6 +16,12 @@ const AI_TIMEOUT_MS = 180_000;
 let accessToken: string | null = null;
 let onAuthFailure: (() => void) | null = null;
 
+/**
+ * 401 yanıtında yenilenmeyecek kimlik doğrulama çağrıları (ör. hatalı şifre).
+ * logout / change-password gibi oturum gerektiren çağrılar bu listede değildir.
+ */
+const PUBLIC_AUTH_ENDPOINT = /\/api\/auth\/(login|refresh|forgot-password|reset-password)(\?|$)/;
+
 /** Kalıcı oturum bilgisi (auth store, localStorage "ph-auth") var mı? */
 function hasSessionHint(): boolean {
   if (typeof window === "undefined") return false;
@@ -38,7 +44,7 @@ export function setAuthFailureHandler(handler: () => void) {
 api.interceptors.request.use(async (config) => {
   // Access token yalnızca bellekte tutulur; sayfa yenilendiğinde ilk istekten önce
   // (paralel sorguların hepsi 401 alıp ayrı ayrı yenilemesin diye) bir kez yenilenir.
-  if (!accessToken && hasSessionHint() && !config.url?.includes("/api/auth/")) {
+  if (!accessToken && hasSessionHint() && !PUBLIC_AUTH_ENDPOINT.test(config.url ?? "")) {
     await refreshAccessToken();
   }
   if (accessToken) {
@@ -78,8 +84,8 @@ api.interceptors.response.use(
       | (InternalAxiosRequestConfig & { _retry?: boolean })
       | undefined;
 
-    // Giriş/çıkış/yenileme çağrılarında 401 normal bir sonuçtur (ör. hatalı şifre)
-    const isAuthCall = originalRequest?.url?.includes("/api/auth/");
+    // Giriş/yenileme çağrılarında 401 normal bir sonuçtur (ör. hatalı şifre)
+    const isAuthCall = PUBLIC_AUTH_ENDPOINT.test(originalRequest?.url ?? "");
 
     if (error.response?.status === 401 && originalRequest && !originalRequest._retry && !isAuthCall) {
       originalRequest._retry = true;

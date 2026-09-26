@@ -40,14 +40,22 @@ const updateSchema = createSchema.partial();
 async function validateItems(
   organizationId: string,
   items: Array<{ questionId: string; order: number }>,
+  questionSetId?: string,
 ) {
   const orders = items.map((i) => i.order);
   if (new Set(orders).size !== orders.length) {
     throw new HttpError("Soru sıraları tekil olmalı", 400, "DUPLICATE_ORDER");
   }
+  const existing = questionSetId
+    ? await prisma.questionSetItem.findMany({
+        where: { questionSetId },
+        select: { questionId: true },
+      })
+    : [];
   await assertQuestionsInOrg(
     organizationId,
     items.map((i) => i.questionId),
+    new Set(existing.map((e) => e.questionId)),
   );
 }
 
@@ -283,7 +291,7 @@ const questionSetRoutes: FastifyPluginAsync = async (fastify) => {
         });
       }
 
-      if (items !== undefined) await validateItems(orgId, items);
+      if (items !== undefined) await validateItems(orgId, items, id);
 
       const updated = await prisma.$transaction(async (tx) => {
         if (meta.isDefault) {

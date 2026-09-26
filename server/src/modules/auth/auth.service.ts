@@ -41,6 +41,49 @@ export function removeRefreshTokenHash(
   return rest.length > 0 ? rest.join(",") : null;
 }
 
+/**
+ * Token listesini iyimser kilitle günceller: okunan değer değişmediyse yazar,
+ * değiştiyse (eşzamanlı giriş/çıkış) yeniden dener. Böylece aynı anda açılan iki
+ * oturumdan biri sessizce düşmez.
+ */
+export async function updateUserRefreshTokens(
+  userId: string,
+  change: (stored: string | null) => string | null,
+): Promise<void> {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const current = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { refreshToken: true },
+    });
+    if (!current) return;
+    const res = await prisma.user.updateMany({
+      where: { id: userId, refreshToken: current.refreshToken },
+      data: { refreshToken: change(current.refreshToken) },
+    });
+    if (res.count === 1) return;
+  }
+  throw new Error("REFRESH_TOKEN_UPDATE_CONFLICT");
+}
+
+export async function updatePersonnelRefreshTokens(
+  personnelId: string,
+  change: (stored: string | null) => string | null,
+): Promise<void> {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const current = await prisma.personnel.findUnique({
+      where: { id: personnelId },
+      select: { portalRefreshToken: true },
+    });
+    if (!current) return;
+    const res = await prisma.personnel.updateMany({
+      where: { id: personnelId, portalRefreshToken: current.portalRefreshToken },
+      data: { portalRefreshToken: change(current.portalRefreshToken) },
+    });
+    if (res.count === 1) return;
+  }
+  throw new Error("REFRESH_TOKEN_UPDATE_CONFLICT");
+}
+
 /** Portal access token ömrü (development.md §12.1: 60 dk oturum zaman aşımı) */
 export const PORTAL_ACCESS_TTL = "1h";
 const PORTAL_REFRESH_TTL_SEC = 60 * 60 * 24;
@@ -73,14 +116,9 @@ export async function signTokens(
     { expiresIn: refreshTtlSec, jwtid: randomUUID() }
   );
 
-  const current = await prisma.user.findUnique({
-    where: { id: payload.sub },
-    select: { refreshToken: true },
-  });
-  await prisma.user.update({
-    where: { id: payload.sub },
-    data: { refreshToken: addRefreshTokenHash(current?.refreshToken, refreshToken) },
-  });
+  await updateUserRefreshTokens(payload.sub, (stored) =>
+    addRefreshTokenHash(stored, refreshToken),
+  );
 
   return { accessToken, refreshToken };
 }
@@ -160,12 +198,9 @@ export async function portalLogin(
     { expiresIn: PORTAL_REFRESH_TTL_SEC, jwtid: randomUUID() }
   );
 
-  await prisma.personnel.update({
-    where: { id: personnel.id },
-    data: {
-      portalRefreshToken: addRefreshTokenHash(personnel.portalRefreshToken, portalRefreshToken),
-    },
-  });
+  await updatePersonnelRefreshTokens(personnel.id, (stored) =>
+    addRefreshTokenHash(stored, portalRefreshToken),
+  );
 
   return {
     accessToken,

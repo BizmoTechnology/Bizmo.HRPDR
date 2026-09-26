@@ -17,6 +17,8 @@ import {
   PORTAL_ACCESS_TTL,
   hasRefreshTokenHash,
   removeRefreshTokenHash,
+  updatePersonnelRefreshTokens,
+  updateUserRefreshTokens,
 } from "./auth.service.js";
 import bcrypt from "bcryptjs";
 import { prisma } from "../../lib/prisma.js";
@@ -33,8 +35,9 @@ const refreshRateLimit = {
 };
 
 /**
- * Giriş denemeleri IP + hesap kimliği ile sınırlandırılır; fabrikada ortak
- * kiosk/IP kullanan personel birbirini kilitlemez.
+ * Giriş denemeleri hesap kimliği (e-posta/sicil) bazında sınırlandırılır:
+ * IP değiştirerek kaba kuvvet denemesi yapılamaz, fabrikada ortak kiosk/IP
+ * kullanan personel de birbirini kilitlemez. Hesap bilgisi yoksa IP kullanılır.
  */
 function loginRateLimit(field: "email" | "employeeId") {
   return {
@@ -44,8 +47,9 @@ function loginRateLimit(field: "email" | "employeeId") {
         timeWindow: "1 minute",
         keyGenerator: (request: FastifyRequest) => {
           const body = request.body as Record<string, unknown> | undefined;
-          const account = typeof body?.[field] === "string" ? String(body[field]).toLowerCase() : "";
-          return `${request.ip}:${account}`;
+          const account =
+            typeof body?.[field] === "string" ? String(body[field]).trim().toLowerCase() : "";
+          return account ? `login:${field}:${account}` : `login-ip:${request.ip}`;
         },
       },
     },
@@ -84,26 +88,40 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // ── Admin Çıkış ──────────────────────────────
-  fastify.post(
-    "/logout",
-    { onRequest: [fastify.authenticate] },
-    async (request, reply) => {
-      const sub = request.user?.sub;
-      if (!sub) {
-        return reply.status(401).send({ code: "UNAUTHORIZED", message: "Oturum bulunamadı", traceId: request.traceId });
+  // Access token süresi dolmuş olsa da çıkış yapılabilmeli: oturum refresh
+  // çerezinden bulunur ve yalnızca bu cihazın token'ı iptal edilir.
+  fastify.post("/logout", async (request, reply) => {
+    const cookieToken = request.cookies?.["refreshToken"];
+    let revoked = false;
+
+    if (cookieToken) {
+      try {
+        const payload = jwt.verify(cookieToken, refreshSecret()) as { sub: string; type?: string };
+        if (payload.type === "refresh") {
+          await updateUserRefreshTokens(payload.sub, (stored) =>
+            removeRefreshTokenHash(stored, cookieToken),
+          );
+          revoked = true;
+        }
+      } catch {
+        // Süresi dolmuş/geçersiz çerez: sunucuda iptal edilecek geçerli oturum yok
       }
-      // Yalnızca bu cihazın oturumu kapatılır; çerez yoksa tüm oturumlar sonlandırılır
-      const cookieToken = request.cookies?.["refreshToken"];
-      const user = await prisma.user.findUnique({ where: { id: sub }, select: { refreshToken: true } });
-      await prisma.user.update({
-        where: { id: sub },
-        data: {
-          refreshToken: cookieToken ? removeRefreshTokenHash(user?.refreshToken, cookieToken) : null,
-        },
-      });
-      reply.clearCookie("refreshToken", { path: "/api/auth" }).send({ data: { ok: true } });
     }
-  );
+
+    if (!revoked) {
+      // Çerez yoksa geçerli bir yönetici access token'ı ile tüm oturumlar kapatılır
+      try {
+        const user = await request.jwtVerify<{ sub: string; type?: string }>();
+        if (user.type === undefined) {
+          await updateUserRefreshTokens(user.sub, () => null);
+        }
+      } catch {
+        // Kimlik doğrulanamadı; yalnızca çerez temizlenir
+      }
+    }
+
+    return reply.clearCookie("refreshToken", { path: "/api/auth" }).send({ data: { ok: true } });
+  });
 
   // ── Admin Şifre Değiştirme (oturum açıkken) ──
   fastify.post(
@@ -295,26 +313,36 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // ── Portal Çıkış ──────────────────────────────
-  fastify.post(
-    "/portal/logout",
-    { onRequest: [fastify.authenticatePortal] },
-    async (request, reply) => {
-      const bodyToken = (request.body as { refreshToken?: string } | undefined)?.refreshToken;
-      const personnel = await prisma.personnel.findUnique({
-        where: { id: request.user.sub },
-        select: { portalRefreshToken: true },
-      });
-      await prisma.personnel.update({
-        where: { id: request.user.sub },
-        data: {
-          portalRefreshToken: bodyToken
-            ? removeRefreshTokenHash(personnel?.portalRefreshToken, bodyToken)
-            : null,
-        },
-      });
+  // Gövdedeki refresh token ile yalnızca bu cihazın oturumu kapatılır
+  // (access token süresi dolmuş olsa bile).
+  fastify.post("/portal/logout", async (request, reply) => {
+    const bodyToken = (request.body as { refreshToken?: string } | undefined)?.refreshToken;
+
+    if (bodyToken) {
+      try {
+        const payload = jwt.verify(bodyToken, refreshSecret()) as { sub: string; type?: string };
+        if (payload.type === "portal_refresh") {
+          await updatePersonnelRefreshTokens(payload.sub, (stored) =>
+            removeRefreshTokenHash(stored, bodyToken),
+          );
+        }
+      } catch {
+        // Geçersiz/süresi dolmuş token: iptal edilecek oturum yok
+      }
       return reply.send({ data: { ok: true } });
     }
-  );
+
+    // Token gönderilmediyse geçerli portal access token'ı ile tüm oturumlar kapatılır
+    try {
+      const user = await request.jwtVerify<{ sub: string; type?: string }>();
+      if (user.type === "portal") {
+        await updatePersonnelRefreshTokens(user.sub, () => null);
+      }
+    } catch {
+      // Kimlik doğrulanamadı
+    }
+    return reply.send({ data: { ok: true } });
+  });
 };
 
 export default authRoutes;

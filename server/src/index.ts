@@ -27,6 +27,15 @@ import reportsRoutes from "./modules/reports/reports.routes.js";
 import aiConfigRoutes from "./modules/ai-config/ai-config.routes.js";
 import notificationsRoutes from "./modules/notifications/notifications.routes.js";
 import aiChatRoutes from "./modules/ai-chat/ai-chat.routes.js";
+import { requeueStaleAnalyses } from "./services/session-analysis.service.js";
+
+/** TRUST_PROXY: boş/false → güvenme, sayı → proxy atlama sayısı (nginx için 1), aksi halde IP/CIDR listesi */
+function parseTrustProxy(value: string | undefined): boolean | number | string[] {
+  if (!value || value === "false") return false;
+  if (value === "true") return true;
+  if (/^\d+$/.test(value)) return parseInt(value, 10);
+  return value.split(",").map((v) => v.trim()).filter(Boolean);
+}
 
 const app = Fastify({
   logger: {
@@ -36,7 +45,9 @@ const app = Fastify({
         ? { target: "pino-pretty", options: { colorize: true } }
         : undefined,
   },
-  trustProxy: true,
+  // X-Forwarded-For yalnızca güvenilen proxy'lerden kabul edilir; aksi halde
+  // istemci IP'sini taklit ederek hız sınırlarını aşabilir.
+  trustProxy: parseTrustProxy(process.env["TRUST_PROXY"]),
 });
 
 // ── Plugins ───────────────────────────────────────
@@ -136,6 +147,14 @@ const PORT = parseInt(process.env["PORT"] ?? "3001", 10);
 try {
   await app.listen({ port: PORT, host: "0.0.0.0" });
   app.log.info(`🚀 API sunucusu http://0.0.0.0:${PORT} adresinde çalışıyor`);
+
+  // Yarıda kalan AI analizlerini başlangıçta ve periyodik olarak yeniden kuyruğa al
+  const sweep = () =>
+    requeueStaleAnalyses(app.log).catch((err) =>
+      app.log.error({ err }, "stale analysis sweep failed"),
+    );
+  void sweep();
+  setInterval(sweep, 10 * 60 * 1000).unref();
 } catch (err) {
   app.log.error(err);
   process.exit(1);

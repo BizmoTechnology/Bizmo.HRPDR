@@ -94,7 +94,9 @@ api.interceptors.response.use(
   (res) => res,
   async (error: AxiosError) => {
     const original = error.config as (InternalAxiosRequestConfig & { _retry?: boolean }) | undefined;
-    const isAuthCall = original?.url?.includes("/api/auth/");
+    // Giriş/yenileme/çıkış çağrılarında 401 normal bir sonuçtur (ör. hatalı şifre);
+    // çıkış refresh token ile yapıldığından access token gerektirmez.
+    const isAuthCall = /\/api\/auth\/portal\/(login|refresh|logout)(\?|$)/.test(original?.url ?? "");
 
     if (error.response?.status === 401 && original && !original._retry && !isAuthCall) {
       original._retry = true;

@@ -31,9 +31,14 @@ export async function assertDepartmentAndTeam(
   }
 }
 
+/**
+ * @param alreadyInSet Sette zaten bulunan soru kimlikleri: sonradan silinmiş olsalar
+ *   bile set düzenlenebilsin diye kabul edilir (yeni eklenen sorular silinmemiş olmalı).
+ */
 export async function assertQuestionsInOrg(
   organizationId: string,
   questionIds: string[],
+  alreadyInSet: ReadonlySet<string> = new Set(),
 ): Promise<void> {
   const unique = [...new Set(questionIds)];
   if (unique.length !== questionIds.length) {
@@ -41,10 +46,12 @@ export async function assertQuestionsInOrg(
   }
   if (unique.length === 0) return;
 
-  const count = await prisma.question.count({
-    where: { id: { in: unique }, organizationId, deletedAt: null },
+  const found = await prisma.question.findMany({
+    where: { id: { in: unique }, organizationId },
+    select: { id: true, deletedAt: true },
   });
-  if (count !== unique.length) {
+  const valid = found.filter((q) => !q.deletedAt || alreadyInSet.has(q.id));
+  if (valid.length !== unique.length) {
     throw new HttpError("Bazı sorular bulunamadı veya silinmiş", 400, "INVALID_QUESTION");
   }
 }

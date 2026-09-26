@@ -9,6 +9,7 @@ import { Save, Loader2 } from "lucide-react";
 import { GlassCard } from "@ph/ui";
 import { cn } from "@/lib/utils";
 import { DateTimePicker } from "@/components/ui/datetime-picker";
+import { parseDatetimeLocalString } from "@/lib/datetime-local";
 import { useDepartmentList, useTeamsByDepartment } from "@/hooks/use-api";
 
 const SHIFT_OPTIONS = [
@@ -58,6 +59,14 @@ function FormField({
       {error && <p className={errorClass}>{error}</p>}
     </div>
   );
+}
+
+function toIsoOrNull(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const local = parseDatetimeLocalString(value);
+  if (local) return local.toISOString();
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
 
 /**
@@ -116,9 +125,18 @@ export function PersonnelForm({
     if (teams && current) setValue("teamId", current);
   }, [teams, getValues, setValue]);
 
+  // DateTimePicker yerel saatli "YYYY-MM-DDTHH:mm" üretir; sunucu kendi saat
+  // diliminde yorumlamasın diye ISO (UTC) olarak gönderilir.
+  const submitWithUtcDates = (data: CreatePersonnelInput) =>
+    onSubmit({
+      ...data,
+      hireDate: toIsoOrNull(data.hireDate),
+      birthDate: toIsoOrNull(data.birthDate),
+    });
+
   return (
     <GlassCard hover={false}>
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+      <form onSubmit={handleSubmit(submitWithUtcDates)} className="space-y-6">
         {/* Kişisel Bilgiler */}
         <div>
           <h3 className="text-sm font-semibold text-foreground mb-4 uppercase tracking-wider">

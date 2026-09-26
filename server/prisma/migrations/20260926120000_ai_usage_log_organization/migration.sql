@@ -15,3 +15,10 @@ UPDATE "AiUsageLog" AS l
 SET "organizationId" = u."organizationId"
 FROM "User" AS u
 WHERE l."organizationId" IS NULL AND l."userId" = u."id";
+
+-- Oturum/kullanıcı bağı olmayan eski kayıtlar (ör. soru üretimi): tek organizasyonlu
+-- kurulumlarda o organizasyona atanır, çok kiracılıda sahipsiz bırakılır.
+UPDATE "AiUsageLog"
+SET "organizationId" = (SELECT "id" FROM "Organization" LIMIT 1)
+WHERE "organizationId" IS NULL
+  AND (SELECT COUNT(*) FROM "Organization") = 1;

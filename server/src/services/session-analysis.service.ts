@@ -114,6 +114,26 @@ function formatAnswersForAi(answers: Array<{
     .join("\n\n");
 }
 
+/**
+ * Oturum için AI analizi rızası var mı?
+ * - AI_ASSESSMENT: yeni portal akışında ayrı onay kutusu.
+ * - ASSESSMENT_CONSENT: eski portal akışı; AI onay kutusu zorunluydu ve bu kayıt
+ *   yazılıyordu, bu yüzden AI rızası sayılır.
+ * - Hiç rıza kaydı olmayan eski/seed oturumlar geriye dönük uyumluluk için hariç.
+ */
+export async function hasAiConsent(sessionId: string): Promise<boolean> {
+  const consents = await prisma.consentRecord.findMany({
+    where: { sessionId },
+    select: { consentType: true, accepted: true },
+  });
+  if (consents.length === 0) return true;
+  return consents.some(
+    (c) =>
+      c.accepted &&
+      (c.consentType === "AI_ASSESSMENT" || c.consentType === "ASSESSMENT_CONSENT"),
+  );
+}
+
 export function getActiveAiConfig(organizationId: string) {
   return prisma.aiConfig.findFirst({
     where: { organizationId, isActive: true },
@@ -177,17 +197,8 @@ export async function runSessionAnalysis(params: {
     );
   }
 
-  // KVKK (development.md §12.3): rıza kaydı olan oturumlarda AI analizi yalnızca
-  // AI_ASSESSMENT rızası verilmişse çalışır. Rıza kaydı hiç olmayan eski/seed
-  // oturumlar geriye dönük uyumluluk için hariç tutulur.
-  const consents = await prisma.consentRecord.findMany({
-    where: { sessionId },
-    select: { consentType: true, accepted: true },
-  });
-  if (
-    consents.length > 0 &&
-    !consents.some((c) => c.consentType === "AI_ASSESSMENT" && c.accepted)
-  ) {
+  // KVKK (development.md §12.3): AI analizi yalnızca AI rızası varsa çalışır.
+  if (!(await hasAiConsent(sessionId))) {
     throw new HttpError(
       "Personel AI destekli değerlendirmeye rıza vermediği için analiz çalıştırılamaz.",
       403,
@@ -373,6 +384,34 @@ async function logUsage(params: {
     });
   } catch {
     // Kullanım logu yazılamaması analizi başarısız saymamalı
+  }
+}
+
+/** Bu süreden eski QUEUED/RUNNING kayıtlar yarıda kalmış sayılır (süreç yeniden başladı vb.). */
+const STALE_ANALYSIS_MS = 10 * 60 * 1000;
+
+/**
+ * Sunucu yeniden başladığında veya kuyruğa alma adımı başarısız olduğunda
+ * QUEUED/RUNNING'de kalan oturumları yeniden kuyruğa alır.
+ */
+export async function requeueStaleAnalyses(log: {
+  info: (obj: unknown, msg?: string) => void;
+  error: (obj: unknown, msg?: string) => void;
+}): Promise<void> {
+  const stale = await prisma.assessmentSession.findMany({
+    where: {
+      status: "COMPLETED",
+      analysisPipeline: { in: ["QUEUED", "RUNNING"] },
+      updatedAt: { lt: new Date(Date.now() - STALE_ANALYSIS_MS) },
+    },
+    select: { id: true, assessment: { select: { organizationId: true } } },
+    take: 50,
+  });
+  for (const s of stale) {
+    queueSessionAnalysis(s.id, s.assessment.organizationId, log);
+  }
+  if (stale.length > 0) {
+    log.info({ count: stale.length }, "stale session analyses requeued");
   }
 }
 

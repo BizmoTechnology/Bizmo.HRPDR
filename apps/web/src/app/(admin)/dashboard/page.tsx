@@ -45,7 +45,8 @@ function ScoreChip({ score }: { score: number | null | undefined }) {
   const band = scoreBand(score);
   return (
     <span
-      className={cn("bz-chip tabular-nums", band.tone)}
+      // relative: içteki sr-only (absolute) metin tablonun kaydırma kabında kalsın, sayfayı yana taşırmasın
+      className={cn("bz-chip relative tabular-nums", band.tone)}
       title={`${band.label} · ${score.toFixed(1)} / 10`}
     >
       {score.toFixed(1)}

@@ -1,11 +1,11 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
-import { AI_NOT_CONNECTED_REASON } from "../src/lib/ai-connection.js";
+import { ANALYSIS_AWAITS_REVIEW_REASON } from "../src/lib/ai-connection.js";
 import { computeScaleScores } from "../src/services/scoring.service.js";
 
 /**
  * 2026 Q1 Potansiyel Haritası'nın 30 sorusunun tamamını birbirinden farklı biçimde
  * cevaplamış üç örnek personel. Cevaplar soru setindeki sıraya göredir; SCALE sorusu sayıdır.
- * AI analizi üretilmez: entegrasyon bağlanınca İK panelden analizi başlatır.
+ * AI analizi üretilmez: İK cevapları onaylayınca (entegrasyon bağlıysa) oluşturulur.
  */
 interface Respondent {
   employeeId: string;
@@ -244,7 +244,7 @@ export async function seedRespondents(params: {
         durationSec,
         dimensionScores: computeScaleScores(questions, answers) as Prisma.InputJsonValue,
         analysisPipeline: "NOT_QUEUED",
-        analysisError: AI_NOT_CONNECTED_REASON,
+        analysisError: ANALYSIS_AWAITS_REVIEW_REASON,
         requiresHrReview: true,
         answers: { create: answers },
         consentRecords: {

@@ -18,7 +18,11 @@ import {
   type SnapshotQuestion,
 } from "../../services/session-questions.service.js";
 import { isHttpError } from "../../lib/http-error.js";
-import { AI_NOT_CONNECTED_REASON } from "../../lib/ai-connection.js";
+import {
+  AI_NOT_CONNECTED_REASON,
+  ANALYSIS_AWAITS_REVIEW_REASON,
+  NO_AI_CONSENT_REASON,
+} from "../../lib/ai-connection.js";
 import { requireRole, ROLE_GROUPS } from "../../middleware/authenticate.js";
 
 const DEFAULT_PAGE_SIZE = 20;
@@ -229,7 +233,7 @@ export const sessionAdminRoutes: FastifyPluginAsync = async (fastify) => {
 
       const session = await prisma.assessmentSession.findFirst({
         where: { id: request.params.id, assessment: { organizationId: orgId } },
-        select: { id: true },
+        select: { id: true, status: true, analysisPipeline: true, hrPdrAnalysis: true },
       });
 
       if (!session) {
@@ -239,6 +243,17 @@ export const sessionAdminRoutes: FastifyPluginAsync = async (fastify) => {
           traceId: request.traceId,
         });
       }
+
+      // İK onayı AI analizini başlatır (analiz henüz yoksa ve sırada değilse)
+      const startsAnalysis =
+        status === "APPROVED" &&
+        session.status === "COMPLETED" &&
+        session.hrPdrAnalysis === null &&
+        session.analysisPipeline !== "QUEUED" &&
+        session.analysisPipeline !== "RUNNING";
+      const aiConfig = startsAnalysis ? await getActiveAiConfig(orgId) : null;
+      const aiConsent = startsAnalysis ? await hasAiConsent(session.id) : false;
+      const analysisQueued = startsAnalysis && !!aiConfig && aiConsent;
 
       const decidedAt = status !== "PENDING" ? new Date() : null;
       // İnceleme durumu ve skorlar aynı kilitli işlemde yazılır; eşzamanlı onay/ret
@@ -264,10 +279,23 @@ export const sessionAdminRoutes: FastifyPluginAsync = async (fastify) => {
         // AI'ın önerdiği boyut skorları yalnızca onayla uygulanır; onay geri alınırsa
         // skala skorlarına dönülür.
         await applyReviewToDimensionScores(tx, session.id, status);
+        if (startsAnalysis) {
+          await tx.assessmentSession.update({
+            where: { id: session.id },
+            data: analysisQueued
+              ? { analysisPipeline: "QUEUED", analysisError: null }
+              : {
+                  analysisPipeline: "NOT_QUEUED",
+                  analysisError: !aiConsent ? NO_AI_CONSENT_REASON : AI_NOT_CONNECTED_REASON,
+                },
+          });
+        }
         return saved;
       });
 
-      return reply.send({ data: review });
+      if (analysisQueued) queueSessionAnalysis(session.id, orgId, request.log);
+
+      return reply.send({ data: { ...review, analysisQueued } });
     } catch (err) {
       if (err instanceof z.ZodError) throw err;
       request.log.error(err);
@@ -663,7 +691,9 @@ export const sessionPortalRoutes: FastifyPluginAsync = async (fastify) => {
       const organizationId = session.assessment.organizationId;
       const aiConfig = await getActiveAiConfig(organizationId);
       const aiConsent = await hasAiConsent(session.id);
-      const willAnalyze = !!aiConfig && aiConsent;
+      // AI analizi İK onayından sonra oluşturulur; yalnız İK incelemesi gerekmeyen
+      // (eski) oturumlar tamamlanınca doğrudan analize gider.
+      const willAnalyze = !session.requiresHrReview && !!aiConfig && aiConsent;
 
       const now = new Date();
       const durationSec = session.startedAt
@@ -682,8 +712,10 @@ export const sessionPortalRoutes: FastifyPluginAsync = async (fastify) => {
             analysisError: willAnalyze
               ? null
               : !aiConsent
-                ? "Personel AI analizine rıza vermedi"
-                : AI_NOT_CONNECTED_REASON,
+                ? NO_AI_CONSENT_REASON
+                : session.requiresHrReview
+                  ? ANALYSIS_AWAITS_REVIEW_REASON
+                  : AI_NOT_CONNECTED_REASON,
           },
         });
         if (res.count === 0) return false;

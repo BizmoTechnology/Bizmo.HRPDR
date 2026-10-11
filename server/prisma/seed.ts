@@ -284,8 +284,8 @@ async function main() {
     }
     console.log("✅ Oturum (bekleyen): P001–P003 → NOT_STARTED");
 
-    // P006–P008: soruların tamamını cevaplamış örnek personel. AI analizi ve AI
-    // yapılandırması seed edilmez; entegrasyon bağlanana kadar panel "bağlı değil" der.
+    // P006–P008: soruların tamamını cevaplamış, İK onayı bekleyen örnek personel.
+    // AI analizi ve AI yapılandırması seed edilmez; analiz İK onayından sonra oluşturulur.
     await seedRespondents({
       prisma,
       organizationId: org.id,
@@ -304,7 +304,7 @@ async function main() {
         userId: admin.id,
         type: "INFO",
         title: "Örnek bildirim",
-        body: "Seed: P006–P008 değerlendirmeyi tamamladı. AI analizi için önce AI entegrasyonunu bağlayın.",
+        body: "Seed: P006–P008 değerlendirmeyi tamamladı; cevaplar İK onayını bekliyor. AI analizi onaydan sonra oluşturulur.",
       },
       update: {},
     });

@@ -19,6 +19,7 @@ import {
   XCircle,
   FileDown,
   AlertTriangle,
+  ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -114,6 +115,22 @@ function Section({
   );
 }
 
+/** AI analizi İK onayından sonra oluşturulur; onaydan önce analiz alanında gösterilir */
+function AwaitingReviewNotice() {
+  return (
+    <div role="status" className="bz-alert bz-alert--info mt-2 max-w-sm text-left">
+      <ShieldCheck aria-hidden="true" />
+      <div className="min-w-0">
+        <p className="bz-alert__title">Önce İK onayı</p>
+        <p>
+          AI analizi, cevaplar İK tarafından onaylandıktan sonra oluşturulur. Cevapları
+          inceleyip yukarıdan onaylayın.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function AnalysisEmpty({
   icon,
   title,
@@ -122,6 +139,8 @@ function AnalysisEmpty({
   isRunning,
   hasAnswers,
   aiConnected,
+  aiApproved,
+  analysisBusy = false,
 }: {
   icon: ReactNode;
   title: string;
@@ -130,13 +149,23 @@ function AnalysisEmpty({
   isRunning: boolean;
   hasAnswers: boolean;
   aiConnected: boolean;
+  aiApproved: boolean;
+  /** Onayla başlayan arka plan analizi sürüyor */
+  analysisBusy?: boolean;
 }) {
   return (
     <div className="bz-empty">
       <span className="bz-icon-box">{icon}</span>
       <p className="bz-empty__title">{title}</p>
       <p className="bz-empty__text">{text}</p>
-      {aiConnected ? (
+      {analysisBusy ? (
+        <p role="status" className="mt-2 flex items-center gap-2 text-sm text-fg2">
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+          AI analizi oluşturuluyor…
+        </p>
+      ) : !aiApproved ? (
+        <AwaitingReviewNotice />
+      ) : aiConnected ? (
         <>
           <button
             type="button"
@@ -162,18 +191,26 @@ function RerunButton({
   onRun,
   isRunning,
   aiConnected,
+  aiApproved,
 }: {
   onRun: () => void;
   isRunning: boolean;
   aiConnected: boolean;
+  aiApproved: boolean;
 }) {
   return (
     <div className="flex justify-end">
       <button
         type="button"
         onClick={onRun}
-        disabled={isRunning || !aiConnected}
-        title={aiConnected ? undefined : "AI entegrasyonu bağlı değil"}
+        disabled={isRunning || !aiConnected || !aiApproved}
+        title={
+          !aiApproved
+            ? "AI analizi İK onayından sonra oluşturulur"
+            : aiConnected
+              ? undefined
+              : "AI entegrasyonu bağlı değil"
+        }
         className="bz-btn bz-btn--subtle bz-btn--sm"
       >
         {isRunning ? <Loader2 className="animate-spin" /> : <Sparkles />}
@@ -195,6 +232,11 @@ export function SessionDetailPanel({
   const { data: aiStatus } = useAiStatus();
   // Durum bilinmiyorsa düğme açık kalır; sunucu yine "bağlı değil" döner
   const aiConnected = aiStatus?.connected !== false;
+  // AI analizi İK onayından sonra oluşturulur
+  const aiApproved =
+    session?.requiresHrReview === false || session?.analysisReview?.status === "APPROVED";
+  const analysisBusy =
+    session?.analysisPipeline === "QUEUED" || session?.analysisPipeline === "RUNNING";
   const [activeTab, setActiveTab] = useState<AnalysisTab>("answers");
   const [expandedAnswers, setExpandedAnswers] = useState<Set<string>>(new Set());
 
@@ -456,6 +498,8 @@ export function SessionDetailPanel({
                     session={session}
                     onRun={() => handleRunAnalysis("HR_PDR_ANALYSIS")}
                     aiConnected={aiConnected}
+                    aiApproved={aiApproved}
+                    analysisBusy={analysisBusy}
                     isRunning={
                       runAnalysis.isPending &&
                       runAnalysis.variables?.analysisType ===
@@ -476,6 +520,7 @@ export function SessionDetailPanel({
                     session={session}
                     onRun={() => handleRunAnalysis("PSYCHOLOGICAL_ANALYSIS")}
                     aiConnected={aiConnected}
+                    aiApproved={aiApproved}
                     isRunning={
                       runAnalysis.isPending &&
                       runAnalysis.variables?.analysisType ===
@@ -527,7 +572,9 @@ function ReviewAndReportBar({
 
   const reviewStatus = session.analysisReview?.status ?? "PENDING";
   const needsReview = session.requiresHrReview !== false;
-  const canGenerate = !needsReview || reviewStatus === "APPROVED";
+  const analysisBusy =
+    session.analysisPipeline === "QUEUED" || session.analysisPipeline === "RUNNING";
+  const canGenerate = (!needsReview || reviewStatus === "APPROVED") && !analysisBusy;
   const pipeline = PIPELINE_CHIP[session.analysisPipeline] ?? {
     label: session.analysisPipeline,
   };
@@ -538,8 +585,14 @@ function ReviewAndReportBar({
     submitReview.mutate(
       { id: sessionId, data: { status, comment: comment.trim() || undefined } },
       {
-        onSuccess: () =>
-          toast.success(status === "APPROVED" ? "Analiz onaylandı" : "Analiz reddedildi"),
+        onSuccess: (res) =>
+          toast.success(
+            status === "APPROVED"
+              ? res.analysisQueued
+                ? "Onaylandı — AI analizi oluşturuluyor"
+                : "Onaylandı"
+              : "Reddedildi",
+          ),
         onError: (err) => toast.error(apiErrorMessage(err, "İnceleme kaydedilemedi")),
       },
     );
@@ -591,7 +644,13 @@ function ReviewAndReportBar({
               type="button"
               onClick={handleGenerate}
               disabled={!canGenerate || generateReport.isPending}
-              title={canGenerate ? undefined : "Rapor için önce İK onayı gerekli"}
+              title={
+                canGenerate
+                  ? undefined
+                  : analysisBusy
+                    ? "AI analizi bitince rapor oluşturabilirsiniz"
+                    : "Rapor için önce İK onayı gerekli"
+              }
               className="bz-btn bz-btn--data bz-btn--sm"
             >
               {generateReport.isPending ? (
@@ -631,6 +690,7 @@ function ReviewAndReportBar({
               type="button"
               onClick={() => decide("APPROVED")}
               disabled={submitReview.isPending}
+              title="Onaylayınca AI analizi oluşturulur"
               className="bz-btn bz-btn--primary bz-btn--sm"
             >
               <CheckCircle2 />
@@ -657,11 +717,16 @@ function HrPdrAnalysisView({
   onRun,
   isRunning,
   aiConnected,
+  aiApproved,
+  analysisBusy,
 }: {
   session: SessionDetail;
   onRun: () => void;
   isRunning: boolean;
   aiConnected: boolean;
+  aiApproved: boolean;
+  /** Onayla başlayan arka plan analizi sürüyor */
+  analysisBusy: boolean;
 }) {
   const analysis = session.hrPdrAnalysis as Record<string, unknown> | null;
 
@@ -675,6 +740,8 @@ function HrPdrAnalysisView({
         isRunning={isRunning}
         hasAnswers={session.answers.length > 0}
         aiConnected={aiConnected}
+        aiApproved={aiApproved}
+        analysisBusy={analysisBusy}
       />
     );
   }
@@ -690,7 +757,7 @@ function HrPdrAnalysisView({
 
   return (
     <div className="space-y-4">
-      <RerunButton onRun={onRun} isRunning={isRunning} aiConnected={aiConnected} />
+      <RerunButton onRun={onRun} isRunning={isRunning} aiConnected={aiConnected} aiApproved={aiApproved} />
 
       {perfScore != null && (
         <section className="bz-card bz-card--flat p-4">
@@ -869,11 +936,13 @@ function PsychologicalAnalysisView({
   onRun,
   isRunning,
   aiConnected,
+  aiApproved,
 }: {
   session: SessionDetail;
   onRun: () => void;
   isRunning: boolean;
   aiConnected: boolean;
+  aiApproved: boolean;
 }) {
   const analysis = session.psychologicalAnalysis as Record<string, unknown> | null;
 
@@ -887,6 +956,7 @@ function PsychologicalAnalysisView({
         isRunning={isRunning}
         hasAnswers={session.answers.length > 0}
         aiConnected={aiConnected}
+        aiApproved={aiApproved}
       />
     );
   }
@@ -907,7 +977,7 @@ function PsychologicalAnalysisView({
 
   return (
     <div className="space-y-4">
-      <RerunButton onRun={onRun} isRunning={isRunning} aiConnected={aiConnected} />
+      <RerunButton onRun={onRun} isRunning={isRunning} aiConnected={aiConnected} aiApproved={aiApproved} />
 
       {bigFive && (
         <Section title="Big Five kişilik profili">

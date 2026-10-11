@@ -2,8 +2,30 @@
 
 ## Gereksinimler
 - Node.js 20 LTS
-- Docker Desktop
+- Docker Desktop (veya kendi PostgreSQL 16 sunucunuz)
 - npm 10+
+
+## Hızlı Başlangıç (tek komut)
+
+Docker Desktop açıkken proje kökünde:
+
+```bash
+npm install
+npm run local
+```
+
+`npm run local` önce `npm run setup` adımlarını çalıştırır, ardından üç uygulamayı başlatır:
+
+1. `server/.env` yoksa `.env.example`'dan oluşturur ve JWT/şifreleme anahtarlarını rastgele üretir.
+2. `DATABASE_URL`'deki PostgreSQL'e bağlanamazsa Docker ile başlatır (`localhost:4455`).
+3. Migrasyonları uygular (veritabanı yoksa oluşturulur).
+4. Veritabanında kullanıcı yoksa örnek verileri yükler.
+5. 3000/3001/3002 portları doluysa uyarır.
+
+Ardından tarayıcıda http://localhost:3000 (yönetim) ve http://localhost:3002 (portal) adreslerini açın.
+Sonraki seferlerde `npm run dev` yeterlidir. Örnek verileri yeniden yüklemek için: `npm run setup -- --seed`.
+
+Aşağıdaki adımlar, kurulumu elle yapmak isteyenler içindir.
 
 ## 1. Bağımlılıkları Kur
 
@@ -94,6 +116,17 @@ npm run dev
 - API Docs: http://localhost:3001/api/docs
 
 > `npm install` ve `npm run dev` paylaşılan `@ph/shared` paketini otomatik derler.
+
+## Sorun Giderme: "Bağlanamıyorum"
+
+| Belirti | Neden / Çözüm |
+|---|---|
+| Tarayıcı `localhost:3000` için "bağlantı reddedildi" diyor | Uygulamalar çalışmıyor. Proje kökünde `npm run dev` (ilk kez ise `npm run local`) çalıştırıp terminalde `Ready` ve `API sunucusu ... çalışıyor` satırlarını bekleyin. Uygulamalar yalnızca komutun çalıştığı bilgisayarda `localhost` üzerinden açılır. |
+| Giriş ekranı açılıyor ama "Sunucuya ulaşılamıyor" / giriş olmuyor | API (3001) çalışmıyor veya çöktü. Terminalde `[api]` satırlarındaki hatayı kontrol edin; http://localhost:3001/health `ok` dönmeli. |
+| `[api]` loglarında `Can't reach database server` (P1001) | PostgreSQL kapalı. Docker Desktop'ı açıp `npm run setup` çalıştırın. |
+| `Authentication failed` (P1000) | `DATABASE_URL` şifresi yanlış (`*` → `%2A`). Docker volume eski şifreyle oluşturulduysa `docker compose down -v` (veriler silinir) ve `npm run setup`. |
+| `EADDRINUSE` / port kullanımda uyarısı | 3000, 3001 veya 3002'yi başka bir program kullanıyor; kapatıp tekrar başlatın. |
+| Başka bir bilgisayardan / telefondan erişim | `localhost` yalnızca o makineyi gösterir. Makinenin IP adresini kullanın ve `apps/web/.env.local` + `apps/portal/.env.local` içinde `NEXT_PUBLIC_API_URL=http://<IP>:3001`, `server/.env` içinde `CORS_ORIGINS`'e `http://<IP>:3000,http://<IP>:3002` ekleyin. |
 
 ## Temel Akış
 

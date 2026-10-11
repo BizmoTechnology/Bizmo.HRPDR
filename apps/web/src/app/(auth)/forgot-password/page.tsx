@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { AlertCircle, ArrowLeft, Loader2, MailCheck } from "lucide-react";
+import { ArrowLeft, MailCheck } from "lucide-react";
 import { toast } from "sonner";
 import { forgotPasswordSchema } from "@ph/shared";
 import type { z } from "zod";
@@ -33,52 +33,62 @@ export default function ForgotPasswordPage() {
 
   return (
     <AuthCard
-      title="Şifremi Unuttum"
+      title="Şifremi unuttum"
       description={sent ? undefined : "Hesabınıza kayıtlı e-posta adresini girin; sıfırlama bağlantısı gönderelim."}
+      footer={
+        <Link href="/login" className="bz-link inline-flex items-center gap-1.5 text-[13px]">
+          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+          Girişe dön
+        </Link>
+      }
     >
       {sent ? (
-        <div className="text-center py-2">
-          <MailCheck className="h-10 w-10 text-primary mx-auto mb-3" />
-          <p className="text-sm text-muted-foreground mb-6">
+        <div role="status" className="bz-alert bz-alert--success">
+          <MailCheck aria-hidden="true" />
+          <p>
             Bu e-posta adresi kayıtlıysa şifre sıfırlama bağlantısı gönderildi. Bağlantı 60 dakika
             geçerlidir.
           </p>
         </div>
       ) : (
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-foreground">E-posta</label>
+          <div className="bz-form-row">
+            <label htmlFor="forgot-email" className="bz-label">
+              E-posta
+            </label>
             <input
               {...register("email")}
+              id="forgot-email"
               type="email"
               autoComplete="email"
               placeholder="ornek@sirket.com"
-              className={cn("form-input-base px-3.5", errors.email && "border-destructive")}
+              className="bz-field"
+              aria-invalid={errors.email ? true : undefined}
+              aria-describedby={errors.email ? "forgot-email-error" : undefined}
             />
             {errors.email && (
-              <p className="flex items-center gap-1 text-xs text-destructive">
-                <AlertCircle className="h-3 w-3" />
+              <p id="forgot-email-error" className="bz-error-text">
                 {errors.email.message}
               </p>
             )}
           </div>
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="w-full h-11 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90 disabled:opacity-60 flex items-center justify-center gap-2"
-          >
-            {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-            Sıfırlama bağlantısı gönder
-          </button>
+
+          {/* Ekrandaki tek birincil eylem */}
+          <div className="pt-2">
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              aria-busy={isSubmitting || undefined}
+              className={cn(
+                "bz-btn bz-btn--primary bz-btn--lg bz-btn--block",
+                isSubmitting && "is-loading",
+              )}
+            >
+              {isSubmitting ? "Gönderiliyor…" : "Sıfırlama bağlantısı gönder"}
+            </button>
+          </div>
         </form>
       )}
-      <Link
-        href="/login"
-        className="mt-4 inline-flex items-center gap-1.5 text-sm text-primary hover:underline underline-offset-4"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Girişe dön
-      </Link>
     </AuthCard>
   );
 }

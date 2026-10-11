@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { motion } from "framer-motion";
@@ -16,12 +16,19 @@ import {
   Target,
   TrendingUp,
   Lightbulb,
+  FileX,
+  ThumbsUp,
+  Sprout,
+  Sparkles,
+  AlertTriangle,
+  type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { GlassCard, ScoreGauge } from "@ph/ui";
 import { DIMENSION_LABELS } from "@ph/shared";
 import { cn } from "@/lib/utils";
 import { apiErrorMessage } from "@/lib/api";
+import { dimensionColor } from "@/lib/dimension-colors";
 import { useGenerateReport, useReport, type ReportDetail } from "@/hooks/use-api";
 
 const DIMENSION_ORDER = [
@@ -38,11 +45,42 @@ const READINESS_LABELS: Record<string, string> = {
   NOT_READY: "Henüz hazır değil",
 };
 
+/** Terfi hazırlığı → süreç durumu rozeti (DESIGN.md §13 `.bz-status`; oturum panelindeki eşlemeyle aynı) */
+const READINESS_STATUS: Record<string, string> = {
+  READY: "approved",
+  DEVELOPING: "progress",
+  NOT_READY: "pending",
+};
+
 const REVIEW_LABELS: Record<string, string> = {
   PENDING: "İK onayı bekliyor",
   APPROVED: "İK onaylı",
   REJECTED: "İK reddetti",
 };
+
+/** İK inceleme durumu → simge tonu (işaret rengi; anlam metinde) */
+const REVIEW_ICON_TONE: Record<string, string> = {
+  PENDING: "text-warning",
+  APPROVED: "text-success",
+  REJECTED: "text-danger",
+};
+
+type Tone = "success" | "warning" | "danger" | "info";
+
+/** SWOT bölümleri → durum tonları: kart şeridi (`.bz-card[data-tone]`), başlıkta mürekkep, işarette ana ton */
+const TONE_CLASSES: Record<Tone, { ink: string; icon: string; marker: string }> = {
+  success: { ink: "text-success-ink", icon: "text-success", marker: "marker:text-success" },
+  warning: { ink: "text-warning-ink", icon: "text-warning", marker: "marker:text-warning" },
+  danger: { ink: "text-danger-ink", icon: "text-danger", marker: "marker:text-danger" },
+  info: { ink: "text-info-ink", icon: "text-info", marker: "marker:text-info" },
+};
+
+/** Skor bandı (0–10; iyi ≥ 8 · orta ≥ 6 · zayıf) → ilerleme çubuğu tonu (DESIGN.md §18 `.bz-progress`; varsayılan yeşil) */
+function scoreProgressTone(score: number) {
+  if (score >= 8) return "";
+  if (score >= 6) return "bz-progress--warning";
+  return "bz-progress--danger";
+}
 
 function formatDate(date: string | null | undefined, withTime = false) {
   if (!date) return "—";
@@ -73,12 +111,6 @@ function answerText(a: NonNullable<NonNullable<ReportDetail["session"]>["answers
     return label ? `${a.choiceKey}. ${label}` : a.choiceKey;
   }
   return "—";
-}
-
-function scoreBarClass(score: number) {
-  if (score >= 8) return "bg-accent-green";
-  if (score >= 6) return "bg-amber-500";
-  return "bg-destructive";
 }
 
 async function exportToExcel(report: ReportDetail) {
@@ -121,6 +153,37 @@ async function exportToExcel(report: ReportDetail) {
   XLSX.writeFile(wb, `rapor_${safeName}_${report.personnel.employeeId}.xlsx`);
 }
 
+/** Künye satırı: etiket üstte soluk, değer altta kalın (DESIGN.md §41 `__facts`) */
+function Fact({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-[11.5px] font-semibold text-muted-foreground">{label}</dt>
+      <dd className="mt-0.5 text-sm font-semibold tabular-nums text-foreground [overflow-wrap:anywhere]">
+        {children}
+      </dd>
+    </div>
+  );
+}
+
+function DetailSkeleton() {
+  return (
+    <div className="mx-auto w-full max-w-5xl space-y-4" aria-busy="true">
+      <div className="flex items-center gap-3">
+        <div className="bz-skeleton h-[38px] w-[38px] rounded-[10px]" />
+        <div className="space-y-2">
+          <div className="bz-skeleton h-6 w-64" />
+          <div className="bz-skeleton h-3.5 w-44" />
+        </div>
+      </div>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div className="bz-skeleton h-40 rounded-2xl md:col-span-2" />
+        <div className="bz-skeleton h-40 rounded-2xl" />
+      </div>
+      <div className="bz-skeleton h-64 rounded-2xl" />
+    </div>
+  );
+}
+
 export default function ReportDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -131,27 +194,23 @@ export default function ReportDetailPage() {
   const [exporting, setExporting] = useState(false);
 
   if (isLoading) {
-    return (
-      <div className="space-y-6 w-full">
-        <div className="h-8 w-64 bg-muted/40 rounded-xl animate-pulse" />
-        <div className="h-40 bg-muted/40 rounded-xl animate-pulse" />
-        <div className="h-64 bg-muted/40 rounded-xl animate-pulse" />
-      </div>
-    );
+    return <DetailSkeleton />;
   }
 
   if (isError || !report) {
     return (
-      <GlassCard hover={false}>
-        <div className="py-16 text-center">
-          <p className="text-sm text-muted-foreground mb-4">
-            {apiErrorMessage(error, "Rapor bulunamadı")}
-          </p>
-          <Link href="/reports" className="text-sm text-primary hover:underline">
+      <div className="bz-card">
+        <div className="bz-empty">
+          <span className="bz-icon-box" aria-hidden="true">
+            <FileX />
+          </span>
+          <p className="bz-empty__title">{apiErrorMessage(error, "Rapor bulunamadı")}</p>
+          <Link href="/reports" className="bz-btn">
+            <ArrowLeft />
             Raporlara dön
           </Link>
         </div>
-      </GlassCard>
+      </div>
     );
   }
 
@@ -168,6 +227,7 @@ export default function ReportDetailPage() {
     : [];
   const readiness = typeof hr?.["promotionReadiness"] === "string" ? (hr["promotionReadiness"] as string) : null;
   const review = s?.analysisReview ?? null;
+  const trainingNeeds = strings(hr?.["trainingNeeds"]);
 
   const handleRegenerate = () => {
     if (!s) return;
@@ -188,108 +248,114 @@ export default function ReportDetailPage() {
     }
   };
 
+  const swotSections: { title: string; items: unknown; tone: Tone; icon: LucideIcon }[] = swot
+    ? [
+        { title: "Güçlü yönler", items: swot.strengths, tone: "success", icon: ThumbsUp },
+        { title: "Gelişim alanları", items: swot.weaknesses, tone: "warning", icon: Sprout },
+        { title: "Fırsatlar", items: swot.opportunities, tone: "info", icon: Sparkles },
+        { title: "Riskler", items: swot.threats, tone: "danger", icon: AlertTriangle },
+      ]
+    : [];
+
   return (
-    <div className="space-y-6 w-full max-w-5xl mx-auto print:max-w-none">
-      {/* Başlık */}
+    <div className="bz-record mx-auto w-full max-w-5xl print:max-w-none">
+      {/* Kayıt başlığı: kimlik + kayıt eylemleri (DESIGN.md §41) */}
       <motion.div
-        className="flex flex-col md:flex-row md:items-center md:justify-between gap-4"
+        className="bz-record__head"
         initial={{ opacity: 0, y: -8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}
       >
-        <div className="flex items-center gap-4">
+        <div className="flex min-w-0 items-center gap-3">
           <button
             type="button"
             onClick={() => router.push("/reports")}
-            className="h-9 w-9 rounded-xl bg-muted/40 flex items-center justify-center text-muted-foreground hover:bg-muted/60 transition-colors print:hidden"
+            className="bz-icon-btn flex-none print:hidden"
+            aria-label="Raporlara dön"
+            title="Raporlara dön"
           >
-            <ArrowLeft className="h-4 w-4" />
+            <ArrowLeft />
           </button>
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">
+          <div className="bz-record__heading gap-1">
+            <h1 className="bz-record__title">
               {report.personnel.firstName} {report.personnel.lastName}
             </h1>
-            <p className="text-sm text-muted-foreground mt-0.5">
-              {s?.assessment.title ?? "Değerlendirme"} · Sicil {report.personnel.employeeId}
+            <p className="text-[13px] text-muted-foreground">
+              {s?.assessment.title ?? "Değerlendirme"} · Sicil{" "}
+              <span className="font-mono text-[12.5px] font-semibold text-fg2">
+                {report.personnel.employeeId}
+              </span>
               {report.personnel.department?.name ? ` · ${report.personnel.department.name}` : ""}
             </p>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2 print:hidden">
+        <div className="bz-record__actions print:hidden">
           <button
             type="button"
             onClick={handleRegenerate}
             disabled={regenerate.isPending || !s}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium bg-muted/50 hover:bg-muted/70 disabled:opacity-50 transition-colors"
+            className="bz-btn"
+            title="Yenile"
           >
-            {regenerate.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="h-4 w-4" />
-            )}
-            Yenile
+            {regenerate.isPending ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+            <span>Yenile</span>
           </button>
           <button
             type="button"
             onClick={handleExcel}
             disabled={exporting}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium bg-muted/50 hover:bg-muted/70 disabled:opacity-50 transition-colors"
+            className="bz-btn"
+            title="Excel"
           >
-            {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
-            Excel
+            {exporting ? <Loader2 className="animate-spin" /> : <FileSpreadsheet />}
+            <span>Excel</span>
           </button>
           <button
             type="button"
             onClick={() => window.print()}
-            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+            className="bz-btn bz-btn--primary"
           >
-            <Printer className="h-4 w-4" />
+            <Printer />
             Yazdır / PDF
           </button>
         </div>
       </motion.div>
 
       {/* Özet + genel skor */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <GlassCard hover={false} className="md:col-span-2">
-          <h2 className="text-sm font-semibold text-foreground mb-2">Yönetici Özeti</h2>
-          <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line">
+          <h2 className="mb-2 text-[15px] font-bold text-foreground">Yönetici özeti</h2>
+          <p className="whitespace-pre-line text-sm leading-relaxed text-fg2">
             {report.executiveSummary ?? "Özet bulunmuyor."}
           </p>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 text-xs">
-            <div>
-              <p className="text-muted-foreground">Tamamlanma</p>
-              <p className="font-medium text-foreground">{formatDate(s?.completedAt)}</p>
-            </div>
-            <div>
-              <p className="text-muted-foreground">Süre</p>
-              <p className="font-medium text-foreground">{formatDuration(s?.durationSec)}</p>
-            </div>
-            <div>
-              <p className="text-muted-foreground">Rapor tarihi</p>
-              <p className="font-medium text-foreground">{formatDate(report.generatedAt)}</p>
-            </div>
-            <div>
-              <p className="text-muted-foreground">Oluşturan</p>
-              <p className="font-medium text-foreground">{report.generatedBy?.name ?? "—"}</p>
-            </div>
-          </div>
+          <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 border-t border-divider pt-4 sm:grid-cols-4">
+            <Fact label="Tamamlanma">{formatDate(s?.completedAt)}</Fact>
+            <Fact label="Süre">{formatDuration(s?.durationSec)}</Fact>
+            <Fact label="Rapor tarihi">{formatDate(report.generatedAt)}</Fact>
+            <Fact label="Oluşturan">{report.generatedBy?.name ?? "—"}</Fact>
+          </dl>
         </GlassCard>
-        <GlassCard hover={false} className="flex flex-col items-center justify-center text-center">
-          <p className="text-xs font-medium text-muted-foreground mb-2">Genel Potansiyel Skoru</p>
+        <GlassCard
+          hover={false}
+          className="flex flex-col items-center justify-center gap-2 text-center"
+        >
+          <h2 className="text-[15px] font-bold text-foreground">Genel potansiyel skoru</h2>
           {typeof overall === "number" ? (
             <ScoreGauge score={overall} size="lg" />
           ) : (
-            <p className="text-2xl font-bold text-muted-foreground">—</p>
+            <p className="font-display text-2xl font-extrabold text-fg3">—</p>
           )}
           {readiness && (
-            <span className="mt-3 text-[11px] px-2 py-0.5 rounded-md bg-primary/10 text-primary font-medium">
+            <span className="bz-status" data-status={READINESS_STATUS[readiness]}>
               {READINESS_LABELS[readiness] ?? readiness}
             </span>
           )}
           {review && (
-            <span className="mt-2 inline-flex items-center gap-1 text-[11px] text-muted-foreground">
-              <ShieldCheck className="h-3.5 w-3.5" />
+            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+              <ShieldCheck
+                className={cn("h-3.5 w-3.5 flex-none", REVIEW_ICON_TONE[review.status])}
+                aria-hidden="true"
+              />
               {REVIEW_LABELS[review.status] ?? review.status}
               {review.reviewer?.name ? ` · ${review.reviewer.name}` : ""}
             </span>
@@ -299,25 +365,31 @@ export default function ReportDetailPage() {
 
       {/* Boyut skorları */}
       <GlassCard hover={false}>
-        <h2 className="text-sm font-semibold text-foreground mb-4">Boyut Skorları</h2>
+        <h2 className="mb-4 text-[15px] font-bold text-foreground">Boyut skorları</h2>
         {scores && Object.keys(scores).length > 0 ? (
-          <div className="space-y-3">
+          <ul className="space-y-3.5">
             {DIMENSION_ORDER.filter((d) => typeof scores[d] === "number").map((d) => {
               const v = scores[d]!;
               return (
-                <div key={d} className="flex items-center gap-3">
-                  <span className="w-44 text-sm text-foreground shrink-0">{DIMENSION_LABELS[d] ?? d}</span>
-                  <div className="flex-1 h-2.5 rounded-full bg-muted/50 overflow-hidden">
-                    <div
-                      className={cn("h-full rounded-full", scoreBarClass(v))}
-                      style={{ width: `${Math.min(100, (v / 10) * 100)}%` }}
+                <li key={d} className="flex items-center gap-3">
+                  <span className="flex w-44 shrink-0 items-center gap-2 text-sm text-foreground">
+                    <span className={cn("bz-dot", dimensionColor(d).bar)} aria-hidden="true" />
+                    {DIMENSION_LABELS[d] ?? d}
+                  </span>
+                  <div className={cn("bz-progress flex-1", scoreProgressTone(v))} aria-hidden="true">
+                    <span
+                      style={
+                        { "--value": `${Math.min(100, (v / 10) * 100)}%` } as CSSProperties
+                      }
                     />
                   </div>
-                  <span className="w-10 text-right text-sm font-semibold tabular-nums">{v.toFixed(1)}</span>
-                </div>
+                  <span className="w-10 text-right text-sm font-semibold tabular-nums text-foreground">
+                    {v.toFixed(1)}
+                  </span>
+                </li>
               );
             })}
-          </div>
+          </ul>
         ) : (
           <p className="text-sm text-muted-foreground">Boyut skoru bulunmuyor.</p>
         )}
@@ -325,37 +397,37 @@ export default function ReportDetailPage() {
 
       {/* SWOT */}
       {swot && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 print:break-inside-avoid">
-          {(
-            [
-              ["Güçlü Yönler", swot.strengths, "text-accent-green"],
-              ["Gelişim Alanları", swot.weaknesses, "text-amber-500"],
-              ["Fırsatlar", swot.opportunities, "text-sky-500"],
-              ["Riskler", swot.threats, "text-destructive"],
-            ] as const
-          ).map(([title, items, color]) => (
-            <GlassCard key={title} hover={false}>
-              <h3 className={cn("text-sm font-semibold mb-2", color)}>{title}</h3>
-              {strings(items).length > 0 ? (
-                <ul className="space-y-1 text-sm text-muted-foreground list-disc pl-4">
-                  {strings(items).map((it, i) => (
-                    <li key={i}>{it}</li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-sm text-muted-foreground/60">—</p>
-              )}
-            </GlassCard>
-          ))}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 print:break-inside-avoid">
+          {swotSections.map(({ title, items, tone, icon: Icon }) => {
+            const list = strings(items);
+            const t = TONE_CLASSES[tone];
+            return (
+              <GlassCard key={title} hover={false} data-tone={tone}>
+                <h3 className={cn("mb-2 flex items-center gap-2 text-[15px] font-bold", t.ink)}>
+                  <Icon className={cn("h-4 w-4 flex-none", t.icon)} aria-hidden="true" />
+                  {title}
+                </h3>
+                {list.length > 0 ? (
+                  <ul className={cn("list-disc space-y-1 pl-4 text-sm text-fg2", t.marker)}>
+                    {list.map((it, i) => (
+                      <li key={i}>{it}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-fg3">—</p>
+                )}
+              </GlassCard>
+            );
+          })}
         </div>
       )}
 
       {/* Kariyer yolu + gelişim önerileri */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 print:break-inside-avoid">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 print:break-inside-avoid">
         <GlassCard hover={false}>
-          <h2 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-            <TrendingUp className="h-4 w-4 text-primary" />
-            Kariyer Yolu
+          <h2 className="mb-3 flex items-center gap-2 text-[15px] font-bold text-foreground">
+            <TrendingUp className="h-4 w-4 flex-none text-data" aria-hidden="true" />
+            Kariyer yolu
           </h2>
           {career && (career.shortTerm || career.midTerm || career.longTerm) ? (
             <dl className="space-y-3 text-sm">
@@ -368,8 +440,8 @@ export default function ReportDetailPage() {
               ).map(([label, text]) =>
                 text ? (
                   <div key={label}>
-                    <dt className="text-xs font-medium text-muted-foreground">{label}</dt>
-                    <dd className="text-foreground">{text}</dd>
+                    <dt className="text-[11.5px] font-semibold text-muted-foreground">{label}</dt>
+                    <dd className="mt-0.5 text-foreground">{text}</dd>
                   </div>
                 ) : null,
               )}
@@ -379,24 +451,28 @@ export default function ReportDetailPage() {
           )}
         </GlassCard>
         <GlassCard hover={false}>
-          <h2 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-            <Target className="h-4 w-4 text-primary" />
-            Gelişim Önerileri
+          <h2 className="mb-3 flex items-center gap-2 text-[15px] font-bold text-foreground">
+            <Target className="h-4 w-4 flex-none text-data" aria-hidden="true" />
+            Gelişim önerileri
           </h2>
-          {developmentAreas.length > 0 || strings(hr?.["trainingNeeds"]).length > 0 ? (
+          {developmentAreas.length > 0 || trainingNeeds.length > 0 ? (
             <div className="space-y-3 text-sm">
               {developmentAreas.map((d, i) => (
                 <div key={i}>
-                  <p className="font-medium text-foreground">{d.area}</p>
-                  {d.recommendation && <p className="text-muted-foreground">{d.recommendation}</p>}
+                  <p className="font-semibold text-foreground">{d.area}</p>
+                  {d.recommendation && (
+                    <p className="mt-0.5 text-[13px] text-muted-foreground">{d.recommendation}</p>
+                  )}
                 </div>
               ))}
-              {strings(hr?.["trainingNeeds"]).length > 0 && (
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground mb-1">Eğitim ihtiyaçları</p>
+              {trainingNeeds.length > 0 && (
+                <div className={cn(developmentAreas.length > 0 && "border-t border-divider pt-3")}>
+                  <p className="mb-1.5 text-[11.5px] font-semibold text-muted-foreground">
+                    Eğitim ihtiyaçları
+                  </p>
                   <div className="flex flex-wrap gap-1.5">
-                    {strings(hr?.["trainingNeeds"]).map((t) => (
-                      <span key={t} className="text-[11px] px-2 py-0.5 rounded-md bg-primary/10 text-primary">
+                    {trainingNeeds.map((t) => (
+                      <span key={t} className="bz-chip">
                         {t}
                       </span>
                     ))}
@@ -414,14 +490,14 @@ export default function ReportDetailPage() {
 
       {s?.keyInsights && (
         <GlassCard hover={false}>
-          <h2 className="text-sm font-semibold text-foreground mb-2 flex items-center gap-2">
-            <Lightbulb className="h-4 w-4 text-primary" />
-            Öne Çıkan İçgörüler
+          <h2 className="mb-2 flex items-center gap-2 text-[15px] font-bold text-foreground">
+            <Lightbulb className="h-4 w-4 flex-none text-data" aria-hidden="true" />
+            Öne çıkan içgörüler
           </h2>
-          <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line">{s.keyInsights}</p>
+          <p className="whitespace-pre-line text-sm leading-relaxed text-fg2">{s.keyInsights}</p>
           {review?.comment && (
-            <p className="text-xs text-muted-foreground mt-3 border-t border-border/30 pt-3">
-              <span className="font-medium text-foreground">İK yorumu:</span> {review.comment}
+            <p className="mt-3 border-t border-divider pt-3 text-xs text-fg2">
+              <span className="font-semibold text-foreground">İK yorumu:</span> {review.comment}
             </p>
           )}
         </GlassCard>
@@ -433,25 +509,39 @@ export default function ReportDetailPage() {
           <button
             type="button"
             onClick={() => setShowAnswers((v) => !v)}
-            className="w-full flex items-center justify-between text-sm font-semibold text-foreground print:hidden"
+            aria-expanded={showAnswers}
+            className="flex w-full items-center justify-between gap-3 rounded-lg text-left text-[15px] font-bold text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring print:hidden"
           >
-            Cevaplar ({s.answers.length})
-            {showAnswers ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            <span className="tabular-nums">Cevaplar ({s.answers.length})</span>
+            {showAnswers ? (
+              <ChevronUp className="h-4 w-4 flex-none text-fg3" aria-hidden="true" />
+            ) : (
+              <ChevronDown className="h-4 w-4 flex-none text-fg3" aria-hidden="true" />
+            )}
           </button>
           <div className={cn("mt-4 space-y-3", !showAnswers && "hidden print:block")}>
             {s.answers.map((a, i) => (
-              <div key={a.id} className="rounded-xl border border-border/30 p-3 print:break-inside-avoid">
-                <p className="text-sm font-medium text-foreground">
+              <div
+                key={a.id}
+                className="rounded-xl border border-divider bg-surface-2 p-3.5 print:break-inside-avoid"
+              >
+                <p className="text-sm font-semibold leading-snug text-foreground">
                   {i + 1}. {a.question?.text ?? "Soru"}
                 </p>
                 {a.question?.dimension && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium">
-                    {DIMENSION_LABELS[a.question.dimension] ?? a.question.dimension}
-                  </span>
+                  <div className="mt-1.5">
+                    <span className="bz-chip bz-chip--sm">
+                      <span
+                        className={cn("bz-dot", dimensionColor(a.question.dimension).bar)}
+                        aria-hidden="true"
+                      />
+                      {DIMENSION_LABELS[a.question.dimension] ?? a.question.dimension}
+                    </span>
+                  </div>
                 )}
-                <p className="text-sm text-muted-foreground mt-1.5 whitespace-pre-line">{answerText(a)}</p>
+                <p className="mt-1.5 whitespace-pre-line text-sm text-fg2">{answerText(a)}</p>
                 {a.followUpAnswer && (
-                  <p className="text-xs text-muted-foreground mt-1">Takip: {a.followUpAnswer}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Takip: {a.followUpAnswer}</p>
                 )}
               </div>
             ))}

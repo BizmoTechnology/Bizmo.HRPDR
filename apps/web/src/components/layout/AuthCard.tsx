@@ -1,43 +1,59 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { AppMark } from "@/components/layout/AppMark";
 
-/** Şifre sıfırlama gibi tek kartlık kimlik doğrulama ekranları için çerçeve */
+const EASE = [0.25, 0.46, 0.45, 0.94] as const;
+
+/**
+ * Şifre sıfırlama gibi tek kartlık giriş ekranları için çerçeve.
+ * Giriş sayfasıyla aynı aile: marka bloğu (AppMark), opak kart ve alt bilgi; aurora zemin `(auth)/layout.tsx` içinde.
+ */
 export function AuthCard({
   title,
   description,
+  footer,
   children,
 }: {
   title: string;
   description?: string;
+  /** Kartın altında, ayırıcı çizgiyle ayrılan bölüm (ör. "Girişe dön" bağlantısı) */
+  footer?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
-    <div
-      className="min-h-screen flex items-center justify-center p-4"
-      style={{
-        background:
-          "linear-gradient(135deg, hsl(200 13% 5%) 0%, hsl(153 40% 12%) 50%, hsl(200 13% 8%) 100%)",
-      }}
-    >
-      <motion.div
-        className="w-full max-w-sm"
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35 }}
-      >
-        <div className="flex flex-col items-center mb-6">
-          <div className="h-12 w-12 rounded-2xl bg-primary flex items-center justify-center mb-3 shadow-lg shadow-primary/20">
-            <span className="text-white font-bold text-lg select-none">PH</span>
+    <div className="mx-auto flex min-h-dvh w-full max-w-[1200px] flex-col px-4 py-8 sm:px-6 lg:px-12 lg:py-10">
+      <div className="flex flex-1 items-center justify-center">
+        <motion.div
+          className="w-full max-w-[400px]"
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.35, ease: EASE }}
+        >
+          <div className="mb-6 flex flex-col items-center text-center">
+            <AppMark size="lg" />
+            <p className="mt-3 font-display text-xl font-extrabold tracking-[-0.02em] text-foreground">
+              PotansiyelHaritası
+            </p>
+            <p className="mt-0.5 text-[13px] text-fg3">Yönetim paneli</p>
           </div>
-          <p className="text-white/60 text-sm">PotansiyelHaritası</p>
-        </div>
-        <div className="rounded-2xl bg-background/95 border border-border/50 p-6 shadow-xl">
-          <h1 className="text-xl font-bold text-foreground mb-1">{title}</h1>
-          {description && <p className="text-sm text-muted-foreground mb-6">{description}</p>}
-          {children}
-        </div>
-      </motion.div>
+
+          <div className="rounded-3xl border border-glass-border bg-surface p-6 shadow-2 sm:p-8">
+            <h1 className="font-display text-2xl font-extrabold tracking-[-0.02em] text-foreground">
+              {title}
+            </h1>
+            {description && <p className="mt-1 text-[13.5px] text-fg2">{description}</p>}
+
+            <div className="mt-6">{children}</div>
+
+            {footer && <div className="mt-6 border-t border-divider pt-5">{footer}</div>}
+          </div>
+        </motion.div>
+      </div>
+
+      <p className="mt-10 text-center text-xs text-fg3">
+        © 2026 PotansiyelHaritası · Tüm hakları saklıdır
+      </p>
     </div>
   );
 }

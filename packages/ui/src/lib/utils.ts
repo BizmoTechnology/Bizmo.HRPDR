@@ -11,10 +11,10 @@ export function formatScore(score: number): string {
 
 export function getScoreColor(
   score: number
-): "emerald" | "amber" | "destructive" {
-  if (score >= 7.0) return "emerald";
-  if (score >= 4.0) return "amber";
-  return "destructive";
+): "success" | "warning" | "danger" {
+  if (score >= 7.0) return "success";
+  if (score >= 4.0) return "warning";
+  return "danger";
 }
 
 export function getScorePercent(score: number, max = 10): number {

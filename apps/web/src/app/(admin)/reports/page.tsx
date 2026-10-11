@@ -11,18 +11,22 @@ import {
   Trash2,
   Loader2,
   ShieldAlert,
+  AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
-import { GlassCard } from "@ph/ui";
 import { cn } from "@/lib/utils";
 import { apiErrorMessage } from "@/lib/api";
 import { usePermissions } from "@/lib/roles";
 import { useDeleteReport, useReportList, type ReportRow } from "@/hooks/use-api";
 
-const STATUS_BADGE: Record<string, { label: string; className: string }> = {
-  READY: { label: "Hazır", className: "bg-accent-green/10 text-accent-green" },
-  GENERATING: { label: "Hazırlanıyor", className: "bg-amber-500/10 text-amber-500" },
-  FAILED: { label: "Başarısız", className: "bg-destructive/10 text-destructive" },
+/**
+ * Rapor durumu → Bizmo süreç durumu rozeti (DESIGN.md §13 `.bz-status`): şekil + sözcük.
+ * `status` boşsa nötr rozet (bilinmeyen durum).
+ */
+const STATUS_BADGE: Record<string, { label: string; status?: string }> = {
+  READY: { label: "Hazır", status: "done" },
+  GENERATING: { label: "Hazırlanıyor", status: "progress" },
+  FAILED: { label: "Başarısız", status: "rejected" },
 };
 
 function formatDate(date: string | null | undefined) {
@@ -34,10 +38,15 @@ function formatDate(date: string | null | undefined) {
   }).format(new Date(date));
 }
 
-function scoreClass(score: number) {
-  if (score >= 8) return "text-accent-green";
-  if (score >= 6) return "text-amber-500";
-  return "text-destructive";
+/** Skor bandı (0–10; iyi ≥ 8 · orta ≥ 6 · zayıf): durum tonu çipte, değer her zaman metin olarak yazılır */
+function scoreTone(score: number) {
+  if (score >= 8) return "bz-chip--success";
+  if (score >= 6) return "bz-chip--warning";
+  return "bz-chip--danger";
+}
+
+function initialsOf(firstName: string, lastName: string) {
+  return `${firstName.charAt(0)}${lastName.charAt(0)}`.toLocaleUpperCase("tr-TR");
 }
 
 export default function ReportsPage() {
@@ -87,161 +96,183 @@ export default function ReportsPage() {
 
   if (!canAnalyze) {
     return (
-      <GlassCard hover={false}>
-        <div className="flex flex-col items-center justify-center py-16 text-center">
-          <ShieldAlert className="h-8 w-8 text-muted-foreground mb-3" />
-          <p className="text-sm font-medium text-foreground">Raporlara erişim yetkiniz yok</p>
-          <p className="text-xs text-muted-foreground mt-1">
+      <div className="bz-card">
+        <div className="bz-empty">
+          <span className="bz-icon-box" aria-hidden="true">
+            <ShieldAlert />
+          </span>
+          <p className="bz-empty__title">Raporlara erişim yetkiniz yok</p>
+          <p className="bz-empty__text">
             Rapor görüntüleme ve indirme için Analist veya üzeri rol gerekir.
           </p>
         </div>
-      </GlassCard>
+      </div>
     );
   }
 
   return (
-    <div className="space-y-6 w-full">
+    <div className="w-full">
+      {/* Başlık */}
       <motion.div
-        className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
+        className="bz-page-header"
         initial={{ opacity: 0, y: -8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}
       >
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Raporlar</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
+        <div className="bz-page-header__text">
+          <h1 className="bz-page-header__title">Raporlar</h1>
+          <p className="bz-page-header__sub">
             Tamamlanan değerlendirmeler için oluşturulan potansiyel raporları
           </p>
         </div>
       </motion.div>
 
-      <GlassCard hover={false} className="!p-3 md:!p-4">
-        <div className="relative sm:w-80">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <input
-            type="text"
-            placeholder="Personel adı, sicil no veya değerlendirme ara..."
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 rounded-xl bg-muted/50 border border-border/40 text-sm placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all"
-          />
+      <div className="space-y-4">
+        {/* Araç çubuğu: arama (DESIGN.md §11 `.bz-input-group`) */}
+        <div className="bz-toolbar" role="search">
+          <div className="bz-input-group w-full sm:w-80">
+            <span className="bz-input-prefix">
+              <Search className="h-4 w-4" />
+            </span>
+            <input
+              type="text"
+              aria-label="Personel adı, sicil no veya değerlendirme ara"
+              placeholder="Personel adı, sicil no veya değerlendirme ara..."
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              className="bz-field bz-field--sm"
+            />
+          </div>
         </div>
-      </GlassCard>
 
-      <GlassCard hover={false}>
+        {/* Liste */}
         {isLoading ? (
-          <div className="space-y-3">
+          <div className="bz-card space-y-3 p-5" aria-busy="true">
             {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="h-14 rounded-xl bg-muted/40 animate-pulse" />
+              <div key={i} className="bz-skeleton h-12 rounded-xl" />
             ))}
           </div>
         ) : isError ? (
-          <div className="py-16 text-center text-sm text-destructive">
-            {apiErrorMessage(error, "Raporlar yüklenemedi")}
+          <div role="alert" className="bz-alert bz-alert--danger">
+            <AlertTriangle />
+            <div className="min-w-0">
+              <p className="bz-alert__title break-words">
+                {apiErrorMessage(error, "Raporlar yüklenemedi")}
+              </p>
+            </div>
           </div>
         ) : reports.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="h-14 w-14 rounded-2xl bg-muted/60 flex items-center justify-center mb-4">
-              <FileText className="h-6 w-6 text-muted-foreground" />
-            </div>
-            <p className="text-sm font-medium text-muted-foreground">
-              {search ? "Aramanızla eşleşen rapor yok" : "Henüz rapor oluşturulmamış"}
-            </p>
-            {!search && (
-              <p className="text-xs text-muted-foreground/60 mt-1 max-w-sm">
-                Değerlendirme detayında tamamlanmış bir oturumu açıp İK onayından sonra
-                &ldquo;Rapor oluştur&rdquo; ile rapor üretebilirsiniz.
+          <div className="bz-card">
+            <div className="bz-empty">
+              <span className="bz-icon-box" aria-hidden="true">
+                <FileText />
+              </span>
+              <p className="bz-empty__title">
+                {search ? "Aramanızla eşleşen rapor yok" : "Henüz rapor oluşturulmamış"}
               </p>
-            )}
+              {!search && (
+                <p className="bz-empty__text">
+                  Değerlendirme detayında tamamlanmış bir oturumu açıp İK onayından sonra
+                  &ldquo;Rapor oluştur&rdquo; ile rapor üretebilirsiniz.
+                </p>
+              )}
+            </div>
           </div>
         ) : (
-          <>
-            <div className="overflow-x-auto">
-              <table className="w-full">
+          <div>
+            <div className="bz-table-wrap">
+              <table className="bz-table">
                 <thead>
-                  <tr className="border-b border-border/30">
-                    <th className="text-left text-xs font-medium text-muted-foreground uppercase pb-3 pr-4">
-                      Personel
-                    </th>
-                    <th className="text-left text-xs font-medium text-muted-foreground uppercase pb-3 pr-4 hidden md:table-cell">
+                  <tr>
+                    <th scope="col">Personel</th>
+                    <th scope="col" className="hidden md:table-cell">
                       Değerlendirme
                     </th>
-                    <th className="text-left text-xs font-medium text-muted-foreground uppercase pb-3 pr-4">
-                      Genel Skor
+                    <th scope="col" className="is-num">
+                      Genel skor
                     </th>
-                    <th className="text-left text-xs font-medium text-muted-foreground uppercase pb-3 pr-4 hidden sm:table-cell">
+                    <th scope="col" className="hidden sm:table-cell">
                       Durum
                     </th>
-                    <th className="text-left text-xs font-medium text-muted-foreground uppercase pb-3 pr-4 hidden lg:table-cell">
+                    <th scope="col" className="hidden lg:table-cell">
                       Oluşturulma
                     </th>
-                    <th className="pb-3" />
+                    <th scope="col" className="w-14">
+                      <span className="sr-only">Eylemler</span>
+                    </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border/20">
+                <tbody>
                   {reports.map((r) => {
-                    const badge = STATUS_BADGE[r.status] ?? {
-                      label: r.status,
-                      className: "bg-muted text-muted-foreground",
-                    };
+                    const badge = STATUS_BADGE[r.status] ?? { label: r.status };
+                    const deleting =
+                      deleteMutation.isPending && deleteMutation.variables === r.id;
                     return (
                       <tr
                         key={r.id}
+                        tabIndex={0}
                         onClick={() => router.push(`/reports/${r.id}`)}
-                        className="hover:bg-muted/30 transition-colors cursor-pointer group"
+                        onKeyDown={(e) => {
+                          // Yalnız satırın kendisi odaktayken: içteki sil düğmesinde Enter satırı açmasın
+                          if (e.key === "Enter" && e.target === e.currentTarget) {
+                            router.push(`/reports/${r.id}`);
+                          }
+                        }}
+                        className="cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
                       >
-                        <td className="py-3.5 pr-4">
-                          <p className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">
-                            {r.personnel.firstName} {r.personnel.lastName}
-                          </p>
-                          <p className="text-xs text-muted-foreground mt-0.5">
-                            {r.personnel.employeeId}
-                            {r.personnel.department?.name ? ` · ${r.personnel.department.name}` : ""}
-                          </p>
+                        <td className="max-w-[220px] whitespace-normal py-2.5 sm:max-w-[360px]">
+                          <div className="bz-cell-user">
+                            <span className="bz-avatar bz-avatar--sm" aria-hidden="true">
+                              {initialsOf(r.personnel.firstName, r.personnel.lastName)}
+                            </span>
+                            <div className="min-w-0">
+                              <p className="truncate font-semibold text-foreground">
+                                {r.personnel.firstName} {r.personnel.lastName}
+                              </p>
+                              <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                                {r.personnel.employeeId}
+                                {r.personnel.department?.name
+                                  ? ` · ${r.personnel.department.name}`
+                                  : ""}
+                              </p>
+                            </div>
+                          </div>
                         </td>
-                        <td className="py-3.5 pr-4 hidden md:table-cell">
-                          <span className="text-sm text-muted-foreground">
-                            {r.session?.assessment?.title ?? "—"}
-                          </span>
+                        <td className="hidden text-fg2 md:table-cell">
+                          {r.session?.assessment?.title ?? <span className="is-muted">—</span>}
                         </td>
-                        <td className="py-3.5 pr-4">
+                        <td className="is-num">
                           {typeof r.overallScore === "number" ? (
-                            <span className={cn("text-sm font-bold tabular-nums", scoreClass(r.overallScore))}>
+                            <span
+                              className={cn("bz-chip tabular-nums", scoreTone(r.overallScore))}
+                            >
                               {r.overallScore.toFixed(1)}
                             </span>
                           ) : (
-                            <span className="text-sm text-muted-foreground">—</span>
+                            <span className="is-muted">—</span>
                           )}
                         </td>
-                        <td className="py-3.5 pr-4 hidden sm:table-cell">
-                          <span
-                            className={cn(
-                              "inline-flex px-2 py-0.5 rounded-md text-[11px] font-semibold",
-                              badge.className,
-                            )}
-                          >
+                        <td className="hidden sm:table-cell">
+                          <span className="bz-status" data-status={badge.status}>
                             {badge.label}
                           </span>
                         </td>
-                        <td className="py-3.5 pr-4 hidden lg:table-cell">
-                          <span className="text-xs text-muted-foreground">
-                            {formatDate(r.generatedAt ?? r.createdAt)}
-                          </span>
+                        <td className="hidden tabular-nums text-fg2 lg:table-cell">
+                          {formatDate(r.generatedAt ?? r.createdAt)}
                         </td>
-                        <td className="py-3.5 text-right">
-                          <button
-                            type="button"
-                            onClick={(e) => handleDelete(e, r)}
-                            disabled={deleteMutation.isPending}
-                            title="Raporu sil"
-                            className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-40"
-                          >
-                            {deleteMutation.isPending && deleteMutation.variables === r.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <Trash2 className="h-4 w-4" />
-                            )}
-                          </button>
+                        <td className="w-14">
+                          <div className={cn("bz-cell-actions", deleting && "opacity-100")}>
+                            <button
+                              type="button"
+                              onClick={(e) => handleDelete(e, r)}
+                              disabled={deleteMutation.isPending}
+                              title="Raporu sil"
+                              aria-label="Raporu sil"
+                              className="bz-icon-btn bz-icon-btn--sm hover:bg-danger-soft hover:text-danger-ink disabled:pointer-events-none disabled:opacity-40"
+                            >
+                              {deleting ? <Loader2 className="animate-spin" /> : <Trash2 />}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -250,33 +281,40 @@ export default function ReportsPage() {
               </table>
             </div>
 
+            {/* Sayfalama (DESIGN.md §9.6; ortak Pagination bileşeniyle aynı görünüm) */}
             {totalPages > 1 && (
-              <div className="flex items-center justify-between pt-4 border-t border-border/20 mt-4">
-                <p className="text-xs text-muted-foreground">Toplam {total} rapor</p>
+              <div className="mt-2 flex items-center justify-between gap-3 px-1 py-2">
+                <span className="text-[13px] tabular-nums text-muted-foreground">
+                  Toplam {total} rapor
+                </span>
                 <div className="flex items-center gap-1">
                   <button
+                    type="button"
                     onClick={() => setPage((p) => Math.max(1, p - 1))}
                     disabled={page <= 1}
-                    className="p-1.5 rounded-lg hover:bg-muted/60 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    className="bz-icon-btn bz-icon-btn--sm disabled:pointer-events-none disabled:opacity-40"
+                    aria-label="Önceki sayfa"
                   >
                     <ChevronLeft className="h-4 w-4" />
                   </button>
-                  <span className="text-xs tabular-nums text-muted-foreground px-2">
+                  <span className="min-w-[3.5rem] text-center text-[13px] font-semibold tabular-nums">
                     {page} / {totalPages}
                   </span>
                   <button
+                    type="button"
                     onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                     disabled={page >= totalPages}
-                    className="p-1.5 rounded-lg hover:bg-muted/60 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    className="bz-icon-btn bz-icon-btn--sm disabled:pointer-events-none disabled:opacity-40"
+                    aria-label="Sonraki sayfa"
                   >
                     <ChevronRight className="h-4 w-4" />
                   </button>
                 </div>
               </div>
             )}
-          </>
+          </div>
         )}
-      </GlassCard>
+      </div>
     </div>
   );
 }

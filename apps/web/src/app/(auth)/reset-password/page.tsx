@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { AlertCircle, ArrowLeft, Loader2 } from "lucide-react";
+import { AlertCircle, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { resetPasswordSchema } from "@ph/shared";
 import { api, apiErrorMessage } from "@/lib/api";
@@ -51,61 +51,82 @@ export default function ResetPasswordPage() {
   };
 
   return (
-    <AuthCard title="Yeni Şifre Belirle" description="En az 8 karakter, bir büyük harf ve bir rakam içermeli.">
+    <AuthCard
+      title="Yeni şifre belirle"
+      description="En az 8 karakter, bir büyük harf ve bir rakam içermeli."
+      footer={
+        <Link
+          href={token ? "/login" : "/forgot-password"}
+          className="bz-link inline-flex items-center gap-1.5 text-[13px]"
+        >
+          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+          {token ? "Girişe dön" : "Yeni bağlantı iste"}
+        </Link>
+      }
+    >
       {token === null ? null : !token ? (
-        <p className="text-sm text-destructive mb-4">
-          Sıfırlama bağlantısı geçersiz. Lütfen yeni bir bağlantı isteyin.
-        </p>
+        <div role="alert" className="bz-alert bz-alert--danger">
+          <AlertCircle aria-hidden="true" />
+          <p>Sıfırlama bağlantısı geçersiz. Lütfen yeni bir bağlantı isteyin.</p>
+        </div>
       ) : (
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <input type="hidden" {...register("token")} />
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-foreground">Yeni şifre</label>
+          <div className="bz-form-row">
+            <label htmlFor="reset-password" className="bz-label">
+              Yeni şifre
+            </label>
             <input
               {...register("password")}
+              id="reset-password"
               type="password"
               autoComplete="new-password"
-              className={cn("form-input-base px-3.5", errors.password && "border-destructive")}
+              className="bz-field"
+              aria-invalid={errors.password ? true : undefined}
+              aria-describedby={errors.password ? "reset-password-error" : undefined}
             />
             {errors.password && (
-              <p className="flex items-center gap-1 text-xs text-destructive">
-                <AlertCircle className="h-3 w-3" />
+              <p id="reset-password-error" className="bz-error-text">
                 {errors.password.message}
               </p>
             )}
           </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-foreground">Yeni şifre (tekrar)</label>
+          <div className="bz-form-row">
+            <label htmlFor="reset-password-confirm" className="bz-label">
+              Yeni şifre (tekrar)
+            </label>
             <input
               {...register("confirmPassword")}
+              id="reset-password-confirm"
               type="password"
               autoComplete="new-password"
-              className={cn("form-input-base px-3.5", errors.confirmPassword && "border-destructive")}
+              className="bz-field"
+              aria-invalid={errors.confirmPassword ? true : undefined}
+              aria-describedby={errors.confirmPassword ? "reset-password-confirm-error" : undefined}
             />
             {errors.confirmPassword && (
-              <p className="flex items-center gap-1 text-xs text-destructive">
-                <AlertCircle className="h-3 w-3" />
+              <p id="reset-password-confirm-error" className="bz-error-text">
                 {errors.confirmPassword.message}
               </p>
             )}
           </div>
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="w-full h-11 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90 disabled:opacity-60 flex items-center justify-center gap-2"
-          >
-            {isSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-            Şifreyi güncelle
-          </button>
+
+          {/* Ekrandaki tek birincil eylem */}
+          <div className="pt-2">
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              aria-busy={isSubmitting || undefined}
+              className={cn(
+                "bz-btn bz-btn--primary bz-btn--lg bz-btn--block",
+                isSubmitting && "is-loading",
+              )}
+            >
+              {isSubmitting ? "Güncelleniyor…" : "Şifreyi güncelle"}
+            </button>
+          </div>
         </form>
       )}
-      <Link
-        href={token ? "/login" : "/forgot-password"}
-        className="mt-4 inline-flex items-center gap-1.5 text-sm text-primary hover:underline underline-offset-4"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        {token ? "Girişe dön" : "Yeni bağlantı iste"}
-      </Link>
     </AuthCard>
   );
 }

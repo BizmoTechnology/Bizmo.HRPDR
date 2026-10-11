@@ -217,7 +217,7 @@ export function SessionDetailPanel({
         transition={{ type: "spring", damping: 30, stiffness: 300 }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex shrink-0 items-start justify-between gap-4 px-6 pb-3 pt-5">
+        <div className="flex shrink-0 items-start justify-between gap-4 px-4 pb-3 pt-5 sm:px-6">
           <div className="flex min-w-0 items-center gap-3">
             <span className="bz-icon-box">
               <BrainCircuit />
@@ -257,7 +257,7 @@ export function SessionDetailPanel({
           </button>
         </div>
 
-        <div className="bz-tabs shrink-0 px-4" role="tablist" aria-label="Oturum bölümleri">
+        <div className="bz-tabs shrink-0 px-2 sm:px-4" role="tablist" aria-label="Oturum bölümleri">
           {ANALYSIS_TABS.map((tab) => (
             <button
               key={tab.id}
@@ -267,13 +267,13 @@ export function SessionDetailPanel({
               className="bz-tab"
               onClick={() => setActiveTab(tab.id)}
             >
-              <tab.icon className="h-4 w-4" />
+              <tab.icon className="hidden h-4 w-4 sm:block" />
               {tab.label}
             </button>
           ))}
         </div>
 
-        <div className="flex-1 overflow-y-auto px-6 py-5">
+        <div className="flex-1 overflow-y-auto px-4 py-5 sm:px-6">
           {isLoading ? (
             <div className="space-y-3" aria-busy="true" aria-label="Yükleniyor">
               {Array.from({ length: 4 }).map((_, i) => (

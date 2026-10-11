@@ -154,7 +154,7 @@ function SectionHeader({
         <h2 className="text-base font-bold text-foreground">{title}</h2>
         {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
       </div>
-      {action}
+      {action && <div className="w-full sm:w-auto">{action}</div>}
     </div>
   );
 }
@@ -462,7 +462,7 @@ export default function AnalyticsPage() {
 
       {/* KPI */}
       <motion.div
-        className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4"
+        className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4"
         variants={motionContainer}
         initial="hidden"
         animate="show"
@@ -836,7 +836,8 @@ export default function AnalyticsPage() {
                 </thead>
                 <tbody>
                   {trends.map((t: (typeof trends)[0], idx: number) => {
-                    const prev = trends[idx + 1];
+                    // Sunucu ayları eskiden yeniye sıralar: değişim bir önceki aya göredir
+                    const prev = idx > 0 ? trends[idx - 1] : undefined;
                     // Gösterilen hassasiyete (0.1) yuvarlanır: "0.0" görünen fark yatay sayılır
                     const diff =
                       prev && t.avgScore != null && prev.avgScore != null
@@ -949,7 +950,7 @@ export default function AnalyticsPage() {
                         </h3>
                         <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
                           <Users className="h-3.5 w-3.5 flex-none" aria-hidden="true" />
-                          <span className="tabular-nums">{dept.personnelCount}</span> personel
+                          <span className="tabular-nums">{dept.personnelCount} personel</span>
                         </p>
                       </div>
                       {dept.avgScore != null && (

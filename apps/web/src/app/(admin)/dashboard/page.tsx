@@ -106,7 +106,7 @@ function CardHeader({
       <span className="bz-icon-box" aria-hidden="true">
         <Icon />
       </span>
-      <h2 className="min-w-0 flex-1 truncate text-[15px] font-bold text-foreground">
+      <h2 className="min-w-0 flex-1 text-[15px] font-bold leading-snug text-foreground">
         {title}
       </h2>
       {action}

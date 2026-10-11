@@ -84,7 +84,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <AnimatePresence>
         {paletteOpen ? <CommandPalette onClose={() => setPaletteOpen(false)} /> : null}
       </AnimatePresence>
-      <AiChatDock />
+      {/* AI asistan sayfasında yüzen asistan düğmesi aynı sohbeti açacağı için gösterilmez */}
+      {pathname !== "/ai-chat" ? <AiChatDock /> : null}
     </div>
   );
 }

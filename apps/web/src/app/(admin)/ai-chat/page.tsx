@@ -16,7 +16,7 @@ export default function AiChatPage() {
         </div>
       </div>
 
-      <AiChatWorkArea className="min-h-0 flex-1" />
+      <AiChatWorkArea showHeading={false} className="min-h-0 flex-1" />
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, Manrope } from "next/font/google";
+import { bizmoTokens } from "@bizmo/theme/tokens";
 import { themeInitScript } from "@ph/ui";
 import "./globals.css";
 import { Providers } from "./providers";
@@ -26,8 +27,9 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   colorScheme: "light dark",
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#F3F6FA" },
-    { media: "(prefers-color-scheme: dark)", color: "#0D151D" },
+    // Tarayıcı çubuğu rengi CSS değişkeni okuyamaz: ham token değeri kullanılır
+    { media: "(prefers-color-scheme: light)", color: bizmoTokens.light.bg },
+    { media: "(prefers-color-scheme: dark)", color: bizmoTokens.dark.bg },
   ],
 };
 

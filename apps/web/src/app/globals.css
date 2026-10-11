@@ -46,40 +46,6 @@
 }
 
 @layer components {
-  /* Cam yalnız yüzen öğe ve kabukta (DESIGN.md §4.4); içerik kartları opaktır (.bz-card) */
-  .glass-surface,
-  .glass-surface-static {
-    background: var(--bz-glass-bg);
-    -webkit-backdrop-filter: blur(var(--bz-glass-blur)) saturate(var(--bz-glass-saturate));
-    backdrop-filter: blur(var(--bz-glass-blur)) saturate(var(--bz-glass-saturate));
-    border: 1px solid var(--bz-glass-border);
-    box-shadow: var(--bz-shadow-1);
-  }
-
-  /* Giriş alanı: .bz-field ölçüleri (42px, köşe 12, alan zemini; odakta yüzey + odak kenarı + yumuşak yeşil halka) */
-  .form-input-base {
-    width: 100%;
-    height: var(--bz-field-h);
-    border-radius: 12px;
-    background: var(--bz-field);
-    border: 1px solid var(--bz-field-border);
-    font-size: 14px;
-    color: var(--bz-text);
-    outline: none;
-    transition: border-color var(--bz-duration-fast), box-shadow var(--bz-duration-fast), background-color var(--bz-duration-fast);
-  }
-  .form-input-base::placeholder {
-    color: var(--bz-text-3);
-  }
-  .form-input-base:hover {
-    border-color: var(--bz-border-strong);
-  }
-  .form-input-base:focus {
-    background: var(--bz-surface);
-    border-color: var(--bz-focus);
-    box-shadow: 0 0 0 3px var(--bz-accent-soft);
-  }
-
   /* Dar üst barda arama hapı gizlenir (bz-topbar kapsayıcı sorgusu); yerine simge düğmesi görünür */
   .topbar-search-icon {
     display: none;
@@ -88,12 +54,6 @@
     .topbar-search-icon {
       display: inline-flex;
     }
-  }
-
-  /* react-day-picker (Calendar): seçili gün yeşil dolgu + lacivert yazı, bugün yeşil halka (DESIGN.md §19.2) */
-  .rdp-root {
-    --rdp-accent-color: var(--bz-accent);
-    --rdp-accent-background-color: var(--bz-accent-soft);
   }
 
   /* sonner bildirimleri: .bz-toast görünümü — cam yüzey, 16 köşe, durum tonu yüzeyle karışık (DESIGN.md §17) */
@@ -121,6 +81,71 @@
     -webkit-backdrop-filter: blur(var(--bz-glass-blur)) saturate(var(--bz-glass-saturate));
     backdrop-filter: blur(var(--bz-glass-blur)) saturate(var(--bz-glass-saturate));
   }
+}
+
+/*
+ * Üçüncü taraf bileşenler: sınıf adları kaynakta geçmediği için Tailwind'in @layer components
+ * temizliğine takılmasınlar diye katman dışında tanımlanır.
+ */
+/* react-day-picker (Calendar): seçili gün yeşil dolgu + lacivert yazı, bugün yeşil halka (DESIGN.md §19.2) */
+html .rdp-root {
+  --rdp-accent-color: var(--bz-accent);
+  --rdp-accent-background-color: var(--bz-accent-soft);
+  /* Gün 36px, köşe 8 */
+  --rdp-day-height: 36px;
+  --rdp-day-width: 36px;
+  --rdp-day_button-height: 36px;
+  --rdp-day_button-width: 36px;
+  --rdp-day_button-border-radius: 8px;
+  --rdp-nav_button-height: 28px;
+  --rdp-nav_button-width: 28px;
+}
+
+/* ApexCharts: ipucu cam yüzey + 12 köşe, araç çubuğu simgeleri soluk metin, seçili simge yeşil mürekkep (DESIGN.md §28.2) */
+html .apexcharts-tooltip.apexcharts-theme-light,
+html .apexcharts-tooltip.apexcharts-theme-dark {
+  background: var(--bz-glass-strong);
+  color: var(--bz-text);
+  border: 1px solid var(--bz-glass-border);
+  border-radius: 12px;
+  box-shadow: var(--bz-shadow-2);
+  -webkit-backdrop-filter: blur(var(--bz-glass-blur)) saturate(var(--bz-glass-saturate));
+  backdrop-filter: blur(var(--bz-glass-blur)) saturate(var(--bz-glass-saturate));
+}
+html .apexcharts-tooltip.apexcharts-theme-light .apexcharts-tooltip-title,
+html .apexcharts-tooltip.apexcharts-theme-dark .apexcharts-tooltip-title {
+  background: transparent;
+  border-bottom: 1px solid var(--bz-divider);
+  font-weight: 600;
+}
+html .apexcharts-xaxistooltip {
+  background: var(--bz-glass-strong);
+  color: var(--bz-text);
+  border-color: var(--bz-glass-border);
+}
+html .apexcharts-xaxistooltip-bottom::before,
+html .apexcharts-xaxistooltip-bottom::after {
+  border-bottom-color: var(--bz-glass-border);
+}
+html .apexcharts-toolbar svg {
+  fill: var(--bz-text-3);
+}
+html .apexcharts-toolbar :is(.apexcharts-zoom-icon, .apexcharts-pan-icon, .apexcharts-selection-icon).apexcharts-selected svg,
+html .apexcharts-toolbar div:hover svg {
+  fill: var(--bz-accent-ink);
+}
+html .apexcharts-pan-icon.apexcharts-selected svg {
+  stroke: var(--bz-accent-ink);
+}
+html .apexcharts-menu {
+  background: var(--bz-glass-strong);
+  border: 1px solid var(--bz-glass-border);
+  border-radius: 12px;
+  box-shadow: var(--bz-shadow-3);
+  color: var(--bz-text);
+}
+html .apexcharts-menu-item:hover {
+  background: var(--bz-hover);
 }
 
 /* Vurgu (DESIGN.md §3.1): soluk metin içindeki strong / b birincil metin rengine çıkar */

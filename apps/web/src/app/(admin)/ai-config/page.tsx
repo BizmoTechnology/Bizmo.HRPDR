@@ -818,7 +818,7 @@ function PromptTemplatesSection() {
 
   return (
     <section aria-labelledby="ai-prompts-title">
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-1">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
         <h2 id="ai-prompts-title" className="text-[17px] font-bold text-foreground">
           Analiz prompt şablonları
         </h2>

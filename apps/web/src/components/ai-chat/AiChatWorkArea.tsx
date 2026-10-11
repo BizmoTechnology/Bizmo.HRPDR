@@ -33,14 +33,17 @@ function AiChatOuter({
   if (embedded) {
     return <div className={className}>{children}</div>;
   }
-  return <GlassCard className={className}>{children}</GlassCard>;
+  return <GlassCard className={cn("p-0", className)}>{children}</GlassCard>;
 }
 
 export function AiChatWorkArea({
   embedded = false,
+  showHeading = true,
   className,
 }: {
   embedded?: boolean;
+  /** Sayfa kendi başlığını gösteriyorsa (ör. /ai-chat) başlık tekrarlanmaz; yalnız eylemler kalır */
+  showHeading?: boolean;
   className?: string;
 }) {
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -113,18 +116,27 @@ export function AiChatWorkArea({
     >
       <div
         className={cn(
-          "flex shrink-0 items-start justify-between gap-2 border-b border-divider px-3 pb-2 pt-4 sm:px-4 sm:pb-3 sm:pt-5",
+          "flex shrink-0 items-start justify-between gap-2 border-b border-divider px-3 sm:px-4",
+          showHeading ? "pb-2 pt-4 sm:pb-3 sm:pt-5" : "py-2",
           // Çekmecede sağ üst köşe Kapat düğmesine ayrılır
           embedded ? "pr-16 sm:pr-16 pl-5 sm:pl-6" : "rounded-t-2xl",
         )}
       >
         <div className="min-w-0 flex-1">
-          <h2 className="text-base font-bold leading-tight text-foreground">
-            İK AI Asistanı
-          </h2>
-          <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-muted-foreground sm:text-xs">
-            Terfi, amirlik ve aday önerileri — kurum değerlendirme verilerine dayanır
-          </p>
+          {showHeading ? (
+            <>
+              <h2 className="text-base font-bold leading-tight text-foreground">
+                İK AI Asistanı
+              </h2>
+              <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-muted-foreground sm:text-xs">
+                Terfi, amirlik ve aday önerileri — kurum değerlendirme verilerine dayanır
+              </p>
+            </>
+          ) : (
+            <p className="truncate pt-1.5 text-sm font-semibold text-foreground">
+              {conversationId ? detail?.title?.trim() || "Sohbet" : "Yeni sohbet"}
+            </p>
+          )}
         </div>
         <div className="flex shrink-0 gap-0.5">
           <button

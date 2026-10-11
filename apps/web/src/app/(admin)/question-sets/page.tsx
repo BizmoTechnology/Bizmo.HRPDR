@@ -158,7 +158,7 @@ export default function QuestionSetsPage() {
                 <th className="hidden md:table-cell">Açıklama</th>
                 <th className="is-num hidden sm:table-cell">Soru</th>
                 <th className="hidden lg:table-cell">Boyut ağırlıkları</th>
-                <th className="is-num">Sürüm</th>
+                <th className="is-num hidden sm:table-cell">Sürüm</th>
                 <th>Varsayılan</th>
               </tr>
             </thead>
@@ -169,7 +169,9 @@ export default function QuestionSetsPage() {
                   onClick={() => router.push(`/question-sets/${qs.id}`)}
                   className="cursor-pointer"
                 >
-                  <td className="font-semibold text-foreground">{qs.name}</td>
+                  <td className="min-w-[10rem] whitespace-normal py-2.5 font-semibold text-foreground">
+                    {qs.name}
+                  </td>
                   <td className="hidden md:table-cell">
                     {qs.description ? (
                       <span className="block max-w-xs truncate text-fg2">
@@ -185,7 +187,7 @@ export default function QuestionSetsPage() {
                   <td className="hidden lg:table-cell">
                     <WeightBar qs={qs} />
                   </td>
-                  <td className="is-num text-fg2">v{qs.version}</td>
+                  <td className="is-num hidden sm:table-cell text-fg2">v{qs.version}</td>
                   <td>
                     {qs.isDefault ? (
                       <span className="bz-chip bz-chip--success">

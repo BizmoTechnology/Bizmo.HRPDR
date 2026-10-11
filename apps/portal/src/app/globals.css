@@ -46,40 +46,6 @@
 }
 
 @layer components {
-  /* Cam yalnız yüzen öğe ve kabukta (DESIGN.md §4.4); içerik kartları opaktır (.bz-card) */
-  .glass-surface,
-  .glass-surface-static {
-    background: var(--bz-glass-bg);
-    -webkit-backdrop-filter: blur(var(--bz-glass-blur)) saturate(var(--bz-glass-saturate));
-    backdrop-filter: blur(var(--bz-glass-blur)) saturate(var(--bz-glass-saturate));
-    border: 1px solid var(--bz-glass-border);
-    box-shadow: var(--bz-shadow-1);
-  }
-
-  /* Giriş alanı: .bz-field ölçüleri (42px, köşe 12, alan zemini; odakta yüzey + odak kenarı + yumuşak yeşil halka) */
-  .form-input-base {
-    width: 100%;
-    height: var(--bz-field-h);
-    border-radius: 12px;
-    background: var(--bz-field);
-    border: 1px solid var(--bz-field-border);
-    font-size: 14px;
-    color: var(--bz-text);
-    outline: none;
-    transition: border-color var(--bz-duration-fast), box-shadow var(--bz-duration-fast), background-color var(--bz-duration-fast);
-  }
-  .form-input-base::placeholder {
-    color: var(--bz-text-3);
-  }
-  .form-input-base:hover {
-    border-color: var(--bz-border-strong);
-  }
-  .form-input-base:focus {
-    background: var(--bz-surface);
-    border-color: var(--bz-focus);
-    box-shadow: 0 0 0 3px var(--bz-accent-soft);
-  }
-
   /* sonner bildirimleri: .bz-toast görünümü — cam yüzey, 16 köşe, durum tonu yüzeyle karışık (DESIGN.md §17) */
   html [data-sonner-toaster][data-theme] {
     --normal-bg: var(--bz-glass-strong);

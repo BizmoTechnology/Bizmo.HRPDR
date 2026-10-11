@@ -1,12 +1,11 @@
-import { Loader2 } from "lucide-react";
-
+/** Sayfa geçişi: içeriğin şekli bilinmediği için tam ekran durum + tema döner göstergesi (DESIGN.md §17) */
 export default function PortalLoading() {
   return (
-    <div className="flex min-h-screen w-full items-center justify-center p-8">
-      <div className="flex flex-col items-center gap-3 text-muted-foreground">
-        <Loader2 className="h-8 w-8 animate-spin text-brand-ink" />
-        <p className="text-sm">Yükleniyor…</p>
+    <main className="bz-aurora bz-status-screen min-h-dvh w-full" role="status">
+      <div className="flex flex-col items-center gap-3">
+        <span className="bz-spinner h-7 w-7" aria-hidden="true" />
+        <p className="text-sm text-fg2">Yükleniyor…</p>
       </div>
-    </div>
+    </main>
   );
 }

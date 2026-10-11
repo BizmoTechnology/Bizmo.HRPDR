@@ -4,12 +4,12 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
-  ClipboardList, Clock, MessageCircle, ArrowRight,
-  Shield, Loader2, CalendarX2, AlertCircle, LogOut, RotateCcw, ChevronDown,
+  ClipboardList, Clock, MessageCircle, ArrowRight, Shield, CalendarX2,
+  AlertCircle, LogOut, RotateCcw, ChevronDown, FileText,
 } from "lucide-react";
 import { toast } from "sonner";
 import { GlassCard } from "@ph/ui";
-import { AppMark } from "@/components/AppMark";
+import { PortalHeader } from "@/components/PortalHeader";
 import { api, errorMessage, getPersonnel, hasToken, logout } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -99,27 +99,24 @@ export default function WelcomePage() {
   };
 
   return (
-    <main className="bz-aurora flex min-h-dvh w-full justify-center px-4 py-8 sm:items-center sm:py-12">
+    <main className="bz-aurora flex min-h-dvh w-full justify-center px-4 pb-8 pt-4 sm:items-center sm:py-12">
       <motion.div
         className="w-full max-w-[480px]"
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.35, ease: [0.25, 0.46, 0.45, 0.94] }}
       >
-        {/* Marka */}
-        <div className="mb-5 flex items-center justify-center gap-2.5">
-          <AppMark size="sm" />
-          <span className="font-display text-[15px] font-extrabold tracking-[-0.01em] text-foreground">
-            PotansiyelHaritası
-          </span>
-        </div>
+        <PortalHeader>
+          {/* İkincil eylem üst satırda: telefonda kaydırmadan erişilir, dokunmatikte 44px */}
+          <button type="button" onClick={handleLogout} className="bz-btn bz-btn--ghost text-fg2">
+            <LogOut />
+            Çıkış yap
+          </button>
+        </PortalHeader>
 
         <GlassCard className="rounded-3xl p-5 shadow-2 sm:p-8">
           {loading ? (
-            <div role="status" className="flex flex-col items-center gap-3 py-12 text-fg3">
-              <Loader2 className="h-6 w-6 animate-spin" />
-              <p className="text-sm">Yükleniyor…</p>
-            </div>
+            <WelcomeSkeleton />
           ) : loadError ? (
             <div role="alert" className="bz-empty px-2 py-8">
               <span className="bz-icon-box text-danger">
@@ -127,25 +124,26 @@ export default function WelcomePage() {
               </span>
               <p className="bz-empty__title">Değerlendirme yüklenemedi</p>
               <p className="bz-empty__text">{loadError}</p>
-              <button
-                type="button"
-                onClick={() => void load()}
-                className="bz-btn bz-btn--soft mt-2"
-              >
+              <button type="button" onClick={() => void load()} className="bz-btn bz-btn--soft mt-2">
                 <RotateCcw />
                 Tekrar dene
               </button>
             </div>
           ) : noSession ? (
+            // Boş durum: ne olduğu + ne yapılacağı + tek eylem (DESIGN.md §17)
             <div className="bz-empty px-2 py-8">
               <span className="bz-icon-box">
                 <CalendarX2 />
               </span>
               <p className="bz-empty__title">Aktif değerlendirme yok</p>
               <p className="bz-empty__text">
-                Şu anda atanmış bir değerlendirmeniz bulunmuyor. Lütfen İK
-                yöneticinizle iletişime geçin.
+                Şu anda size atanmış bir değerlendirme bulunmuyor. Atandığında burada görünür;
+                sorunuz varsa İK yöneticinizle iletişime geçin.
               </p>
+              <button type="button" onClick={() => void load()} className="bz-btn bz-btn--soft mt-2">
+                <RotateCcw />
+                Yeniden kontrol et
+              </button>
             </div>
           ) : (
             <>
@@ -155,112 +153,108 @@ export default function WelcomePage() {
                   Merhaba, {personnel?.firstName ?? ""}!
                 </h1>
                 <p className="mx-auto mt-2 max-w-[36ch] text-[15px] leading-relaxed text-fg2">
-                  Seninle birlikte potansiyelini keşfetmek için kısa bir konuşma
-                  yapacağız.
+                  {isResume
+                    ? "Kaldığınız yerden devam edebilirsiniz; önceki cevaplarınız kaydedildi."
+                    : "Sizinle birlikte potansiyelinizi keşfetmek için kısa bir konuşma yapacağız."}
                 </p>
               </div>
 
               {/* Değerlendirme */}
               {session?.assessment?.title && (
-                <div className="mt-6 rounded-2xl border border-divider bg-surface-2 px-4 py-3.5">
+                <div className="bz-well mt-6 px-4 py-3.5">
                   <p className="bz-kicker">Değerlendirme</p>
                   <p className="mt-1 text-[15px] font-semibold leading-snug text-foreground">
                     {session.assessment.title}
                   </p>
                   {session.assessment.description && (
-                    <p className="mt-0.5 text-[13px] text-fg3">
-                      {session.assessment.description}
-                    </p>
+                    <p className="mt-0.5 text-[13px] text-fg2">{session.assessment.description}</p>
                   )}
                 </div>
               )}
 
               {/* Özet */}
-              <div className="mt-3 grid grid-cols-3 gap-2">
+              <dl className="mt-3 grid grid-cols-3 gap-2">
                 {[
                   {
                     icon: ClipboardList,
                     label: `${questionCount} soru`,
                     sub: isResume ? `${answeredCount} cevaplandı` : "toplam",
                   },
-                  {
-                    icon: Clock,
-                    label: `~${estimatedDuration} dk`,
-                    sub: "tahmini süre",
-                  },
+                  { icon: Clock, label: `~${estimatedDuration} dk`, sub: "tahmini süre" },
                   { icon: MessageCircle, label: "Sohbet", sub: "tarzında" },
                 ].map((info) => (
                   <div
                     key={info.sub}
-                    className="flex flex-col items-center gap-1 rounded-2xl border border-divider bg-surface-2 px-2 py-3 text-center"
+                    className="bz-well flex flex-col items-center gap-1 px-2 py-3 text-center"
                   >
                     <info.icon className="h-[18px] w-[18px] text-fg3" aria-hidden="true" />
-                    <p className="font-display text-base font-extrabold tabular-nums text-foreground">
+                    <dt className="order-2 text-xs text-fg3">{info.sub}</dt>
+                    <dd className="order-1 font-display text-base font-extrabold tabular-nums text-foreground">
                       {info.label}
-                    </p>
-                    <p className="text-xs text-fg3">{info.sub}</p>
+                    </dd>
                   </div>
                 ))}
-              </div>
+              </dl>
 
               {/* Yaklaşım */}
               <p className="mx-auto mt-5 max-w-[40ch] text-center text-sm leading-relaxed text-fg2">
-                &ldquo;Bu, seni değerlendiren değil,{" "}
-                <strong className="font-semibold text-foreground">
-                  seninle birlikte keşfeden
-                </strong>{" "}
+                &ldquo;Bu, sizi değerlendiren değil,{" "}
+                <strong className="font-semibold text-foreground">sizinle birlikte keşfeden</strong>{" "}
                 bir konuşma.&rdquo;
               </p>
 
               {/* KVKK ve açık rıza (devam ederken tekrar istenmez; rıza başlangıçta kaydedildi) */}
               {!isResume && (
-                <fieldset className="mt-6 space-y-2.5">
+                <fieldset className="mt-6 grid gap-2.5">
                   <legend className="bz-kicker mb-2.5">Başlamadan önce</legend>
+
                   <label htmlFor="consent-data" className="bz-choice-card">
                     <input
                       type="checkbox"
                       id="consent-data"
                       checked={consentChecked}
                       onChange={(e) => setConsentChecked(e.target.checked)}
+                      aria-required="true"
                     />
-                    <span className="text-[13px] leading-relaxed text-fg2">
+                    <span className="text-sm leading-relaxed text-fg2">
                       <strong className="font-semibold text-foreground">
-                        Kişisel verilerin işlenmesi:
-                      </strong>{" "}
-                      6698 sayılı KVKK kapsamında kişisel verilerimin işlenmesine
-                      ilişkin{" "}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          // Etiket içindeki düğme onay kutusunu değiştirmesin
-                          e.preventDefault();
-                          setShowKvkk((v) => !v);
-                        }}
-                        aria-expanded={showKvkk}
-                        aria-controls="kvkk-text"
-                        className="bz-link inline-flex items-center gap-0.5 underline"
-                      >
-                        aydınlatma metnini
-                        <ChevronDown
-                          className={cn(
-                            "h-3 w-3 transition-transform",
-                            showKvkk && "rotate-180",
-                          )}
-                          aria-hidden="true"
-                        />
-                      </button>{" "}
-                      okudum ve onaylıyorum.
+                        Kişisel verilerin işlenmesi{" "}
+                        {/* .bz-req yalnız .bz-label içinde renklenir; burada aynı mürekkep elle verilir */}
+                        <span className="text-danger-ink" aria-hidden="true">
+                          *
+                        </span>
+                        <span className="bz-sr-only">(zorunlu)</span>
+                      </strong>
+                      <br />
+                      6698 sayılı Kişisel Verilerin Korunması Kanunu (KVKK) kapsamında kişisel
+                      verilerimin işlenmesine ilişkin aydınlatma metnini okudum ve onaylıyorum.
                     </span>
                   </label>
+
+                  {/* Aydınlatma metni: etiketin dışında, eldivenle de basılabilir tam boy düğme */}
+                  <button
+                    type="button"
+                    onClick={() => setShowKvkk((v) => !v)}
+                    aria-expanded={showKvkk}
+                    aria-controls="kvkk-text"
+                    className="bz-btn bz-btn--ghost justify-self-start"
+                  >
+                    <FileText />
+                    {showKvkk ? "Aydınlatma metnini gizle" : "Aydınlatma metnini oku"}
+                    <ChevronDown
+                      className={cn("transition-transform", showKvkk && "rotate-180")}
+                      aria-hidden="true"
+                    />
+                  </button>
 
                   {showKvkk && (
                     <div
                       id="kvkk-text"
-                      className="bz-well max-h-48 space-y-1.5 overflow-y-auto p-3.5 text-xs leading-relaxed text-fg2"
+                      tabIndex={0}
+                      aria-label="KVKK aydınlatma metni"
+                      className="bz-well max-h-56 space-y-1.5 overflow-y-auto p-3.5 text-[13px] leading-relaxed text-fg2"
                     >
-                      <p className="font-semibold text-foreground">
-                        KVKK Aydınlatma Metni (sürüm 1.0)
-                      </p>
+                      <p className="font-semibold text-foreground">KVKK aydınlatma metni (sürüm 1.0)</p>
                       <p>
                         6698 sayılı Kişisel Verilerin Korunması Kanunu uyarınca; bu değerlendirme
                         kapsamında verdiğiniz cevaplar, kimlik ve görev bilgileriniz, işvereniniz
@@ -285,12 +279,14 @@ export default function WelcomePage() {
                       checked={aiConsentChecked}
                       onChange={(e) => setAiConsentChecked(e.target.checked)}
                     />
-                    <span className="text-[13px] leading-relaxed text-fg2">
+                    <span className="text-sm leading-relaxed text-fg2">
                       <strong className="font-semibold text-foreground">
-                        AI destekli değerlendirme:
-                      </strong>{" "}
-                      Cevaplarımın yapay zekâ ile analiz edilmesine ve kariyer
-                      raporumun oluşturulmasına açık rıza veriyorum.
+                        AI destekli değerlendirme{" "}
+                        <span className="font-normal text-fg3">(isteğe bağlı)</span>
+                      </strong>
+                      <br />
+                      Cevaplarımın yapay zekâ ile analiz edilmesine ve kariyer raporumun
+                      oluşturulmasına açık rıza veriyorum.
                     </span>
                   </label>
                 </fieldset>
@@ -300,12 +296,12 @@ export default function WelcomePage() {
               <p className="mt-4 flex items-start gap-2 text-xs leading-relaxed text-fg3">
                 <Shield className="mt-0.5 h-3.5 w-3.5 flex-none" aria-hidden="true" />
                 <span>
-                  Cevapların yalnızca İK ve yetkili yöneticilerinle paylaşılır.
-                  Doğru ya da yanlış cevap yoktur.
+                  Cevaplarınız yalnızca İK ve yetkili yöneticilerinizle paylaşılır. Doğru ya da
+                  yanlış cevap yoktur.
                 </span>
               </p>
 
-              {/* Ekrandaki tek birincil eylem */}
+              {/* Ekrandaki tek birincil eylem; pasifken nedeni altta yazar */}
               <button
                 type="button"
                 onClick={handleStart}
@@ -321,7 +317,7 @@ export default function WelcomePage() {
                   "Başlatılıyor…"
                 ) : (
                   <>
-                    {isResume ? "Kaldığın yerden devam et" : "Başlayalım"}
+                    {isResume ? "Kaldığınız yerden devam edin" : "Değerlendirmeye başla"}
                     <ArrowRight />
                   </>
                 )}
@@ -335,18 +331,27 @@ export default function WelcomePage() {
             </>
           )}
         </GlassCard>
-
-        <div className="mt-4 flex justify-center">
-          <button
-            type="button"
-            onClick={handleLogout}
-            className="bz-btn bz-btn--ghost bz-btn--sm text-fg2"
-          >
-            <LogOut />
-            Çıkış yap
-          </button>
-        </div>
       </motion.div>
     </main>
+  );
+}
+
+/** Yükleniyor: gerçek içeriğin şeklinde iskelet (DESIGN.md §17) */
+function WelcomeSkeleton() {
+  return (
+    <div role="status" aria-label="Değerlendirme bilgileri yükleniyor" className="grid gap-3">
+      <span className="bz-sr-only">Yükleniyor…</span>
+      <div className="bz-skeleton mx-auto h-7 w-2/3 rounded-lg" />
+      <div className="bz-skeleton mx-auto h-4 w-4/5" />
+      <div className="bz-skeleton mt-3 h-[72px] rounded-2xl" />
+      <div className="grid grid-cols-3 gap-2">
+        <div className="bz-skeleton h-[84px] rounded-2xl" />
+        <div className="bz-skeleton h-[84px] rounded-2xl" />
+        <div className="bz-skeleton h-[84px] rounded-2xl" />
+      </div>
+      <div className="bz-skeleton mt-3 h-[76px] rounded-2xl" />
+      <div className="bz-skeleton h-[76px] rounded-2xl" />
+      <div className="bz-skeleton mt-3 h-11 rounded-xl" />
+    </div>
   );
 }

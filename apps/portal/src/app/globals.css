@@ -40,9 +40,7 @@
     letter-spacing: -0.015em;
   }
 
-  ::selection {
-    background: rgb(109 185 44 / 0.28);
-  }
+  /* Seçim rengi temadan gelir (components.css → :where(.bz-root) ::selection) */
 }
 
 @layer components {

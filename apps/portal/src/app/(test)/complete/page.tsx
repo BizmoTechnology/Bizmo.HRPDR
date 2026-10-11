@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Check, BrainCircuit, Clock, Sparkles, LogIn } from "lucide-react";
+import { Check, Sparkles, LogIn } from "lucide-react";
 import { GlassCard } from "@ph/ui";
-import { AppMark } from "@/components/AppMark";
+import { PortalHeader } from "@/components/PortalHeader";
 import { getPersonnel, logout } from "@/lib/api";
 
 export default function CompletePage() {
@@ -18,36 +18,17 @@ export default function CompletePage() {
     void logout();
   }, []);
 
-  const steps = [
-    {
-      icon: BrainCircuit,
-      title: "Cevapların kaydedildi",
-      sub: "Değerlendirme İK ekibi tarafından incelenecek",
-    },
-    {
-      icon: Clock,
-      title: "Sonuçlar hazırlanıyor",
-      sub: "İK yöneticinle paylaşılacak",
-    },
-  ];
-
   return (
-    <main className="bz-aurora flex min-h-dvh w-full justify-center px-4 py-8 sm:items-center sm:py-12">
+    <main className="bz-aurora flex min-h-dvh w-full justify-center px-4 pb-8 pt-4 sm:items-center sm:py-12">
       <motion.div
-        className="w-full max-w-[440px] text-center"
+        className="w-full max-w-[440px]"
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.35, ease: [0.25, 0.46, 0.45, 0.94] }}
       >
-        {/* Marka */}
-        <div className="mb-6 flex items-center justify-center gap-2.5">
-          <AppMark size="sm" />
-          <span className="font-display text-[15px] font-extrabold tracking-[-0.01em] text-foreground">
-            PotansiyelHaritası
-          </span>
-        </div>
+        <PortalHeader />
 
-        <GlassCard className="rounded-3xl p-6 shadow-2 sm:p-8">
+        <GlassCard className="rounded-3xl p-6 text-center shadow-2 sm:p-8">
           {/* Başarı simgesi: yumuşak yeşil daire + yeşil mürekkep işaret (yeşil üstünde beyaz yok) */}
           <motion.div
             className="mb-5 flex justify-center"
@@ -69,40 +50,40 @@ export default function CompletePage() {
             Tebrikler{personnel ? `, ${personnel.firstName}` : ""}!
           </h1>
           <p className="mx-auto mt-2 max-w-[38ch] text-[15px] leading-relaxed text-fg2">
-            Değerlendirmen başarıyla tamamlandı. Cevapların analiz ediliyor ve
-            kişisel potansiyel raporun hazırlanıyor.
+            Değerlendirmeniz tamamlandı ve cevaplarınız kaydedildi.
           </p>
 
-          {/* Sonraki adımlar */}
-          <ul className="mt-6 space-y-2.5 text-left">
-            {steps.map((step, i) => (
-              <motion.li
-                key={step.title}
-                className="flex items-center gap-3 rounded-2xl border border-divider bg-surface-2 p-3"
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.2 + i * 0.08, duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] }}
-              >
-                <span className="bz-icon-box">
-                  <step.icon />
-                </span>
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-foreground">{step.title}</p>
-                  <p className="text-[13px] text-fg3">{step.sub}</p>
-                </div>
-              </motion.li>
-            ))}
-          </ul>
+          {/* Sonraki adımlar (DESIGN.md §19 dikey adımlar): biten yeşil tik, sıradaki yeşil halka */}
+          <ol className="bz-vsteps bz-well mt-6 px-4 py-4 text-left">
+            <li className="bz-vstep" data-state="done">
+              <span className="bz-vstep__marker">
+                <Check aria-hidden="true" />
+              </span>
+              <span className="bz-vstep__title">Cevaplarınız kaydedildi</span>
+              <span className="bz-vstep__desc">Değerlendirmeyi tamamladınız</span>
+            </li>
+            <li className="bz-vstep" data-state="current" aria-current="step">
+              <span className="bz-vstep__marker">2</span>
+              <span className="bz-vstep__title">İK incelemesi</span>
+              <span className="bz-vstep__desc">Cevaplarınızı İK ekibi inceleyecek</span>
+            </li>
+            <li className="bz-vstep">
+              <span className="bz-vstep__marker">3</span>
+              <span className="bz-vstep__title">Kişisel potansiyel raporu</span>
+              <span className="bz-vstep__desc">İnceleme sonrası hazırlanır ve İK yöneticinizle paylaşılır</span>
+            </li>
+          </ol>
 
           <p className="mt-6 text-[13px] text-fg3">
-            Zaman ayırdığın için teşekkür ederiz.{" "}
-            <strong className="whitespace-nowrap font-semibold text-foreground">Bu, senin için!</strong>
+            Zaman ayırdığınız için teşekkür ederiz.{" "}
+            <strong className="whitespace-nowrap font-semibold text-foreground">Bu, sizin için!</strong>
           </p>
 
+          {/* Oturum kapatıldı; ortak cihazda sıradaki kişi buradan giriş yapar (dokunmatikte 44px) */}
           <button
             type="button"
             onClick={() => router.replace("/login")}
-            className="bz-btn bz-btn--ghost bz-btn--sm mt-5"
+            className="bz-btn bz-btn--block mt-5"
           >
             <LogIn />
             Giriş ekranına dön

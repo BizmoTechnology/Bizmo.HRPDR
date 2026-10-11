@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useRef } from "react";
 import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
 import type { ApexOptions } from "apexcharts";
@@ -9,16 +9,15 @@ import {
   TrendingUp,
   Building2,
   Users,
-  ArrowUp,
-  ArrowDown,
-  Minus,
   LayoutDashboard,
   GitCompareArrows,
-  ThermometerSun,
-  ArrowUpDown,
+  Grid3x3,
+  CalendarRange,
 } from "lucide-react";
-import { GlassCard, ScoreGauge } from "@ph/ui";
+import { GlassCard, ScoreGauge, StatCard } from "@ph/ui";
 import { cn } from "@/lib/utils";
+import { dimensionColor, dimensionHex } from "@/lib/dimension-colors";
+import { useChartTheme } from "@/lib/chart-theme";
 import {
   useDimensionStats,
   useTrends,
@@ -40,16 +39,16 @@ const motionContainer = {
   hidden: { opacity: 0 },
   show: {
     opacity: 1,
-    transition: { staggerChildren: 0.07 },
+    transition: { staggerChildren: 0.06 },
   },
 };
 
 const motionItem = {
-  hidden: { opacity: 0, y: 12 },
+  hidden: { opacity: 0, y: 8 },
   show: {
     opacity: 1,
     y: 0,
-    transition: { duration: 0.35, ease: [0.25, 0.46, 0.45, 0.94] },
+    transition: { duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] },
   },
 };
 
@@ -57,32 +56,22 @@ const RADAR_CATEGORIES = ALL_DIMENSIONS.map(
   (d) => DIMENSION_SHORT_LABELS[d] ?? d,
 );
 
-const DIMENSION_COLORS: Record<string, { bg: string; text: string; stroke: string }> = {
-  LOGICAL_ALGORITHMIC: {
-    bg: "bg-blue-500/10",
-    text: "text-blue-500",
-    stroke: "#3b82f6",
-  },
-  LEADERSHIP: {
-    bg: "bg-purple-500/10",
-    text: "text-purple-500",
-    stroke: "#a855f7",
-  },
-  SOCIAL_INTELLIGENCE: {
-    bg: "bg-emerald-500/10",
-    text: "text-emerald-500",
-    stroke: "#10b981",
-  },
-  GROWTH_POTENTIAL: {
-    bg: "bg-amber-500/10",
-    text: "text-amber-500",
-    stroke: "#f59e0b",
-  },
-  DOMAIN_ALIGNMENT: {
-    bg: "bg-rose-500/10",
-    text: "text-rose-500",
-    stroke: "#f43f5e",
-  },
+/**
+ * Kıyaslanan departmanların renk yuvaları (Bizmo seri paleti; kurum ortalaması seri 1 / mavi).
+ * Renk departmana bağlıdır, seçim sırasına değil: biri çıkarılınca diğerleri yeniden boyanmaz (DESIGN.md §28.1).
+ */
+const DEPT_SLOTS = [
+  { series: 1, dot: "bg-series-2" },
+  { series: 2, dot: "bg-series-3" },
+  { series: 4, dot: "bg-series-5" },
+] as const;
+
+/** Grafik giriş animasyonu kısa ve sakin (DESIGN.md §5) */
+const CHART_ANIMATIONS = {
+  enabled: true,
+  speed: 340,
+  animateGradually: { enabled: false },
+  dynamicAnimation: { enabled: true, speed: 240 },
 };
 
 function formatMonth(dateStr: string) {
@@ -98,39 +87,39 @@ function formatMonth(dateStr: string) {
   }
 }
 
-function useChartPalette() {
-  const [dark, setDark] = useState(false);
-  useEffect(() => {
-    const el = document.documentElement;
-    const sync = () => setDark(el.classList.contains("dark"));
-    sync();
-    const mo = new MutationObserver(sync);
-    mo.observe(el, { attributes: true, attributeFilter: ["class"] });
-    return () => mo.disconnect();
-  }, []);
-  return {
-    dark,
-    fg: dark ? "#e5e5e5" : "#262626",
-    muted: dark ? "#a3a3a3" : "#737373",
-    border: dark ? "#404040" : "#e5e5e5",
-    grid: dark ? "#404040" : "#e7e5e4",
-  };
-}
-
+/**
+ * Departman × boyut matrisi: büyüklük ölçeği → tek ton mavi sıralı skala (DESIGN.md §28.1).
+ * Açık tonlarda metin birincil renkte, en koyu adımda veri dolgusu + karşıt metin (≥ 4.5:1, iki temada).
+ */
 function scoreHeatStyle(score: number | null | undefined): string {
   if (score == null || Number.isNaN(score)) {
-    return "bg-muted/50 text-muted-foreground";
+    return "border border-dashed border-border-strong text-muted-foreground";
   }
   if (score >= 8) {
-    return "bg-emerald-500/20 text-emerald-800 dark:text-emerald-200 font-semibold";
+    return "bg-data-solid text-data-contrast font-semibold";
   }
   if (score >= 6.5) {
-    return "bg-lime-500/15 text-lime-900 dark:text-lime-200";
+    return "bg-data/[0.45] text-foreground";
   }
   if (score >= 5) {
-    return "bg-amber-500/15 text-amber-900 dark:text-amber-200";
+    return "bg-data/20 text-foreground";
   }
-  return "bg-rose-500/15 text-rose-900 dark:text-rose-200";
+  return "bg-data/[0.08] text-foreground";
+}
+
+const HEAT_LEGEND = [
+  { swatch: "bg-data/[0.08]", label: "5’in altı" },
+  { swatch: "bg-data/20", label: "5 – 6.5" },
+  { swatch: "bg-data/[0.45]", label: "6.5 – 8" },
+  { swatch: "bg-data-solid", label: "8 ve üzeri" },
+  { swatch: "border border-dashed border-border-strong", label: "Veri yok" },
+];
+
+/** Aylık ortalama skor bandı (çip tonu); değer her zaman metin olarak yazılır */
+function trendScoreTone(score: number) {
+  if (score >= 7) return "bz-chip--success";
+  if (score >= 4) return "bz-chip--warning";
+  return "bz-chip--danger";
 }
 
 function deptCompositeAvg(
@@ -145,8 +134,74 @@ function deptCompositeAvg(
   );
 }
 
+function SectionHeader({
+  icon: Icon,
+  title,
+  sub,
+  action,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  sub?: string;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-3">
+      <span className="bz-icon-box" aria-hidden="true">
+        <Icon />
+      </span>
+      <div className="min-w-0 flex-1">
+        <h2 className="text-base font-bold text-foreground">{title}</h2>
+        {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
+      </div>
+      {action}
+    </div>
+  );
+}
+
+function EmptyState({
+  icon: Icon,
+  title,
+  text,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  text?: string;
+}) {
+  return (
+    <div className="bz-empty">
+      <Icon className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
+      <p className="bz-empty__title">{title}</p>
+      {text && <p className="bz-empty__text">{text}</p>}
+    </div>
+  );
+}
+
+function StatSkeleton() {
+  return (
+    <GlassCard className="flex flex-col gap-3" aria-hidden="true">
+      <div className="flex items-start justify-between gap-3">
+        <div className="bz-skeleton h-4 w-24" />
+        <div className="bz-skeleton h-[34px] w-[34px] rounded-[10px]" />
+      </div>
+      <div>
+        <div className="bz-skeleton h-8 w-16" />
+        <div className="bz-skeleton mt-2 h-3 w-24" />
+      </div>
+    </GlassCard>
+  );
+}
+
 export default function AnalyticsPage() {
-  const palette = useChartPalette();
+  const {
+    mode,
+    series: palette,
+    grid,
+    axis,
+    muted,
+    text2,
+    fontFamily,
+  } = useChartTheme();
   const { data: dimData, isLoading: dimLoading } = useDimensionStats();
   const { data: trendsData, isLoading: trendsLoading } = useTrends();
   const { data: dashData, isLoading: dashLoading } = useDashboardStats();
@@ -174,7 +229,25 @@ export default function AnalyticsPage() {
     return m;
   }, [dimensions]);
 
-  const radarSeries = useMemo(() => {
+  // Seçilen her departman ilk boş renk yuvasını alır ve seçili kaldıkça onu korur
+  const slotRef = useRef<Map<string, number>>(new Map());
+  const deptSlots = useMemo(() => {
+    const prev = slotRef.current;
+    const next = new Map<string, number>();
+    for (const id of compareDeptIds) {
+      const s = prev.get(id);
+      if (s != null) next.set(id, s);
+    }
+    for (const id of compareDeptIds) {
+      if (next.has(id)) continue;
+      const used = new Set(next.values());
+      next.set(id, DEPT_SLOTS.findIndex((_, i) => !used.has(i)));
+    }
+    slotRef.current = next;
+    return next;
+  }, [compareDeptIds]);
+
+  const radar = useMemo(() => {
     const orgData = ALL_DIMENSIONS.map((d) => {
       const stat = dimByKey.get(d);
       return stat?.avg ?? 0;
@@ -182,6 +255,7 @@ export default function AnalyticsPage() {
     const series: RadarChartSeries = [
       { name: "Kurum ortalaması", data: orgData },
     ];
+    const colors: string[] = [palette[0]!];
     for (const id of compareDeptIds) {
       const row = deptBreakdown.find((x) => x.departmentId === id);
       if (!row) continue;
@@ -198,9 +272,11 @@ export default function AnalyticsPage() {
             : row.departmentName,
         data,
       });
+      const slot = DEPT_SLOTS[deptSlots.get(id) ?? 0] ?? DEPT_SLOTS[0];
+      colors.push(palette[slot.series]!);
     }
-    return series;
-  }, [compareDeptIds, deptBreakdown, dimByKey]);
+    return { series, colors };
+  }, [compareDeptIds, deptBreakdown, dimByKey, deptSlots, palette]);
 
   const sortedDeptCards = useMemo(() => {
     const rows = [...byDeptSection];
@@ -218,22 +294,36 @@ export default function AnalyticsPage() {
     return rows;
   }, [byDeptSection, deptSort]);
 
+  // Grafik teması: DESIGN.md §28 — sabit sıralı palet, soluk yatay ızgara, 11px soluk eksen etiketi, 2px düz çizgi
   const radarOptions: ApexOptions = useMemo(
     () => ({
       chart: {
         toolbar: { show: false },
-        fontFamily: "inherit",
+        fontFamily,
+        foreColor: muted,
         background: "transparent",
+        animations: CHART_ANIMATIONS,
       },
+      colors: radar.colors,
       plotOptions: {
         radar: {
           polygons: {
-            strokeColors: palette.grid,
-            connectorColors: palette.grid,
+            strokeColors: grid,
+            connectorColors: grid,
+            fill: { colors: ["transparent"] },
           },
         },
       },
-      xaxis: { categories: RADAR_CATEGORIES },
+      xaxis: {
+        categories: RADAR_CATEGORIES,
+        labels: {
+          style: {
+            colors: RADAR_CATEGORIES.map(() => text2),
+            fontSize: "12px",
+            fontWeight: 500,
+          },
+        },
+      },
       yaxis: {
         show: false,
         max: 10,
@@ -241,21 +331,30 @@ export default function AnalyticsPage() {
         tickAmount: 5,
       },
       stroke: { width: 2 },
-      markers: { size: 4, hover: { size: 6 } },
-      fill: { opacity: 0.12 },
+      markers: { size: 0, hover: { size: 5 } },
+      fill: { opacity: 0.1 },
+      dataLabels: { enabled: false },
       legend: {
         position: "bottom",
-        labels: { colors: palette.fg },
+        fontSize: "12px",
+        fontWeight: 500,
+        labels: { colors: text2 },
+        markers: { size: 5, shape: "circle", strokeWidth: 0, offsetX: -4 },
+        itemMargin: { horizontal: 10, vertical: 4 },
       },
-      theme: { mode: palette.dark ? "dark" : "light" },
+      states: {
+        hover: { filter: { type: "none" } },
+        active: { filter: { type: "none" } },
+      },
+      theme: { mode },
       tooltip: {
-        theme: palette.dark ? "dark" : "light",
+        theme: mode,
         y: {
           formatter: (val: number) => `${val.toFixed(1)} / 10`,
         },
       },
     }),
-    [palette],
+    [radar.colors, fontFamily, muted, grid, text2, mode],
   );
 
   const lineSeries = useMemo(() => {
@@ -273,18 +372,23 @@ export default function AnalyticsPage() {
       chart: {
         toolbar: { show: true },
         zoom: { enabled: true },
-        fontFamily: "inherit",
+        fontFamily,
+        foreColor: muted,
         background: "transparent",
+        animations: CHART_ANIMATIONS,
       },
-      stroke: { width: 2.5, curve: "smooth", connectNulls: true },
+      stroke: { width: 2, curve: "straight", connectNulls: true },
       dataLabels: { enabled: false },
-      markers: { size: 0, hover: { size: 5 } },
+      markers: { size: 0, strokeWidth: 0, hover: { size: 5 } },
       xaxis: {
         categories: monthlyPoints.map((p) => formatMonth(p.month)),
+        axisBorder: { show: true, color: axis },
+        axisTicks: { show: false },
+        crosshairs: { stroke: { color: axis, width: 1, dashArray: 0 } },
+        tooltip: { enabled: false },
         labels: {
-          style: { colors: palette.muted, fontSize: "11px" },
-          rotate: -35,
-          rotateAlways: monthlyPoints.length > 6,
+          style: { colors: muted, fontSize: "11px" },
+          hideOverlappingLabels: true,
         },
       },
       yaxis: {
@@ -292,21 +396,33 @@ export default function AnalyticsPage() {
         max: 10,
         tickAmount: 5,
         labels: {
-          style: { colors: palette.muted },
+          style: { colors: muted, fontSize: "11px" },
           formatter: (v: number) => v.toFixed(0),
         },
       },
-      grid: { borderColor: palette.grid, strokeDashArray: 4 },
+      grid: {
+        borderColor: grid,
+        strokeDashArray: 0,
+        xaxis: { lines: { show: false } },
+        yaxis: { lines: { show: true } },
+        padding: { left: 8, right: 12 },
+      },
       legend: {
         position: "bottom",
         horizontalAlign: "center",
-        labels: { colors: palette.fg },
+        fontSize: "12px",
+        fontWeight: 500,
+        labels: { colors: text2 },
+        markers: { size: 5, shape: "circle", strokeWidth: 0, offsetX: -4 },
+        itemMargin: { horizontal: 10, vertical: 4 },
       },
-      colors: ALL_DIMENSIONS.map(
-        (d) => DIMENSION_COLORS[d]?.stroke ?? "#6366f1",
-      ),
+      colors: ALL_DIMENSIONS.map((d) => dimensionHex(d, mode)),
+      states: {
+        hover: { filter: { type: "none" } },
+        active: { filter: { type: "none" } },
+      },
       tooltip: {
-        theme: palette.dark ? "dark" : "light",
+        theme: mode,
         shared: true,
         intersect: false,
         y: {
@@ -314,9 +430,9 @@ export default function AnalyticsPage() {
             val != null ? `${val.toFixed(1)} / 10` : "—",
         },
       },
-      theme: { mode: palette.dark ? "dark" : "light" },
+      theme: { mode },
     }),
-    [monthlyPoints, palette],
+    [monthlyPoints, fontFamily, muted, axis, grid, text2, mode],
   );
 
   const toggleCompareDept = (id: string) => {
@@ -328,355 +444,318 @@ export default function AnalyticsPage() {
   };
 
   return (
-    <div className="space-y-8 w-full">
+    <div className="w-full space-y-8">
       <motion.div
-        initial={{ opacity: 0, y: -8 }}
+        className="bz-page-header mb-0"
+        initial={{ opacity: 0, y: -6 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3 }}
+        transition={{ duration: 0.25 }}
       >
-        <h1 className="text-2xl font-bold text-foreground">Analitik</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">
-          Kurumsal özet, boyut kıyaslamaları, departman matrisi ve zaman içi
-          trendler
-        </p>
+        <div className="bz-page-header__text">
+          <h1 className="bz-page-header__title">Analitik</h1>
+          <p className="bz-page-header__sub">
+            Kurumsal özet, boyut kıyaslamaları, departman matrisi ve zaman içi
+            trendler
+          </p>
+        </div>
       </motion.div>
 
       {/* KPI */}
       <motion.div
-        className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4"
+        className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4"
         variants={motionContainer}
         initial="hidden"
         animate="show"
       >
         {dashLoading ? (
-          Array.from({ length: 4 }).map((_, i) => (
-            <div
-              key={i}
-              className="h-24 rounded-xl bg-muted/40 animate-pulse"
-            />
-          ))
+          Array.from({ length: 4 }).map((_, i) => <StatSkeleton key={i} />)
         ) : (
           <>
             <motion.div variants={motionItem}>
-              <GlassCard hover={false} className="h-full">
-                <div className="flex items-center gap-2 mb-2">
-                  <LayoutDashboard className="h-4 w-4 text-primary" />
-                  <span className="text-xs font-medium text-muted-foreground">
-                    Tamamlanma oranı
-                  </span>
-                </div>
-                <p className="text-2xl font-bold tabular-nums text-foreground">
-                  {dashData?.completionRate != null
+              <StatCard
+                className="h-full"
+                title="Tamamlanma oranı"
+                value={
+                  dashData?.completionRate != null
                     ? `${dashData.completionRate.toFixed(1)}%`
-                    : "—"}
-                </p>
-                <p className="text-[11px] text-muted-foreground mt-1">
-                  {dashData?.completedSessions ?? 0} /{" "}
-                  {dashData?.totalSessions ?? 0} oturum
-                </p>
-              </GlassCard>
+                    : "—"
+                }
+                subtitle={`${dashData?.completedSessions ?? 0} / ${dashData?.totalSessions ?? 0} oturum`}
+                icon={LayoutDashboard}
+              />
             </motion.div>
             <motion.div variants={motionItem}>
-              <GlassCard hover={false} className="h-full">
-                <div className="flex items-center gap-2 mb-2">
-                  <BarChart3 className="h-4 w-4 text-accent-green" />
-                  <span className="text-xs font-medium text-muted-foreground">
-                    Genel ortalama skor
-                  </span>
-                </div>
-                <p className="text-2xl font-bold tabular-nums text-foreground">
-                  {(dashData?.avgScore ?? 0).toFixed(1)}
-                </p>
-                <p className="text-[11px] text-muted-foreground mt-1">
-                  Tamamlanan oturumların boyut ortalaması
-                </p>
-              </GlassCard>
+              <StatCard
+                className="h-full"
+                title="Genel ortalama skor"
+                value={(dashData?.avgScore ?? 0).toFixed(1)}
+                subtitle="Tamamlanan oturumların boyut ortalaması"
+                icon={BarChart3}
+              />
             </motion.div>
             <motion.div variants={motionItem}>
-              <GlassCard hover={false} className="h-full">
-                <div className="flex items-center gap-2 mb-2">
-                  <Users className="h-4 w-4 text-accent-purple" />
-                  <span className="text-xs font-medium text-muted-foreground">
-                    Aktif personel
-                  </span>
-                </div>
-                <p className="text-2xl font-bold tabular-nums text-foreground">
-                  {dashData?.activePersonnel ?? 0}
-                </p>
-                <p className="text-[11px] text-muted-foreground mt-1">
-                  Toplam {dashData?.totalPersonnel ?? 0} kayıt
-                </p>
-              </GlassCard>
+              <StatCard
+                className="h-full"
+                title="Aktif personel"
+                value={dashData?.activePersonnel ?? 0}
+                subtitle={`Toplam ${dashData?.totalPersonnel ?? 0} kayıt`}
+                icon={Users}
+              />
             </motion.div>
             <motion.div variants={motionItem}>
-              <GlassCard hover={false} className="h-full">
-                <div className="flex items-center gap-2 mb-2">
-                  <TrendingUp className="h-4 w-4 text-amber-500" />
-                  <span className="text-xs font-medium text-muted-foreground">
-                    Aktif değerlendirme
-                  </span>
-                </div>
-                <p className="text-2xl font-bold tabular-nums text-foreground">
-                  {dashData?.activeAssessments ?? 0}
-                </p>
-                <p className="text-[11px] text-muted-foreground mt-1">
-                  Toplam {dashData?.totalAssessments ?? 0} tanım
-                </p>
-              </GlassCard>
+              <StatCard
+                className="h-full"
+                title="Aktif değerlendirme"
+                value={dashData?.activeAssessments ?? 0}
+                subtitle={`Toplam ${dashData?.totalAssessments ?? 0} tanım`}
+                icon={TrendingUp}
+              />
             </motion.div>
           </>
         )}
       </motion.div>
 
-      {/* Dimension Stats */}
-      <div>
-        <div className="flex items-center gap-2 mb-4">
-          <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center">
-            <BarChart3 className="h-4 w-4 text-primary" />
-          </div>
-          <h2 className="text-base font-semibold text-foreground">
-            Boyut özeti
-          </h2>
-        </div>
+      {/* Boyut özeti */}
+      <section>
+        <SectionHeader icon={BarChart3} title="Boyut özeti" />
 
         {dimLoading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 xl:grid-cols-5">
             {Array.from({ length: 5 }).map((_, i) => (
-              <div
-                key={i}
-                className="h-44 rounded-xl bg-muted/40 animate-pulse"
-              />
+              <div key={i} className="bz-skeleton h-60 rounded-2xl" />
             ))}
           </div>
         ) : dimensions.length === 0 ? (
           <GlassCard hover={false}>
-            <div className="flex flex-col items-center justify-center py-12 text-center">
-              <BarChart3 className="h-8 w-8 text-muted-foreground/40 mb-3" />
-              <p className="text-sm text-muted-foreground">
-                Henüz boyut verisi bulunmuyor
-              </p>
-            </div>
+            <EmptyState
+              icon={BarChart3}
+              title="Henüz boyut verisi yok"
+              text="Boyut özetleri tamamlanan değerlendirmelerden hesaplanır."
+            />
           </GlassCard>
         ) : (
           <motion.div
-            className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4"
+            className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 xl:grid-cols-5"
             variants={motionContainer}
             initial="hidden"
             animate="show"
           >
-            {dimensions.map((dim: (typeof dimensions)[0]) => {
-              const colors =
-                DIMENSION_COLORS[dim.dimension] ??
-                DIMENSION_COLORS.LOGICAL_ALGORITHMIC!;
-              const colorBg = colors?.bg ?? "bg-blue-500/10";
-              const colorText = colors?.text ?? "text-blue-500";
-              return (
-                <motion.div key={dim.dimension} variants={motionItem}>
-                  <GlassCard className="flex flex-col items-center text-center">
+            {dimensions.map((dim: (typeof dimensions)[0]) => (
+              <motion.div key={dim.dimension} variants={motionItem}>
+                <GlassCard className="flex h-full flex-col items-center px-3 text-center sm:px-5">
+                  <span className="bz-chip mb-3">
                     <span
-                      className={cn(
-                        "inline-flex px-2 py-0.5 rounded-md text-[10px] font-semibold mb-3",
-                        colorBg,
-                        colorText,
-                      )}
-                    >
-                      {DIMENSION_SHORT_LABELS[dim.dimension] ?? dim.dimension}
-                    </span>
-                    <ScoreGauge
-                      score={dim.avg ?? 0}
-                      size="lg"
-                      label={DIMENSION_LABELS[dim.dimension]}
+                      className={cn("bz-dot", dimensionColor(dim.dimension).bar)}
+                      aria-hidden="true"
                     />
-                    <div className="grid grid-cols-3 gap-3 w-full mt-4 pt-3 border-t border-border/20">
-                      <div>
-                        <p className="text-[10px] text-muted-foreground">
-                          Min
-                        </p>
-                        <p className="text-sm font-bold tabular-nums text-foreground">
-                          {(dim.min ?? 0).toFixed(1)}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-[10px] text-muted-foreground">
-                          Maks
-                        </p>
-                        <p className="text-sm font-bold tabular-nums text-foreground">
-                          {(dim.max ?? 0).toFixed(1)}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-[10px] text-muted-foreground">
-                          Örnek
-                        </p>
-                        <p className="text-sm font-bold tabular-nums text-foreground">
-                          {dim.count ?? 0}
-                        </p>
-                      </div>
+                    {DIMENSION_SHORT_LABELS[dim.dimension] ?? dim.dimension}
+                  </span>
+                  <ScoreGauge
+                    score={dim.avg ?? 0}
+                    size="lg"
+                    label={DIMENSION_LABELS[dim.dimension]}
+                    className="mb-4"
+                  />
+                  <dl className="mt-auto grid w-full grid-cols-3 gap-2 border-t border-divider pt-3">
+                    <div>
+                      <dt className="text-[11px] text-muted-foreground">Min</dt>
+                      <dd className="text-sm font-semibold tabular-nums text-foreground">
+                        {(dim.min ?? 0).toFixed(1)}
+                      </dd>
                     </div>
-                  </GlassCard>
-                </motion.div>
-              );
-            })}
+                    <div>
+                      <dt className="text-[11px] text-muted-foreground">Maks</dt>
+                      <dd className="text-sm font-semibold tabular-nums text-foreground">
+                        {(dim.max ?? 0).toFixed(1)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-[11px] text-muted-foreground">Örnek</dt>
+                      <dd className="text-sm font-semibold tabular-nums text-foreground">
+                        {dim.count ?? 0}
+                      </dd>
+                    </div>
+                  </dl>
+                </GlassCard>
+              </motion.div>
+            ))}
           </motion.div>
         )}
-      </div>
+      </section>
 
-      {/* Heatmap: department × dimension */}
-      <div>
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-lg bg-orange-500/10 flex items-center justify-center">
-              <ThermometerSun className="h-4 w-4 text-orange-500" />
-            </div>
-            <div>
-              <h2 className="text-base font-semibold text-foreground">
-                Departman × boyut matrisi
-              </h2>
-              <p className="text-xs text-muted-foreground">
-                Hücreler boyut ortalamasını gösterir (0–10)
-              </p>
-            </div>
-          </div>
-        </div>
+      {/* Isı haritası: departman × boyut */}
+      <section>
+        <SectionHeader
+          icon={Grid3x3}
+          title="Departman × boyut matrisi"
+          sub="Hücreler boyut ortalamasını gösterir (0–10); koyu ton daha yüksek skor"
+        />
 
-        <GlassCard hover={false} className="overflow-x-auto">
+        <GlassCard hover={false} className="overflow-hidden p-0">
           {deptDimLoading ? (
-            <div className="h-48 rounded-xl bg-muted/40 animate-pulse" />
-          ) : deptBreakdown.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-center">
-              <Building2 className="h-8 w-8 text-muted-foreground/40 mb-3" />
-              <p className="text-sm text-muted-foreground">
-                Departmanlı tamamlanmış oturum yok veya boyut skoru eksik
-              </p>
+            <div className="p-5" aria-hidden="true">
+              <div className="bz-skeleton h-48 w-full rounded-xl" />
             </div>
+          ) : deptBreakdown.length === 0 ? (
+            <EmptyState
+              icon={Building2}
+              title="Matris için veri yok"
+              text="Departmanlı tamamlanmış oturum yok veya boyut skoru eksik."
+            />
           ) : (
-            <table className="w-full min-w-[640px] text-sm">
-              <thead>
-                <tr className="border-b border-border/40">
-                  <th className="text-left py-3 pr-3 font-medium text-muted-foreground whitespace-nowrap">
-                    Departman
-                  </th>
-                  <th className="text-center py-3 px-1 font-medium text-muted-foreground">
-                    n
-                  </th>
-                  {ALL_DIMENSIONS.map((d) => (
-                    <th
-                      key={d}
-                      className="text-center py-3 px-1 font-medium text-muted-foreground text-[11px] max-w-[5rem]"
-                    >
-                      {DIMENSION_SHORT_LABELS[d]}
-                    </th>
-                  ))}
-                  <th className="text-center py-3 pl-2 font-medium text-muted-foreground whitespace-nowrap">
-                    Ort.
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/25">
-                {deptBreakdown.map((row) => {
-                  const comp = deptCompositeAvg(row.averages);
-                  return (
-                    <tr key={row.departmentId} className="hover:bg-muted/20">
-                      <td className="py-2.5 pr-3 font-medium text-foreground">
-                        {row.departmentName}
-                      </td>
-                      <td className="text-center tabular-nums text-muted-foreground">
-                        {row.sessionCount}
-                      </td>
-                      {ALL_DIMENSIONS.map((d) => {
-                        const v = row.averages[d]?.avg;
-                        return (
-                          <td key={d} className="px-1 py-1.5">
-                            <div
+            <>
+              <div className="overflow-x-auto">
+                <table className="bz-table min-w-[680px]">
+                  <thead>
+                    <tr>
+                      <th className="pl-5">Departman</th>
+                      <th className="is-num">Oturum</th>
+                      {ALL_DIMENSIONS.map((d) => (
+                        <th key={d} className="px-1.5 text-center">
+                          <span className="inline-flex items-center gap-1.5">
+                            <span
                               className={cn(
-                                "rounded-lg py-1.5 text-center text-xs tabular-nums",
-                                scoreHeatStyle(v),
+                                "h-2 w-2 flex-none rounded-full",
+                                dimensionColor(d).bar,
                               )}
-                            >
-                              {v != null ? v.toFixed(1) : "—"}
-                            </div>
-                          </td>
-                        );
-                      })}
-                      <td className="text-center pl-2 font-semibold tabular-nums">
-                        {comp != null ? comp.toFixed(1) : "—"}
-                      </td>
+                              aria-hidden="true"
+                            />
+                            {DIMENSION_SHORT_LABELS[d]}
+                          </span>
+                        </th>
+                      ))}
+                      <th className="is-num pr-5">Ortalama</th>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  </thead>
+                  <tbody>
+                    {deptBreakdown.map((row) => {
+                      const comp = deptCompositeAvg(row.averages);
+                      return (
+                        <tr key={row.departmentId} className="[&>td]:h-11">
+                          <td className="pl-5 font-semibold text-foreground">
+                            {row.departmentName}
+                          </td>
+                          <td className="is-num text-fg2">{row.sessionCount}</td>
+                          {ALL_DIMENSIONS.map((d) => {
+                            const v = row.averages[d]?.avg;
+                            return (
+                              <td key={d} className="px-1.5">
+                                <div
+                                  className={cn(
+                                    "flex h-8 min-w-[3.25rem] items-center justify-center rounded-md text-[13px] tabular-nums",
+                                    scoreHeatStyle(v),
+                                  )}
+                                  title={`${DIMENSION_LABELS[d] ?? d}: ${v != null ? v.toFixed(1) : "veri yok"}`}
+                                >
+                                  {v != null ? v.toFixed(1) : "—"}
+                                </div>
+                              </td>
+                            );
+                          })}
+                          <td className="is-num pr-5 font-semibold text-foreground">
+                            {comp != null ? comp.toFixed(1) : "—"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-divider px-5 py-3 text-xs text-muted-foreground">
+                <span className="font-semibold text-fg2">Ölçek</span>
+                {HEAT_LEGEND.map((s) => (
+                  <span key={s.label} className="inline-flex items-center gap-1.5">
+                    <span
+                      className={cn("h-3 w-5 rounded-[4px]", s.swatch)}
+                      aria-hidden="true"
+                    />
+                    {s.label}
+                  </span>
+                ))}
+              </div>
+            </>
           )}
         </GlassCard>
-      </div>
+      </section>
 
-      {/* Radar compare */}
-      <div>
-        <div className="flex items-center gap-2 mb-4">
-          <div className="h-8 w-8 rounded-lg bg-cyan-500/10 flex items-center justify-center">
-            <GitCompareArrows className="h-4 w-4 text-cyan-600 dark:text-cyan-400" />
-          </div>
-          <div>
-            <h2 className="text-base font-semibold text-foreground">
-              Boyut profili kıyaslama
-            </h2>
-            <p className="text-xs text-muted-foreground">
-              Kurum ortalaması sabit; en fazla 3 departman seçin
-            </p>
-          </div>
-        </div>
+      {/* Radar kıyaslama */}
+      <section>
+        <SectionHeader
+          icon={GitCompareArrows}
+          title="Boyut profili kıyaslama"
+          sub="Kurum ortalaması sabit; en fazla 3 departman seçin"
+        />
 
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-          <GlassCard hover={false} className="xl:col-span-2 min-h-[360px]">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+          <GlassCard hover={false} className="min-h-[360px] min-w-0 xl:col-span-2">
             {dimensions.length === 0 ? (
-              <div className="h-64 flex items-center justify-center text-muted-foreground text-sm">
-                Radar için önce tamamlanmış skorlar gerekli
-              </div>
-            ) : (
-              <ApexChart
-                type="radar"
-                height={380}
-                series={radarSeries}
-                options={radarOptions}
+              <EmptyState
+                icon={GitCompareArrows}
+                title="Henüz skor yok"
+                text="Radar için önce tamamlanmış skorlar gerekli."
               />
+            ) : (
+              <div className="tabular-nums">
+                <ApexChart
+                  type="radar"
+                  height={380}
+                  series={radar.series}
+                  options={radarOptions}
+                />
+              </div>
             )}
           </GlassCard>
 
           <GlassCard hover={false} className="flex flex-col">
-            <p className="text-sm font-medium text-foreground mb-3">
-              Departman seç
-            </p>
-            <div className="flex-1 overflow-y-auto max-h-72 space-y-2 pr-1">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h3 className="text-[15px] font-bold text-foreground">
+                Departman seç
+              </h3>
+              <span className="text-xs tabular-nums text-muted-foreground">
+                {compareDeptIds.length} / 3
+              </span>
+            </div>
+            <div className="bz-scroll max-h-80 flex-1 space-y-1.5 overflow-y-auto pr-1">
               {deptDimLoading ? (
-                <div className="space-y-2">
+                <div className="space-y-1.5" aria-hidden="true">
                   {Array.from({ length: 5 }).map((_, i) => (
-                    <div
-                      key={i}
-                      className="h-10 rounded-lg bg-muted/40 animate-pulse"
-                    />
+                    <div key={i} className="bz-skeleton h-11 rounded-xl" />
                   ))}
                 </div>
               ) : deptBreakdown.length === 0 ? (
-                <p className="text-xs text-muted-foreground">
+                <p className="py-6 text-center text-[13px] text-muted-foreground">
                   Karşılaştırılacak departman yok.
                 </p>
               ) : (
                 deptBreakdown.map((d) => {
                   const active = compareDeptIds.includes(d.departmentId);
+                  const slot = DEPT_SLOTS[deptSlots.get(d.departmentId) ?? 0];
                   return (
                     <button
                       key={d.departmentId}
                       type="button"
+                      aria-pressed={active}
                       onClick={() => toggleCompareDept(d.departmentId)}
                       className={cn(
-                        "w-full flex items-center justify-between rounded-xl border px-3 py-2.5 text-left text-sm transition-colors",
+                        "flex min-h-[44px] w-full items-center gap-3 rounded-xl border px-3 py-2 text-left text-[13.5px] transition-colors duration-150",
                         active
-                          ? "border-primary bg-primary/10 text-foreground"
-                          : "border-border/40 hover:bg-muted/50 text-muted-foreground",
+                          ? "border-brand/40 bg-brand-soft text-foreground"
+                          : "border-border text-fg2 hover:bg-hover hover:text-foreground",
                       )}
                     >
-                      <span className="truncate pr-2">{d.departmentName}</span>
-                      <span className="text-[10px] tabular-nums opacity-70">
+                      <span
+                        className={cn(
+                          "h-2.5 w-2.5 flex-none rounded-full",
+                          active && slot
+                            ? slot.dot
+                            : "bg-transparent ring-1 ring-inset ring-border-strong",
+                        )}
+                        aria-hidden="true"
+                      />
+                      <span className="min-w-0 flex-1 truncate font-medium">
+                        {d.departmentName}
+                      </span>
+                      <span className="flex-none text-xs tabular-nums text-muted-foreground">
                         {d.sessionCount} oturum
                       </span>
                     </button>
@@ -688,169 +767,115 @@ export default function AnalyticsPage() {
               <button
                 type="button"
                 onClick={() => setCompareDeptIds([])}
-                className="mt-3 text-xs text-primary hover:underline"
+                className="bz-btn bz-btn--ghost bz-btn--sm mt-3 self-start"
               >
                 Seçimi temizle
               </button>
             )}
           </GlassCard>
         </div>
-      </div>
+      </section>
 
-      {/* Monthly dimension lines */}
-      <div>
-        <div className="flex items-center gap-2 mb-4">
-          <div className="h-8 w-8 rounded-lg bg-indigo-500/10 flex items-center justify-center">
-            <TrendingUp className="h-4 w-4 text-indigo-500" />
-          </div>
-          <div>
-            <h2 className="text-base font-semibold text-foreground">
-              Aylık boyut trendleri
-            </h2>
-            <p className="text-xs text-muted-foreground">
-              Son 12 ay — her boyut için ortalama skor
-            </p>
-          </div>
-        </div>
+      {/* Aylık boyut trendleri */}
+      <section>
+        <SectionHeader
+          icon={TrendingUp}
+          title="Aylık boyut trendleri"
+          sub="Son 12 ay — her boyut için ortalama skor"
+        />
 
-        <GlassCard hover={false}>
+        <GlassCard hover={false} className="min-w-0">
           {monthlyDimLoading ? (
-            <div className="h-80 rounded-xl bg-muted/40 animate-pulse" />
+            <div className="bz-skeleton h-80 rounded-xl" aria-hidden="true" />
           ) : monthlyPoints.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <TrendingUp className="h-8 w-8 text-muted-foreground/40 mb-3" />
-              <p className="text-sm text-muted-foreground">
-                Bu aralıkta boyutlu oturum verisi yok
-              </p>
-            </div>
-          ) : (
-            <ApexChart
-              type="line"
-              height={400}
-              series={lineSeries}
-              options={lineOptions}
+            <EmptyState
+              icon={TrendingUp}
+              title="Trend verisi yok"
+              text="Bu aralıkta boyutlu oturum verisi yok."
             />
+          ) : (
+            <div className="tabular-nums">
+              <ApexChart
+                type="line"
+                height={400}
+                series={lineSeries}
+                options={lineOptions}
+              />
+            </div>
           )}
         </GlassCard>
-      </div>
+      </section>
 
-      {/* Monthly aggregate trend (existing table) */}
-      <div>
-        <div className="flex items-center gap-2 mb-4">
-          <div className="h-8 w-8 rounded-lg bg-accent-green/10 flex items-center justify-center">
-            <TrendingUp className="h-4 w-4 text-accent-green" />
-          </div>
-          <h2 className="text-base font-semibold text-foreground">
-            Genel aylık özet
-          </h2>
-        </div>
+      {/* Genel aylık özet */}
+      <section>
+        <SectionHeader icon={CalendarRange} title="Genel aylık özet" />
 
-        <GlassCard hover={false}>
+        <GlassCard hover={false} className="overflow-hidden p-0">
           {trendsLoading ? (
-            <div className="space-y-3">
+            <div className="space-y-2 p-5" aria-hidden="true">
               {Array.from({ length: 4 }).map((_, i) => (
-                <div
-                  key={i}
-                  className="h-10 rounded-xl bg-muted/40 animate-pulse"
-                />
+                <div key={i} className="bz-skeleton h-9 rounded-lg" />
               ))}
             </div>
           ) : trends.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-center">
-              <TrendingUp className="h-8 w-8 text-muted-foreground/40 mb-3" />
-              <p className="text-sm text-muted-foreground">
-                Henüz trend verisi bulunmuyor
-              </p>
-            </div>
+            <EmptyState
+              icon={CalendarRange}
+              title="Henüz trend verisi yok"
+              text="Aylık özet, tamamlanan oturumlar oldukça oluşur."
+            />
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full">
+              <table className="bz-table">
                 <thead>
-                  <tr className="border-b border-border/30">
-                    <th className="text-left text-xs font-medium text-muted-foreground uppercase pb-3 pr-4">
-                      Dönem
-                    </th>
-                    <th className="text-left text-xs font-medium text-muted-foreground uppercase pb-3 pr-4">
-                      Tamamlanan
-                    </th>
-                    <th className="text-left text-xs font-medium text-muted-foreground uppercase pb-3 pr-4">
-                      Ort. Skor
-                    </th>
-                    <th className="text-left text-xs font-medium text-muted-foreground uppercase pb-3">
-                      Değişim
-                    </th>
+                  <tr>
+                    <th className="pl-5">Dönem</th>
+                    <th className="is-num">Tamamlanan</th>
+                    <th className="is-num">Ort. skor</th>
+                    <th className="is-num pr-5">Değişim</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border/20">
+                <tbody>
                   {trends.map((t: (typeof trends)[0], idx: number) => {
                     const prev = trends[idx + 1];
+                    // Gösterilen hassasiyete (0.1) yuvarlanır: "0.0" görünen fark yatay sayılır
                     const diff =
                       prev && t.avgScore != null && prev.avgScore != null
-                        ? t.avgScore - prev.avgScore
+                        ? Math.round((t.avgScore - prev.avgScore) * 10) / 10
                         : null;
+                    const trend =
+                      diff == null ? null : diff > 0 ? "up" : diff < 0 ? "down" : "flat";
                     return (
-                      <tr
-                        key={t.month ?? idx}
-                        className="hover:bg-muted/30 transition-colors"
-                      >
-                        <td className="py-3 pr-4">
-                          <span className="text-sm font-medium text-foreground">
-                            {formatMonth(t.month)}
-                          </span>
+                      <tr key={t.month ?? idx}>
+                        <td className="pl-5 font-semibold text-foreground">
+                          {formatMonth(t.month)}
                         </td>
-                        <td className="py-3 pr-4">
-                          <span className="text-sm tabular-nums text-muted-foreground">
-                            {t.completionCount ?? 0}
-                          </span>
-                        </td>
-                        <td className="py-3 pr-4">
+                        <td className="is-num text-fg2">{t.completionCount ?? 0}</td>
+                        <td className="is-num">
                           {t.avgScore != null ? (
                             <span
                               className={cn(
-                                "text-sm font-bold tabular-nums",
-                                t.avgScore >= 7
-                                  ? "text-accent-green"
-                                  : t.avgScore >= 4
-                                    ? "text-amber-500"
-                                    : "text-destructive",
+                                "bz-chip tabular-nums",
+                                trendScoreTone(t.avgScore),
                               )}
                             >
                               {t.avgScore.toFixed(1)}
                             </span>
                           ) : (
-                            <span className="text-xs text-muted-foreground">
-                              —
-                            </span>
+                            <span className="text-muted-foreground">—</span>
                           )}
                         </td>
-                        <td className="py-3">
-                          {diff !== null ? (
-                            <div className="flex items-center gap-1">
-                              {diff > 0 ? (
-                                <ArrowUp className="h-3.5 w-3.5 text-accent-green" />
-                              ) : diff < 0 ? (
-                                <ArrowDown className="h-3.5 w-3.5 text-destructive" />
-                              ) : (
-                                <Minus className="h-3.5 w-3.5 text-muted-foreground" />
-                              )}
-                              <span
-                                className={cn(
-                                  "text-xs font-semibold tabular-nums",
-                                  diff > 0
-                                    ? "text-accent-green"
-                                    : diff < 0
-                                      ? "text-destructive"
-                                      : "text-muted-foreground",
-                                )}
-                              >
-                                {diff > 0 ? "+" : ""}
-                                {diff.toFixed(1)}
-                              </span>
-                            </div>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">
-                              —
+                        <td className="is-num pr-5">
+                          {diff !== null && trend ? (
+                            <span
+                              className="bz-delta"
+                              data-trend={trend}
+                              data-good="up"
+                            >
+                              {diff > 0 ? "+" : ""}
+                              {diff.toFixed(1)}
                             </span>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
                           )}
                         </td>
                       </tr>
@@ -861,56 +886,48 @@ export default function AnalyticsPage() {
             </div>
           )}
         </GlassCard>
-      </div>
+      </section>
 
-      {/* Department cards */}
-      <div>
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-lg bg-accent-purple/10 flex items-center justify-center">
-              <Building2 className="h-4 w-4 text-accent-purple" />
-            </div>
-            <h2 className="text-base font-semibold text-foreground">
-              Departman özeti
-            </h2>
-          </div>
-          <div className="flex items-center gap-2">
-            <ArrowUpDown className="h-4 w-4 text-muted-foreground" />
-            <select
-              value={deptSort}
-              onChange={(e) =>
-                setDeptSort(e.target.value as typeof deptSort)
-              }
-              className="h-9 rounded-xl border border-border/50 bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/25"
-            >
-              <option value="avgDesc">Ortalama skor (yüksek)</option>
-              <option value="sessionsDesc">Tamamlanan oturum</option>
-              <option value="name">İsim (A-Z)</option>
-            </select>
-          </div>
-        </div>
+      {/* Departman özeti */}
+      <section>
+        <SectionHeader
+          icon={Building2}
+          title="Departman özeti"
+          action={
+            <label className="flex items-center gap-2">
+              <span className="text-[13px] font-medium text-fg2">Sırala</span>
+              <select
+                value={deptSort}
+                onChange={(e) =>
+                  setDeptSort(e.target.value as typeof deptSort)
+                }
+                className="bz-field bz-field--sm w-auto"
+              >
+                <option value="avgDesc">Ortalama skor (yüksek)</option>
+                <option value="sessionsDesc">Tamamlanan oturum</option>
+                <option value="name">İsim (A–Z)</option>
+              </select>
+            </label>
+          }
+        />
 
         {dashLoading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {Array.from({ length: 3 }).map((_, i) => (
-              <div
-                key={i}
-                className="h-32 rounded-xl bg-muted/40 animate-pulse"
-              />
+              <div key={i} className="bz-skeleton h-36 rounded-2xl" />
             ))}
           </div>
         ) : sortedDeptCards.length === 0 ? (
           <GlassCard hover={false}>
-            <div className="flex flex-col items-center justify-center py-12 text-center">
-              <Building2 className="h-8 w-8 text-muted-foreground/40 mb-3" />
-              <p className="text-sm text-muted-foreground">
-                Henüz departman verisi bulunmuyor
-              </p>
-            </div>
+            <EmptyState
+              icon={Building2}
+              title="Henüz departman verisi yok"
+              text="Personel departmanlara atandığında özet burada görünür."
+            />
           </GlassCard>
         ) : (
           <motion.div
-            className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4"
+            className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3"
             variants={motionContainer}
             initial="hidden"
             animate="show"
@@ -924,51 +941,49 @@ export default function AnalyticsPage() {
                 avgScore: number | null;
               }) => (
                 <motion.div key={dept.id ?? dept.name} variants={motionItem}>
-                  <GlassCard>
-                    <div className="flex items-start justify-between gap-2">
+                  <GlassCard className="h-full">
+                    <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <p className="text-sm font-semibold text-foreground truncate">
+                        <h3 className="truncate text-[15px] font-bold text-foreground">
                           {dept.name}
+                        </h3>
+                        <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <Users className="h-3.5 w-3.5 flex-none" aria-hidden="true" />
+                          <span className="tabular-nums">{dept.personnelCount}</span> personel
                         </p>
-                        <div className="flex items-center gap-1.5 mt-1">
-                          <Users className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-                          <span className="text-xs text-muted-foreground">
-                            {dept.personnelCount} personel
-                          </span>
-                        </div>
                       </div>
                       {dept.avgScore != null && (
                         <ScoreGauge score={dept.avgScore} size="sm" />
                       )}
                     </div>
-                    <div className="grid grid-cols-2 gap-3 mt-4 pt-3 border-t border-border/20">
+                    <dl className="mt-4 grid grid-cols-2 gap-3 border-t border-divider pt-3">
                       <div>
-                        <p className="text-[10px] text-muted-foreground">
+                        <dt className="text-[11px] text-muted-foreground">
                           Tamamlanan
-                        </p>
-                        <p className="text-sm font-bold tabular-nums text-foreground">
+                        </dt>
+                        <dd className="text-sm font-semibold tabular-nums text-foreground">
                           {dept.completedTests}
-                        </p>
+                        </dd>
                       </div>
                       <div>
-                        <p className="text-[10px] text-muted-foreground">
+                        <dt className="text-[11px] text-muted-foreground">
                           Bekleyen
-                        </p>
-                        <p className="text-sm font-bold tabular-nums text-foreground">
+                        </dt>
+                        <dd className="text-sm font-semibold tabular-nums text-foreground">
                           {Math.max(
                             0,
                             dept.personnelCount - dept.completedTests,
                           )}
-                        </p>
+                        </dd>
                       </div>
-                    </div>
+                    </dl>
                   </GlassCard>
                 </motion.div>
               ),
             )}
           </motion.div>
         )}
-      </div>
+      </section>
     </div>
   );
 }

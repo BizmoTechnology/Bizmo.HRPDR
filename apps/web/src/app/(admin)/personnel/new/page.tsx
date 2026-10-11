@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect } from "react";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -10,7 +9,6 @@ import { createPersonnelSchema, type CreatePersonnelInput } from "@ph/shared";
 import { toast } from "sonner";
 import { ArrowLeft, Save, Loader2 } from "lucide-react";
 import { GlassCard } from "@ph/ui";
-import { cn } from "@/lib/utils";
 import { DateTimePicker } from "@/components/ui/datetime-picker";
 import {
   useCreatePersonnel,
@@ -21,7 +19,7 @@ import {
 const SHIFT_OPTIONS = [
   { value: "NONE", label: "Yok" },
   { value: "MORNING", label: "Sabah" },
-  { value: "AFTERNOON", label: "Öğleden Sonra" },
+  { value: "AFTERNOON", label: "Öğleden sonra" },
   { value: "NIGHT", label: "Gece" },
   { value: "ROTATING", label: "Dönüşümlü" },
 ];
@@ -37,32 +35,58 @@ const LANG_OPTIONS = [
   { value: "en", label: "English" },
 ];
 
-const inputClass =
-  "w-full h-10 px-3 rounded-xl bg-muted/40 border border-border/30 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 transition-colors";
-
-const labelClass = "block text-sm font-medium text-foreground mb-1.5";
-
-const errorClass = "text-xs text-destructive mt-1";
-
+/** Bizmo form satırı (DESIGN.md §11): etiket üstte, alan, altında hata ya da yardım metni */
 function FormField({
+  id,
   label,
   error,
+  hint,
   required,
+  className,
   children,
 }: {
+  id: string;
   label: string;
   error?: string;
+  hint?: string;
   required?: boolean;
+  className?: string;
   children: React.ReactNode;
 }) {
   return (
-    <div>
-      <label className={labelClass}>
+    <div className={className ? `bz-form-row ${className}` : "bz-form-row"}>
+      <label htmlFor={id} className="bz-label">
         {label}
-        {required && <span className="text-destructive ml-0.5">*</span>}
+        {required && <span className="bz-req">*</span>}
       </label>
       {children}
-      {error && <p className={errorClass}>{error}</p>}
+      {error ? (
+        <p id={`${id}-error`} className="bz-error-text">
+          {error}
+        </p>
+      ) : hint ? (
+        <p id={`${id}-hint`} className="bz-hint">
+          {hint}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/** Alanın hata / yardım bağlantısı */
+function describe(id: string, error?: string, hint?: boolean) {
+  return {
+    id,
+    "aria-invalid": error ? (true as const) : undefined,
+    "aria-describedby": error ? `${id}-error` : hint ? `${id}-hint` : undefined,
+  };
+}
+
+function SectionTitle({ title, sub }: { title: string; sub?: string }) {
+  return (
+    <div className="mb-4">
+      <h2 className="text-[15px] font-bold text-foreground">{title}</h2>
+      {sub && <p className="mt-0.5 text-[13px] text-muted-foreground">{sub}</p>}
     </div>
   );
 }
@@ -103,276 +127,332 @@ export default function NewPersonnelPage() {
     }
   };
 
+  const saving = isSubmitting || createMutation.isPending;
+
   return (
-    <div className="space-y-6 w-full max-w-4xl mx-auto">
-      {/* Header */}
+    <div className="mx-auto w-full max-w-4xl">
+      {/* Başlık */}
       <motion.div
-        className="flex items-center gap-4"
+        className="bz-page-header"
         initial={{ opacity: 0, y: -8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}
       >
         <Link
           href="/personnel"
-          className="h-9 w-9 rounded-xl bg-muted/40 flex items-center justify-center text-muted-foreground hover:bg-muted/60 transition-colors"
+          className="bz-icon-btn"
+          aria-label="Personel listesine dön"
+          title="Personel listesine dön"
         >
-          <ArrowLeft className="h-4 w-4" />
+          <ArrowLeft />
         </Link>
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Yeni Personel</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            Yeni personel kaydı oluşturun
-          </p>
+        <div className="bz-page-header__text">
+          <h1 className="bz-page-header__title">Yeni personel</h1>
+          <p className="bz-page-header__sub">Yeni personel kaydı oluşturun</p>
         </div>
       </motion.div>
 
       {/* Form */}
       <motion.div
-        initial={{ opacity: 0, y: 12 }}
+        initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35, delay: 0.1 }}
+        transition={{ duration: 0.3, delay: 0.08 }}
       >
-        <GlassCard hover={false}>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-            {/* Kişisel Bilgiler */}
-            <div>
-              <h3 className="text-sm font-semibold text-foreground mb-4 uppercase tracking-wider">
-                Kişisel Bilgiler
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <FormField
-                  label="Sicil Numarası"
-                  error={errors.employeeId?.message}
-                  required
-                >
-                  <input
-                    {...register("employeeId")}
-                    placeholder="Ör: PRS-001"
-                    className={inputClass}
-                  />
-                </FormField>
-
-                <FormField
-                  label="Ad"
-                  error={errors.firstName?.message}
-                  required
-                >
-                  <input
-                    {...register("firstName")}
-                    placeholder="Ad"
-                    className={inputClass}
-                  />
-                </FormField>
-
-                <FormField
-                  label="Soyad"
-                  error={errors.lastName?.message}
-                  required
-                >
-                  <input
-                    {...register("lastName")}
-                    placeholder="Soyad"
-                    className={inputClass}
-                  />
-                </FormField>
-
-                <FormField
-                  label="E-posta"
-                  error={errors.email?.message}
-                  required
-                >
-                  <input
-                    {...register("email")}
-                    type="email"
-                    placeholder="ornek@firma.com"
-                    className={inputClass}
-                  />
-                </FormField>
-
-                <FormField label="Telefon" error={errors.phone?.message}>
-                  <input
-                    {...register("phone")}
-                    placeholder="+90 5XX XXX XX XX"
-                    className={inputClass}
-                  />
-                </FormField>
-
-                <FormField
-                  label="Doğum Tarihi"
-                  error={errors.birthDate?.message}
-                >
-                  <Controller
-                    name="birthDate"
-                    control={control}
-                    render={({ field }) => (
-                      <DateTimePicker
-                        value={field.value ?? ""}
-                        onChange={field.onChange}
-                        placeholder="Doğum tarihi ve saat"
-                      />
-                    )}
-                  />
-                </FormField>
-              </div>
-            </div>
-
-            {/* İş Bilgileri */}
-            <div>
-              <h3 className="text-sm font-semibold text-foreground mb-4 uppercase tracking-wider">
-                İş Bilgileri
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <FormField
-                  label="Pozisyon"
-                  error={errors.position?.message}
-                  required
-                >
-                  <input
-                    {...register("position")}
-                    placeholder="Ör: CNC Operatörü"
-                    className={inputClass}
-                  />
-                </FormField>
-
-                <FormField
-                  label="Deneyim (Yıl)"
-                  error={errors.experienceYear?.message}
-                >
-                  <input
-                    {...register("experienceYear", { valueAsNumber: true })}
-                    type="number"
-                    min={0}
-                    placeholder="0"
-                    className={inputClass}
-                  />
-                </FormField>
-
-                <FormField
-                  label="Departman"
-                  error={errors.departmentId?.message}
-                >
-                  <select
-                    {...register("departmentId")}
-                    className={inputClass}
-                    disabled={depsLoading}
-                  >
-                    <option value="">Departman seçin</option>
-                    {departments?.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.name}
-                      </option>
-                    ))}
-                  </select>
-                </FormField>
-
-                <FormField label="Takım" error={errors.teamId?.message}>
-                  <select
-                    {...register("teamId")}
-                    className={inputClass}
-                    disabled={!selectedDepartmentId}
-                  >
-                    <option value="">
-                      {selectedDepartmentId
-                        ? "Takım seçin"
-                        : "Önce departman seçin"}
-                    </option>
-                    {teams?.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name}
-                      </option>
-                    ))}
-                  </select>
-                </FormField>
-
-                <FormField label="Durum" error={errors.status?.message}>
-                  <select {...register("status")} className={inputClass}>
-                    {STATUS_OPTIONS.map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
-                </FormField>
-
-                <FormField label="Vardiya" error={errors.shift?.message}>
-                  <select {...register("shift")} className={inputClass}>
-                    {SHIFT_OPTIONS.map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
-                </FormField>
-
-                <FormField
-                  label="Tercih Edilen Dil"
-                  error={errors.preferredLanguage?.message}
-                >
-                  <select
-                    {...register("preferredLanguage")}
-                    className={inputClass}
-                  >
-                    {LANG_OPTIONS.map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
-                </FormField>
-
-                <FormField
-                  label="İşe Giriş Tarihi"
-                  error={errors.hireDate?.message}
-                >
-                  <Controller
-                    name="hireDate"
-                    control={control}
-                    render={({ field }) => (
-                      <DateTimePicker
-                        value={field.value ?? ""}
-                        onChange={field.onChange}
-                        placeholder="İşe giriş tarihi ve saat"
-                      />
-                    )}
-                  />
-                </FormField>
-              </div>
-            </div>
-
-            {/* Notlar */}
-            <div>
-              <h3 className="text-sm font-semibold text-foreground mb-4 uppercase tracking-wider">
-                Ek Bilgiler
-              </h3>
-              <FormField label="Notlar" error={errors.notes?.message}>
-                <textarea
-                  {...register("notes")}
-                  rows={3}
-                  placeholder="Personel hakkında ek notlar..."
-                  className={cn(inputClass, "h-auto py-2.5 resize-none")}
+        <GlassCard hover={false} className="p-0">
+          <form onSubmit={handleSubmit(onSubmit)} noValidate>
+            <div className="space-y-6 p-5 sm:p-6">
+              {/* Kişisel bilgiler */}
+              <section>
+                <SectionTitle
+                  title="Kişisel bilgiler"
+                  sub="Kimlik ve iletişim bilgileri"
                 />
-              </FormField>
+                <div className="bz-form-grid md:grid-cols-2">
+                  <FormField
+                    id="employeeId"
+                    label="Sicil numarası"
+                    error={errors.employeeId?.message}
+                    required
+                  >
+                    <input
+                      {...register("employeeId")}
+                      {...describe("employeeId", errors.employeeId?.message)}
+                      placeholder="Ör. PRS-001"
+                      autoComplete="off"
+                      className="bz-field"
+                    />
+                  </FormField>
+
+                  <FormField
+                    id="firstName"
+                    label="Ad"
+                    error={errors.firstName?.message}
+                    required
+                  >
+                    <input
+                      {...register("firstName")}
+                      {...describe("firstName", errors.firstName?.message)}
+                      autoComplete="given-name"
+                      className="bz-field"
+                    />
+                  </FormField>
+
+                  <FormField
+                    id="lastName"
+                    label="Soyad"
+                    error={errors.lastName?.message}
+                    required
+                  >
+                    <input
+                      {...register("lastName")}
+                      {...describe("lastName", errors.lastName?.message)}
+                      autoComplete="family-name"
+                      className="bz-field"
+                    />
+                  </FormField>
+
+                  <FormField
+                    id="email"
+                    label="E-posta"
+                    error={errors.email?.message}
+                    required
+                  >
+                    <input
+                      {...register("email")}
+                      {...describe("email", errors.email?.message)}
+                      type="email"
+                      inputMode="email"
+                      autoComplete="email"
+                      placeholder="ornek@firma.com"
+                      className="bz-field"
+                    />
+                  </FormField>
+
+                  <FormField id="phone" label="Telefon" error={errors.phone?.message}>
+                    <input
+                      {...register("phone")}
+                      {...describe("phone", errors.phone?.message)}
+                      type="tel"
+                      inputMode="tel"
+                      autoComplete="tel"
+                      placeholder="+90 5XX XXX XX XX"
+                      className="bz-field"
+                    />
+                  </FormField>
+
+                  <FormField
+                    id="birthDate"
+                    label="Doğum tarihi"
+                    error={errors.birthDate?.message}
+                  >
+                    <Controller
+                      name="birthDate"
+                      control={control}
+                      render={({ field }) => (
+                        <DateTimePicker
+                          id="birthDate"
+                          value={field.value ?? ""}
+                          onChange={field.onChange}
+                          placeholder="Doğum tarihi ve saat"
+                        />
+                      )}
+                    />
+                  </FormField>
+                </div>
+              </section>
+
+              {/* İş bilgileri */}
+              <section className="border-t border-divider pt-6">
+                <SectionTitle
+                  title="İş bilgileri"
+                  sub="Görev, birim ve çalışma düzeni"
+                />
+                <div className="bz-form-grid md:grid-cols-2">
+                  <FormField
+                    id="position"
+                    label="Pozisyon"
+                    error={errors.position?.message}
+                    required
+                  >
+                    <input
+                      {...register("position")}
+                      {...describe("position", errors.position?.message)}
+                      placeholder="Ör. CNC operatörü"
+                      className="bz-field"
+                    />
+                  </FormField>
+
+                  <FormField
+                    id="experienceYear"
+                    label="Deneyim (yıl)"
+                    error={errors.experienceYear?.message}
+                    hint="Toplam iş deneyimi, tam yıl olarak"
+                  >
+                    <input
+                      {...register("experienceYear", { valueAsNumber: true })}
+                      {...describe(
+                        "experienceYear",
+                        errors.experienceYear?.message,
+                        true
+                      )}
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      placeholder="0"
+                      className="bz-field tabular-nums"
+                    />
+                  </FormField>
+
+                  <FormField
+                    id="departmentId"
+                    label="Departman"
+                    error={errors.departmentId?.message}
+                  >
+                    <select
+                      {...register("departmentId")}
+                      {...describe("departmentId", errors.departmentId?.message)}
+                      className="bz-field"
+                      disabled={depsLoading}
+                    >
+                      <option value="">Departman seçin</option>
+                      {departments?.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.name}
+                        </option>
+                      ))}
+                    </select>
+                  </FormField>
+
+                  <FormField
+                    id="teamId"
+                    label="Takım"
+                    error={errors.teamId?.message}
+                  >
+                    <select
+                      {...register("teamId")}
+                      {...describe("teamId", errors.teamId?.message)}
+                      className="bz-field"
+                      disabled={!selectedDepartmentId}
+                    >
+                      <option value="">
+                        {selectedDepartmentId
+                          ? "Takım seçin"
+                          : "Önce departman seçin"}
+                      </option>
+                      {teams?.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}
+                        </option>
+                      ))}
+                    </select>
+                  </FormField>
+
+                  <FormField id="status" label="Durum" error={errors.status?.message}>
+                    <select
+                      {...register("status")}
+                      {...describe("status", errors.status?.message)}
+                      className="bz-field"
+                    >
+                      {STATUS_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
+                  </FormField>
+
+                  <FormField id="shift" label="Vardiya" error={errors.shift?.message}>
+                    <select
+                      {...register("shift")}
+                      {...describe("shift", errors.shift?.message)}
+                      className="bz-field"
+                    >
+                      {SHIFT_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
+                  </FormField>
+
+                  <FormField
+                    id="preferredLanguage"
+                    label="Tercih edilen dil"
+                    error={errors.preferredLanguage?.message}
+                  >
+                    <select
+                      {...register("preferredLanguage")}
+                      {...describe(
+                        "preferredLanguage",
+                        errors.preferredLanguage?.message
+                      )}
+                      className="bz-field"
+                    >
+                      {LANG_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
+                  </FormField>
+
+                  <FormField
+                    id="hireDate"
+                    label="İşe giriş tarihi"
+                    error={errors.hireDate?.message}
+                  >
+                    <Controller
+                      name="hireDate"
+                      control={control}
+                      render={({ field }) => (
+                        <DateTimePicker
+                          id="hireDate"
+                          value={field.value ?? ""}
+                          onChange={field.onChange}
+                          placeholder="İşe giriş tarihi ve saat"
+                        />
+                      )}
+                    />
+                  </FormField>
+                </div>
+              </section>
+
+              {/* Ek bilgiler */}
+              <section className="border-t border-divider pt-6">
+                <SectionTitle title="Ek bilgiler" />
+                <FormField
+                  id="notes"
+                  label="Notlar"
+                  error={errors.notes?.message}
+                  hint="İsteğe bağlı. Sertifika, yetki veya vardiya tercihleri gibi bilgiler."
+                >
+                  <textarea
+                    {...register("notes")}
+                    {...describe("notes", errors.notes?.message, true)}
+                    rows={3}
+                    placeholder="Personel hakkında ek notlar"
+                    className="bz-field"
+                  />
+                </FormField>
+              </section>
             </div>
 
-            {/* Actions */}
-            <div className="flex items-center justify-end gap-3 pt-4 border-t border-border/20">
-              <Link
-                href="/personnel"
-                className="px-4 py-2.5 rounded-xl text-sm font-medium text-muted-foreground hover:bg-muted/40 transition-colors"
-              >
-                İptal
+            {/* Eylemler: ikincil solda, birincil sağda */}
+            <div className="flex flex-col-reverse gap-2 border-t border-divider px-5 py-4 sm:flex-row sm:justify-end sm:px-6">
+              <Link href="/personnel" className="bz-btn">
+                Vazgeç
               </Link>
               <button
                 type="submit"
-                disabled={isSubmitting || createMutation.isPending}
-                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                disabled={saving}
+                className="bz-btn bz-btn--primary"
               >
                 {createMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader2 className="animate-spin" />
                 ) : (
-                  <Save className="h-4 w-4" />
+                  <Save />
                 )}
-                Kaydet
+                {createMutation.isPending ? "Kaydediliyor" : "Personeli kaydet"}
               </button>
             </div>
           </form>

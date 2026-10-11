@@ -19,55 +19,96 @@ import { tr } from "date-fns/locale";
 
 const container = {
   hidden: { opacity: 0 },
-  show: { opacity: 1, transition: { staggerChildren: 0.07 } },
+  show: { opacity: 1, transition: { staggerChildren: 0.06 } },
 };
 
 const item = {
-  hidden: { opacity: 0, y: 12 },
+  hidden: { opacity: 0, y: 8 },
   show: {
     opacity: 1,
     y: 0,
-    transition: { duration: 0.35, ease: [0.25, 0.46, 0.45, 0.94] },
+    transition: { duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] },
   },
 };
 
-function SkeletonBlock({ className }: { className?: string }) {
+/** Skor bandı (0–10): durum tonu çipte; değer her zaman metin olarak yazılır */
+function scoreBand(score: number) {
+  if (score >= 8) return { tone: "bz-chip--success", label: "Yüksek" };
+  if (score >= 6) return { tone: "bz-chip--warning", label: "Orta" };
+  return { tone: "bz-chip--danger", label: "Düşük" };
+}
+
+function ScoreChip({ score }: { score: number | null | undefined }) {
+  if (score == null) {
+    return <span className="text-muted-foreground">—</span>;
+  }
+  const band = scoreBand(score);
   return (
-    <div
-      className={cn(
-        "animate-pulse rounded-lg bg-muted/40",
-        className
-      )}
-    />
+    <span
+      className={cn("bz-chip tabular-nums", band.tone)}
+      title={`${band.label} · ${score.toFixed(1)} / 10`}
+    >
+      {score.toFixed(1)}
+      <span className="sr-only"> / 10, {band.label.toLowerCase()}</span>
+    </span>
   );
+}
+
+function initialsOf(firstName: string, lastName: string) {
+  return `${firstName.charAt(0)}${lastName.charAt(0)}`;
 }
 
 function StatSkeleton() {
   return (
-    <GlassCard className="flex flex-col gap-3">
-      <div className="flex items-center justify-between">
-        <SkeletonBlock className="h-4 w-24" />
-        <SkeletonBlock className="h-9 w-9 rounded-lg" />
+    <GlassCard className="flex flex-col gap-3" aria-hidden="true">
+      <div className="flex items-start justify-between gap-3">
+        <div className="bz-skeleton h-4 w-28" />
+        <div className="bz-skeleton h-[34px] w-[34px] rounded-[10px]" />
       </div>
       <div>
-        <SkeletonBlock className="h-8 w-16 mb-2" />
-        <SkeletonBlock className="h-3 w-20" />
+        <div className="bz-skeleton h-8 w-20" />
+        <div className="bz-skeleton mt-2 h-3 w-24" />
       </div>
     </GlassCard>
   );
 }
 
-function TableSkeleton({ rows = 5 }: { rows?: number }) {
+function RowsSkeleton({ rows = 5, avatar = true }: { rows?: number; avatar?: boolean }) {
   return (
-    <div className="space-y-3">
+    <div className="px-5 pb-4" aria-hidden="true">
       {Array.from({ length: rows }).map((_, i) => (
-        <div key={i} className="flex items-center gap-4">
-          <SkeletonBlock className="h-7 w-7 rounded-lg flex-shrink-0" />
-          <SkeletonBlock className="h-4 w-28" />
-          <SkeletonBlock className="h-4 w-16 ml-auto" />
-          <SkeletonBlock className="h-4 w-10" />
+        <div
+          key={i}
+          className="flex min-h-[52px] items-center gap-3 border-b border-divider last:border-b-0"
+        >
+          {avatar && <div className="bz-skeleton h-8 w-8 flex-none rounded-[10px]" />}
+          <div className="bz-skeleton h-3.5 w-32" />
+          <div className="bz-skeleton ml-auto h-3.5 w-20" />
+          <div className="bz-skeleton h-5 w-10 rounded-full" />
         </div>
       ))}
+    </div>
+  );
+}
+
+function CardHeader({
+  icon: Icon,
+  title,
+  action,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center gap-3 px-5 pb-3 pt-5">
+      <span className="bz-icon-box" aria-hidden="true">
+        <Icon />
+      </span>
+      <h2 className="min-w-0 flex-1 truncate text-[15px] font-bold text-foreground">
+        {title}
+      </h2>
+      {action}
     </div>
   );
 }
@@ -76,21 +117,22 @@ export default function DashboardPage() {
   const { data: stats, isLoading } = useDashboardStats();
 
   return (
-    <div className="space-y-6 w-full">
+    <div className="w-full space-y-6">
       <motion.div
-        initial={{ opacity: 0, y: -8 }}
+        className="bz-page-header mb-0"
+        initial={{ opacity: 0, y: -6 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3 }}
+        transition={{ duration: 0.25 }}
       >
-        <h1 className="text-2xl font-bold text-foreground">Pano</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">
-          Hoş geldiniz — son 30 günlük özet
-        </p>
+        <div className="bz-page-header__text">
+          <h1 className="bz-page-header__title">Pano</h1>
+          <p className="bz-page-header__sub">Hoş geldiniz — son 30 günlük özet</p>
+        </div>
       </motion.div>
 
-      {/* ── Stat Kartları ── */}
+      {/* ── KPI kartları ── */}
       <motion.div
-        className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4"
+        className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4"
         variants={container}
         initial="hidden"
         animate="show"
@@ -106,7 +148,8 @@ export default function DashboardPage() {
           <>
             <motion.div variants={item}>
               <StatCard
-                title="Toplam Personel"
+                className="h-full"
+                title="Toplam personel"
                 value={stats?.totalPersonnel ?? 0}
                 subtitle="bu ay"
                 icon={Users}
@@ -114,7 +157,8 @@ export default function DashboardPage() {
             </motion.div>
             <motion.div variants={item}>
               <StatCard
-                title="Tamamlanan Test"
+                className="h-full"
+                title="Tamamlanan test"
                 value={stats?.completedSessions ?? 0}
                 subtitle="bu ay"
                 icon={ClipboardCheck}
@@ -122,7 +166,8 @@ export default function DashboardPage() {
             </motion.div>
             <motion.div variants={item}>
               <StatCard
-                title="Ortalama Potansiyel"
+                className="h-full"
+                title="Ortalama potansiyel"
                 value={stats?.avgScore?.toFixed(1) ?? "—"}
                 subtitle="genel ortalama"
                 icon={TrendingUp}
@@ -130,7 +175,8 @@ export default function DashboardPage() {
             </motion.div>
             <motion.div variants={item}>
               <StatCard
-                title="Bekleyen Test"
+                className="h-full"
+                title="Bekleyen test"
                 value={stats?.pendingSessions ?? 0}
                 subtitle="atanmış, bekleniyor"
                 icon={Clock}
@@ -140,117 +186,73 @@ export default function DashboardPage() {
         )}
       </motion.div>
 
-      {/* ── Alt İçerik ── */}
+      {/* ── Alt içerik ── */}
       <motion.div
-        className="grid grid-cols-1 xl:grid-cols-3 gap-4"
+        className="grid grid-cols-1 gap-4 xl:grid-cols-3"
         variants={container}
         initial="hidden"
         animate="show"
       >
-        {/* Son Testler (2/3 genişlik) */}
-        <motion.div variants={item} className="xl:col-span-2">
-          <GlassCard hover={false} className="h-full">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center">
-                  <Activity className="h-4 w-4 text-primary" />
-                </div>
-                <h2 className="text-base font-semibold text-foreground">
-                  Son Tamamlanan Testler
-                </h2>
-              </div>
-              <button className="flex items-center gap-1 text-xs text-primary hover:underline underline-offset-4">
-                Tümünü gör
-                <ArrowRight className="h-3 w-3" />
-              </button>
-            </div>
+        {/* Son tamamlanan testler (2/3 genişlik) */}
+        <motion.div variants={item} className="min-w-0 xl:col-span-2">
+          <GlassCard hover={false} className="h-full overflow-hidden p-0">
+            <CardHeader
+              icon={Activity}
+              title="Son tamamlanan testler"
+              action={
+                <button type="button" className="bz-btn bz-btn--ghost bz-btn--sm">
+                  Tümünü gör
+                  <ArrowRight />
+                </button>
+              }
+            />
 
             {isLoading ? (
-              <TableSkeleton />
+              <RowsSkeleton />
             ) : !stats?.recentSessions?.length ? (
-              <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-                <Activity className="h-8 w-8 mb-2 opacity-40" />
-                <p className="text-sm">Henüz tamamlanan test yok</p>
+              <div className="bz-empty">
+                <Activity className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
+                <p className="bz-empty__title">Henüz tamamlanan test yok</p>
+                <p className="bz-empty__text">
+                  Personel bir değerlendirmeyi tamamladığında sonuç burada görünür.
+                </p>
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full">
+                <table className="bz-table">
                   <thead>
-                    <tr className="border-b border-border/30">
-                      <th className="text-left text-xs font-medium text-muted-foreground uppercase pb-3 pr-4">
-                        Personel
-                      </th>
-                      <th className="text-left text-xs font-medium text-muted-foreground uppercase pb-3 pr-4">
-                        Departman
-                      </th>
-                      <th className="text-left text-xs font-medium text-muted-foreground uppercase pb-3 pr-4">
-                        Skor
-                      </th>
-                      <th className="text-left text-xs font-medium text-muted-foreground uppercase pb-3">
-                        Tarih
-                      </th>
+                    <tr>
+                      <th className="pl-5">Personel</th>
+                      <th className="hidden sm:table-cell">Departman</th>
+                      <th className="is-num">Skor</th>
+                      <th className="is-num pr-5">Tarih</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-border/20">
+                  <tbody>
                     {stats.recentSessions.map((s) => {
                       const name = `${s.personnel.firstName} ${s.personnel.lastName}`;
-                      const initials = `${s.personnel.firstName[0]}${s.personnel.lastName[0]}`;
-                      const score = s.avgScore;
                       return (
-                        <tr
-                          key={s.id}
-                          className="hover:bg-muted/30 transition-colors"
-                        >
-                          <td className="py-3 pr-4">
-                            <div className="flex items-center gap-2.5">
-                              <div className="h-7 w-7 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                                <span className="text-[10px] font-bold text-primary">
-                                  {initials}
-                                </span>
-                              </div>
-                              <span className="text-sm font-medium text-foreground">
+                        <tr key={s.id} className="[&>td]:h-[52px]">
+                          <td className="pl-5">
+                            <div className="bz-cell-user">
+                              <span className="bz-avatar" aria-hidden="true">
+                                {initialsOf(s.personnel.firstName, s.personnel.lastName)}
+                              </span>
+                              <span className="truncate font-semibold text-foreground">
                                 {name}
                               </span>
                             </div>
                           </td>
-                          <td className="py-3 pr-4">
-                            <span className="text-sm text-muted-foreground">
-                              {s.department?.name ?? "—"}
-                            </span>
+                          <td className="hidden text-fg2 sm:table-cell">
+                            {s.department?.name ?? "—"}
                           </td>
-                          <td className="py-3 pr-4">
-                            {score != null ? (
-                              <>
-                                <span
-                                  className={cn(
-                                    "text-sm font-bold tabular-nums",
-                                    score >= 8
-                                      ? "text-accent-green"
-                                      : score >= 6
-                                        ? "text-accent-orange"
-                                        : "text-accent-red"
-                                  )}
-                                >
-                                  {score.toFixed(1)}
-                                </span>
-                                <span className="text-xs text-muted-foreground">
-                                  /10
-                                </span>
-                              </>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">
-                                —
-                              </span>
-                            )}
+                          <td className="is-num">
+                            <ScoreChip score={s.avgScore} />
                           </td>
-                          <td className="py-3">
-                            <span className="text-xs text-muted-foreground">
-                              {format(
-                                new Date(s.completedAt),
-                                "dd MMM yyyy, HH:mm",
-                                { locale: tr }
-                              )}
-                            </span>
+                          <td className="is-num pr-5 text-[13px] text-muted-foreground">
+                            {format(new Date(s.completedAt), "dd MMM yyyy, HH:mm", {
+                              locale: tr,
+                            })}
                           </td>
                         </tr>
                       );
@@ -262,154 +264,100 @@ export default function DashboardPage() {
           </GlassCard>
         </motion.div>
 
-        {/* En Yüksek Potansiyel (1/3) */}
-        <motion.div variants={item}>
-          <GlassCard hover={false} className="h-full">
-            <div className="flex items-center gap-2 mb-4">
-              <div className="h-8 w-8 rounded-lg bg-accent-purple/10 flex items-center justify-center">
-                <BrainCircuit className="h-4 w-4 text-accent-purple" />
-              </div>
-              <h2 className="text-base font-semibold text-foreground">
-                En Yüksek Potansiyel
-              </h2>
+        {/* En yüksek potansiyel (1/3) */}
+        <motion.div variants={item} className="min-w-0">
+          <GlassCard hover={false} className="flex h-full flex-col p-0">
+            <CardHeader icon={BrainCircuit} title="En yüksek potansiyel" />
+
+            <div className="flex-1 px-5">
+              {isLoading ? (
+                <div className="-mx-5">
+                  <RowsSkeleton rows={4} />
+                </div>
+              ) : !stats?.topPerformers?.length ? (
+                <div className="bz-empty">
+                  <BrainCircuit className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
+                  <p className="bz-empty__title">Henüz veri yok</p>
+                  <p className="bz-empty__text">
+                    Skorlar tamamlanan testlerden hesaplanır.
+                  </p>
+                </div>
+              ) : (
+                <ol className="bz-list" aria-label="En yüksek potansiyel sıralaması">
+                  {stats.topPerformers.map((p, idx) => (
+                    <li key={p.id} className="bz-list-item">
+                      <span
+                        className="w-4 flex-none text-center text-[13px] font-semibold tabular-nums text-muted-foreground"
+                        aria-hidden="true"
+                      >
+                        {idx + 1}
+                      </span>
+                      <span className="bz-avatar" aria-hidden="true">
+                        {initialsOf(p.firstName, p.lastName)}
+                      </span>
+                      <div className="bz-list-item__main">
+                        <p className="bz-list-item__title text-foreground">
+                          {p.firstName} {p.lastName}
+                        </p>
+                        <p className="bz-list-item__sub">{p.position}</p>
+                      </div>
+                      <div className="bz-list-item__end">
+                        <span className="bz-value text-[15px]">
+                          {p.avgScore.toFixed(1)}
+                          <span className="bz-value__unit">/10</span>
+                        </span>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              )}
             </div>
 
-            {isLoading ? (
-              <TableSkeleton rows={3} />
-            ) : !stats?.topPerformers?.length ? (
-              <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-                <BrainCircuit className="h-8 w-8 mb-2 opacity-40" />
-                <p className="text-sm">Henüz veri yok</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {stats.topPerformers.map((p, idx) => (
-                  <div
-                    key={p.id}
-                    className="flex items-center gap-3 p-3 rounded-xl bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer"
-                  >
-                    <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                      <span className="text-xs font-bold text-primary">
-                        #{idx + 1}
-                      </span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-foreground truncate">
-                        {p.firstName} {p.lastName}
-                      </p>
-                      <p className="text-[11px] text-muted-foreground truncate">
-                        {p.position}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <p
-                        className={cn(
-                          "text-sm font-bold tabular-nums",
-                          p.avgScore >= 9
-                            ? "text-accent-green"
-                            : "text-primary"
-                        )}
-                      >
-                        {p.avgScore.toFixed(1)}
-                      </p>
-                      <p className="text-[10px] text-muted-foreground">/10</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <button className="w-full mt-4 flex items-center justify-center gap-1.5 text-xs text-primary hover:underline underline-offset-4">
-              Tüm analizleri gör
-              <ArrowRight className="h-3 w-3" />
-            </button>
+            <div className="border-t border-divider px-5 py-3">
+              <button type="button" className="bz-btn bz-btn--ghost bz-btn--sm bz-btn--block">
+                Tüm analizleri gör
+                <ArrowRight />
+              </button>
+            </div>
           </GlassCard>
         </motion.div>
       </motion.div>
 
-      {/* ── Departman Dağılımı ── */}
-      <motion.div
-        variants={container}
-        initial="hidden"
-        animate="show"
-      >
+      {/* ── Departman dağılımı ── */}
+      <motion.div variants={container} initial="hidden" animate="show">
         <motion.div variants={item}>
-          <GlassCard hover={false}>
-            <div className="flex items-center gap-2 mb-4">
-              <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center">
-                <Building2 className="h-4 w-4 text-primary" />
-              </div>
-              <h2 className="text-base font-semibold text-foreground">
-                Departman Dağılımı
-              </h2>
-            </div>
+          <GlassCard hover={false} className="overflow-hidden p-0">
+            <CardHeader icon={Building2} title="Departman dağılımı" />
 
             {isLoading ? (
-              <TableSkeleton rows={4} />
+              <RowsSkeleton rows={4} avatar={false} />
             ) : !stats?.byDepartment?.length ? (
-              <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-                <Building2 className="h-8 w-8 mb-2 opacity-40" />
-                <p className="text-sm">Departman verisi yok</p>
+              <div className="bz-empty">
+                <Building2 className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
+                <p className="bz-empty__title">Departman verisi yok</p>
+                <p className="bz-empty__text">
+                  Personel departmanlara atandığında dağılım burada görünür.
+                </p>
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full">
+                <table className="bz-table">
                   <thead>
-                    <tr className="border-b border-border/30">
-                      <th className="text-left text-xs font-medium text-muted-foreground uppercase pb-3 pr-4">
-                        Departman
-                      </th>
-                      <th className="text-left text-xs font-medium text-muted-foreground uppercase pb-3 pr-4">
-                        Personel
-                      </th>
-                      <th className="text-left text-xs font-medium text-muted-foreground uppercase pb-3 pr-4">
-                        Tamamlanan Test
-                      </th>
-                      <th className="text-left text-xs font-medium text-muted-foreground uppercase pb-3">
-                        Ort. Skor
-                      </th>
+                    <tr>
+                      <th className="pl-5">Departman</th>
+                      <th className="is-num">Personel</th>
+                      <th className="is-num">Tamamlanan test</th>
+                      <th className="is-num pr-5">Ort. skor</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-border/20">
+                  <tbody>
                     {stats.byDepartment.map((d) => (
-                      <tr
-                        key={d.id}
-                        className="hover:bg-muted/30 transition-colors"
-                      >
-                        <td className="py-3 pr-4">
-                          <span className="text-sm font-medium text-foreground">
-                            {d.name}
-                          </span>
-                        </td>
-                        <td className="py-3 pr-4">
-                          <span className="text-sm tabular-nums text-muted-foreground">
-                            {d.personnelCount}
-                          </span>
-                        </td>
-                        <td className="py-3 pr-4">
-                          <span className="text-sm tabular-nums text-muted-foreground">
-                            {d.completedTests}
-                          </span>
-                        </td>
-                        <td className="py-3">
-                          {d.avgScore != null ? (
-                            <span
-                              className={cn(
-                                "text-sm font-bold tabular-nums",
-                                d.avgScore >= 8
-                                  ? "text-accent-green"
-                                  : d.avgScore >= 6
-                                    ? "text-accent-orange"
-                                    : "text-accent-red"
-                              )}
-                            >
-                              {d.avgScore.toFixed(1)}
-                            </span>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">
-                              —
-                            </span>
-                          )}
+                      <tr key={d.id}>
+                        <td className="pl-5 font-semibold text-foreground">{d.name}</td>
+                        <td className="is-num text-fg2">{d.personnelCount}</td>
+                        <td className="is-num text-fg2">{d.completedTests}</td>
+                        <td className="is-num pr-5">
+                          <ScoreChip score={d.avgScore} />
                         </td>
                       </tr>
                     ))}

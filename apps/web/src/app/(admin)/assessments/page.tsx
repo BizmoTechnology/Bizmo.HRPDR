@@ -1,18 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import {
-  Plus,
-  Search,
-  ChevronLeft,
-  ChevronRight,
-  Calendar,
-  Users,
-} from "lucide-react";
-import { GlassCard } from "@ph/ui";
-import { cn } from "@/lib/utils";
+import { Plus, Search, ClipboardList } from "lucide-react";
+import { Pagination } from "@/components/ui/Pagination";
 import { useAssessmentList } from "@/hooks/use-api";
 
 const STATUS_TABS = [
@@ -23,30 +15,16 @@ const STATUS_TABS = [
   { label: "Arşiv", value: "ARCHIVED" },
 ] as const;
 
-const STATUS_BADGE: Record<
-  string,
-  { label: string; className: string }
-> = {
-  DRAFT: {
-    label: "Taslak",
-    className: "bg-muted text-muted-foreground",
-  },
-  ACTIVE: {
-    label: "Aktif",
-    className: "bg-accent-green/10 text-accent-green",
-  },
-  PAUSED: {
-    label: "Duraklatıldı",
-    className: "bg-amber-500/10 text-amber-500",
-  },
-  COMPLETED: {
-    label: "Tamamlandı",
-    className: "bg-sky-500/10 text-sky-500",
-  },
-  ARCHIVED: {
-    label: "Arşiv",
-    className: "bg-muted text-muted-foreground",
-  },
+/**
+ * Değerlendirme durumu → Bizmo süreç durumu rozeti (DESIGN.md §13 `.bz-status`).
+ * `status` boşsa nötr rozet (arşiv: süreç dışı, sessiz).
+ */
+const STATUS_BADGE: Record<string, { label: string; status?: string }> = {
+  DRAFT: { label: "Taslak", status: "draft" },
+  ACTIVE: { label: "Aktif", status: "progress" },
+  PAUSED: { label: "Duraklatıldı", status: "pending" },
+  COMPLETED: { label: "Tamamlandı", status: "done" },
+  ARCHIVED: { label: "Arşiv" },
 };
 
 function formatDate(date: string | null) {
@@ -79,168 +57,182 @@ export default function AssessmentsPage() {
     page: data?.page ?? 1,
     pageSize: data?.pageSize ?? 20,
   };
-  const totalPages = Math.ceil(meta.total / meta.pageSize) || 1;
 
   return (
-    <div className="space-y-6 w-full">
+    <div className="w-full">
       {/* Header */}
       <motion.div
-        className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
+        className="bz-page-header"
         initial={{ opacity: 0, y: -8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}
       >
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">
-            Değerlendirmeler
-          </h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
+        <div className="bz-page-header__text">
+          <h1 className="bz-page-header__title">Değerlendirmeler</h1>
+          <p className="bz-page-header__sub">
             Tüm değerlendirmeleri yönetin ve takip edin
           </p>
         </div>
-        <button
-          onClick={() => router.push("/assessments/new")}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors active:scale-[0.97]"
-        >
-          <Plus className="h-4 w-4" />
-          Yeni Değerlendirme
-        </button>
+        <div className="bz-page-header__actions">
+          <button
+            type="button"
+            onClick={() => router.push("/assessments/new")}
+            className="bz-btn bz-btn--primary"
+          >
+            <Plus />
+            Yeni değerlendirme
+          </button>
+        </div>
       </motion.div>
 
-      {/* Filters */}
-      <GlassCard hover={false} className="!p-3 md:!p-4">
-        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-          {/* Status tabs */}
-          <div className="flex gap-1 overflow-x-auto scrollbar-none">
+      <div className="space-y-4">
+        {/* Filters */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div
+            className="bz-tabs bz-tabs--pill max-w-full self-start"
+            role="tablist"
+            aria-label="Duruma göre süz"
+          >
             {STATUS_TABS.map((tab) => (
               <button
                 key={tab.label}
+                type="button"
+                role="tab"
+                aria-selected={statusFilter === tab.value}
+                className="bz-tab"
                 onClick={() => {
                   setStatusFilter(tab.value);
                   setPage(1);
                 }}
-                className={cn(
-                  "px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors",
-                  statusFilter === tab.value
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:bg-muted/60",
-                )}
               >
                 {tab.label}
               </button>
             ))}
           </div>
 
-          {/* Search */}
-          <div className="relative sm:ml-auto sm:w-64">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <div className="bz-input-group sm:ml-auto sm:w-72">
+            <span className="bz-input-prefix">
+              <Search className="h-4 w-4" />
+            </span>
             <input
-              type="text"
-              placeholder="Ara..."
+              type="search"
+              placeholder="Değerlendirme ara"
+              aria-label="Değerlendirme ara"
               value={search}
               onChange={(e) => {
                 setSearch(e.target.value);
                 setPage(1);
               }}
-              className="w-full pl-9 pr-3 py-2 rounded-xl bg-muted/50 border border-border/40 text-sm placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all"
+              className="bz-field bz-field--sm"
             />
           </div>
         </div>
-      </GlassCard>
 
-      {/* Table */}
-      <GlassCard hover={false}>
+        {/* Table */}
         {isLoading ? (
-          <div className="space-y-3">
+          <div className="bz-card space-y-3 p-5" aria-busy="true">
             {Array.from({ length: 5 }).map((_, i) => (
-              <div
-                key={i}
-                className="h-14 rounded-xl bg-muted/40 animate-pulse"
-              />
+              <div key={i} className="bz-skeleton h-12 rounded-xl" />
             ))}
           </div>
         ) : assessments.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 text-center">
-            <div className="h-14 w-14 rounded-2xl bg-muted/60 flex items-center justify-center mb-4">
-              <Calendar className="h-6 w-6 text-muted-foreground" />
+          <div className="bz-card">
+            <div className="bz-empty">
+              <span className="bz-icon-box">
+                <ClipboardList />
+              </span>
+              <p className="bz-empty__title">
+                {search || statusFilter
+                  ? "Eşleşen değerlendirme yok"
+                  : "Henüz değerlendirme bulunmuyor"}
+              </p>
+              <p className="bz-empty__text">
+                {search || statusFilter
+                  ? "Arama metnini veya durum süzgecini değiştirip tekrar deneyin."
+                  : "Yeni bir değerlendirme oluşturarak başlayın."}
+              </p>
             </div>
-            <p className="text-sm font-medium text-muted-foreground">
-              Henüz değerlendirme bulunmuyor
-            </p>
-            <p className="text-xs text-muted-foreground/60 mt-1">
-              Yeni bir değerlendirme oluşturarak başlayın
-            </p>
           </div>
         ) : (
-          <>
-            <div className="overflow-x-auto">
-              <table className="w-full">
+          <div>
+            <div className="bz-table-wrap">
+              <table className="bz-table">
                 <thead>
-                  <tr className="border-b border-border/30">
-                    <th className="text-left text-xs font-medium text-muted-foreground uppercase pb-3 pr-4">
-                      Başlık
+                  <tr>
+                    <th scope="col">Başlık</th>
+                    <th scope="col" className="hidden md:table-cell">
+                      Soru seti
                     </th>
-                    <th className="text-left text-xs font-medium text-muted-foreground uppercase pb-3 pr-4 hidden md:table-cell">
-                      Soru Seti
-                    </th>
-                    <th className="text-left text-xs font-medium text-muted-foreground uppercase pb-3 pr-4">
-                      Durum
-                    </th>
-                    <th className="text-left text-xs font-medium text-muted-foreground uppercase pb-3 pr-4 hidden lg:table-cell">
+                    <th scope="col">Durum</th>
+                    <th scope="col" className="is-num hidden lg:table-cell">
                       Oturumlar
                     </th>
-                    <th className="text-left text-xs font-medium text-muted-foreground uppercase pb-3 hidden sm:table-cell">
-                      Tarih Aralığı
+                    <th scope="col" className="hidden sm:table-cell">
+                      Tarih aralığı
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border/20">
+                <tbody>
                   {assessments.map((a: any) => {
-                    const badge = STATUS_BADGE[a.status] ?? STATUS_BADGE.DRAFT ?? { label: "Taslak", className: "bg-muted text-muted-foreground" };
+                    const badge = STATUS_BADGE[a.status] ?? STATUS_BADGE.DRAFT!;
+                    const total = a.sessionStats?.total ?? 0;
+                    const completed = a.sessionStats?.completed ?? 0;
+                    const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
                     return (
                       <tr
                         key={a.id}
+                        tabIndex={0}
                         onClick={() => router.push(`/assessments/${a.id}`)}
-                        className="hover:bg-muted/30 transition-colors cursor-pointer group"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") router.push(`/assessments/${a.id}`);
+                        }}
+                        className="cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
                       >
-                        <td className="py-3.5 pr-4">
-                          <p className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">
+                        <td className="max-w-[200px] whitespace-normal py-2.5 sm:max-w-[420px]">
+                          <p className="truncate font-semibold text-foreground">
                             {a.title}
                           </p>
                           {a.description && (
-                            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
+                            <p className="mt-0.5 truncate text-xs text-muted-foreground">
                               {a.description}
                             </p>
                           )}
                         </td>
-                        <td className="py-3.5 pr-4 hidden md:table-cell">
-                          <span className="text-sm text-muted-foreground">
-                            {a.questionSet?.name ?? "—"}
-                          </span>
+                        <td className="hidden text-fg2 md:table-cell">
+                          {a.questionSet?.name ?? (
+                            <span className="is-muted">—</span>
+                          )}
                         </td>
-                        <td className="py-3.5 pr-4">
-                          <span
-                            className={cn(
-                              "inline-flex px-2 py-0.5 rounded-md text-[11px] font-semibold",
-                              badge.className,
-                            )}
-                          >
+                        <td>
+                          <span className="bz-status" data-status={badge.status}>
                             {badge.label}
                           </span>
                         </td>
-                        <td className="py-3.5 pr-4 hidden lg:table-cell">
-                          <div className="flex items-center gap-1.5">
-                            <Users className="h-3.5 w-3.5 text-muted-foreground" />
-                            <span className="text-sm tabular-nums text-muted-foreground">
-                              {a.sessionStats?.completed ?? 0}/
-                              {a.sessionStats?.total ?? 0}
+                        <td className="is-num hidden lg:table-cell">
+                          <div className="flex items-center justify-end gap-2.5">
+                            <div
+                              className="bz-progress bz-progress--data w-14"
+                              role="progressbar"
+                              aria-label="Tamamlanan oturum oranı"
+                              aria-valuenow={pct}
+                              aria-valuemin={0}
+                              aria-valuemax={100}
+                            >
+                              <span style={{ "--value": `${pct}%` } as CSSProperties} />
+                            </div>
+                            <span className="min-w-[3.25rem] tabular-nums text-foreground">
+                              {completed}/{total}
                             </span>
                           </div>
                         </td>
-                        <td className="py-3.5 hidden sm:table-cell">
-                          <span className="text-xs text-muted-foreground">
-                            {formatDate(a.startsAt)} – {formatDate(a.endsAt)}
-                          </span>
+                        <td className="hidden tabular-nums text-fg2 sm:table-cell">
+                          {a.startsAt || a.endsAt ? (
+                            <>
+                              {formatDate(a.startsAt)} – {formatDate(a.endsAt)}
+                            </>
+                          ) : (
+                            <span className="is-muted">—</span>
+                          )}
                         </td>
                       </tr>
                     );
@@ -249,38 +241,16 @@ export default function AssessmentsPage() {
               </table>
             </div>
 
-            {/* Pagination */}
-            {totalPages > 1 && (
-              <div className="flex items-center justify-between pt-4 border-t border-border/20 mt-4">
-                <p className="text-xs text-muted-foreground">
-                  Toplam {meta.total} kayıt
-                </p>
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    disabled={page <= 1}
-                    className="p-1.5 rounded-lg hover:bg-muted/60 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </button>
-                  <span className="text-xs tabular-nums text-muted-foreground px-2">
-                    {page} / {totalPages}
-                  </span>
-                  <button
-                    onClick={() =>
-                      setPage((p) => Math.min(totalPages, p + 1))
-                    }
-                    disabled={page >= totalPages}
-                    className="p-1.5 rounded-lg hover:bg-muted/60 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-            )}
-          </>
+            <Pagination
+              className="mt-2"
+              page={page}
+              pageSize={meta.pageSize}
+              total={meta.total}
+              onPageChange={setPage}
+            />
+          </div>
         )}
-      </GlassCard>
+      </div>
     </div>
   );
 }

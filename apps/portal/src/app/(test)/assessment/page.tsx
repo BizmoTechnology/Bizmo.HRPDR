@@ -85,6 +85,8 @@ export default function AssessmentPage() {
   // Soru başına sabit anahtar: aynı cevabın tekrar gönderimi idempotent olur
   const dedupeKeysRef = useRef<Record<string, string>>({});
   const questionShownAtRef = useRef<number>(Date.now());
+  /** Geri gidildiğinde henüz kaydedilmemiş (İleri'ye basılmamış) cevaplar kaybolmasın */
+  const draftsRef = useRef<Record<string, AnswerValue>>({});
 
   useEffect(() => {
     if (!hasToken()) {
@@ -138,7 +140,7 @@ export default function AssessmentPage() {
 
   useEffect(() => {
     if (!currentQuestion) return;
-    const saved = answers[currentQuestion.id];
+    const saved = draftsRef.current[currentQuestion.id] ?? answers[currentQuestion.id];
     setCurrentAnswer(saved ?? defaultAnswer(currentQuestion));
     questionShownAtRef.current = Date.now();
     // Yalnızca soru değiştiğinde çalışır; `answers` güncellemesi yazılan cevabı ezmesin
@@ -188,6 +190,7 @@ export default function AssessmentPage() {
     setIsSubmitting(false);
     if (!saved) return;
 
+    delete draftsRef.current[currentQuestion.id];
     const updatedAnswers = { ...answers, [currentQuestion.id]: currentAnswer };
     setAnswers(updatedAnswers);
 
@@ -216,6 +219,8 @@ export default function AssessmentPage() {
 
   const handleBack = () => {
     if (currentIndex === 0 || !currentQuestion) return;
+    // Taslak ayrı tutulur: `answers`a yazılsaydı kaydedilmemiş cevap "cevaplandı" sayılırdı
+    draftsRef.current[currentQuestion.id] = currentAnswer;
     setDirection(-1);
     setCurrentIndex((i) => i - 1);
   };

@@ -19,9 +19,11 @@ import {
   Clock,
   Calendar,
   FileText,
+  Gauge,
   AlertTriangle,
   Loader2,
   X,
+  UserX,
   KeyRound,
 } from "lucide-react";
 import { GlassCard, ScoreGauge, PortalModal } from "@ph/ui";
@@ -34,83 +36,65 @@ import {
   useSetPortalPassword,
 } from "@/hooks/use-api";
 
-const STATUS_MAP: Record<string, { label: string; class: string }> = {
-  ACTIVE: { label: "Aktif", class: "text-accent-green bg-accent-green/10" },
-  INACTIVE: { label: "Pasif", class: "text-accent-red bg-accent-red/10" },
-  ON_LEAVE: {
-    label: "İzinli",
-    class: "text-accent-orange bg-accent-orange/10",
-  },
+/** Personel durumu → Bizmo çipi (DESIGN.md §13). Pasif bir hata değildir: nötr çip. */
+const STATUS_MAP: Record<string, { label: string; tone: string }> = {
+  ACTIVE: { label: "Aktif", tone: "bz-chip--success" },
+  INACTIVE: { label: "Pasif", tone: "" },
+  ON_LEAVE: { label: "İzinli", tone: "bz-chip--warning" },
 };
 
 const SHIFT_MAP: Record<string, string> = {
   NONE: "Yok",
   MORNING: "Sabah",
-  AFTERNOON: "Öğleden Sonra",
+  AFTERNOON: "Öğleden sonra",
   NIGHT: "Gece",
   ROTATING: "Dönüşümlü",
 };
 
-const SESSION_STATUS_MAP: Record<string, { label: string; class: string }> = {
-  COMPLETED: {
-    label: "Tamamlandı",
-    class: "text-accent-green bg-accent-green/10",
-  },
-  IN_PROGRESS: {
-    label: "Devam Ediyor",
-    class: "text-primary bg-primary/10",
-  },
-  NOT_STARTED: {
-    label: "Başlamadı",
-    class: "text-accent-orange bg-accent-orange/10",
-  },
-  PAUSED: {
-    label: "Duraklatıldı",
-    class: "text-accent-orange bg-accent-orange/10",
-  },
-  EXPIRED: {
-    label: "Süresi Doldu",
-    class: "text-accent-red bg-accent-red/10",
-  },
+/** Oturum durumu → süreç durumu rozeti (.bz-status, DESIGN.md §13): şekil + sözcük */
+const SESSION_STATUS_MAP: Record<string, { label: string; status: string }> = {
+  COMPLETED: { label: "Tamamlandı", status: "done" },
+  IN_PROGRESS: { label: "Devam ediyor", status: "progress" },
+  NOT_STARTED: { label: "Başlamadı", status: "draft" },
+  PAUSED: { label: "Duraklatıldı", status: "pending" },
+  EXPIRED: { label: "Süresi doldu", status: "cancelled" },
 };
-
-function SkeletonBlock({ className }: { className?: string }) {
-  return (
-    <div className={cn("animate-pulse rounded-lg bg-muted/40", className)} />
-  );
-}
 
 function DetailSkeleton() {
   return (
-    <div className="space-y-6 w-full">
-      <div className="flex items-center gap-4">
-        <SkeletonBlock className="h-9 w-9 rounded-xl" />
+    <div className="w-full space-y-4" aria-busy="true">
+      <div className="flex items-center gap-3">
+        <div className="bz-skeleton h-[38px] w-[38px] rounded-[10px]" />
+        <div className="bz-skeleton h-11 w-11 rounded-xl" />
         <div className="space-y-2">
-          <SkeletonBlock className="h-7 w-48" />
-          <SkeletonBlock className="h-4 w-32" />
+          <div className="bz-skeleton h-6 w-56" />
+          <div className="bz-skeleton h-3.5 w-36" />
         </div>
       </div>
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2">
           <GlassCard hover={false}>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="bz-skeleton mb-5 h-4 w-40" />
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {Array.from({ length: 8 }).map((_, i) => (
                 <div key={i} className="space-y-1.5">
-                  <SkeletonBlock className="h-3 w-16" />
-                  <SkeletonBlock className="h-5 w-32" />
+                  <div className="bz-skeleton h-3 w-16" />
+                  <div className="bz-skeleton h-4 w-32" />
                 </div>
               ))}
             </div>
           </GlassCard>
         </div>
         <GlassCard hover={false}>
-          <SkeletonBlock className="h-24 w-24 mx-auto rounded-full" />
+          <div className="bz-skeleton mb-5 h-4 w-24" />
+          <div className="bz-skeleton mx-auto h-28 w-28 rounded-full" />
         </GlassCard>
       </div>
     </div>
   );
 }
 
+/** Künye satırı: etiket üstte soluk, değer altta kalın (DESIGN.md §41) */
 function InfoRow({
   icon: Icon,
   label,
@@ -118,16 +102,22 @@ function InfoRow({
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
-  value: React.ReactNode;
+  value: React.ReactNode | null | undefined;
 }) {
+  const empty = value == null || value === "";
   return (
-    <div className="flex items-start gap-3">
-      <div className="h-8 w-8 rounded-lg bg-muted/40 flex items-center justify-center flex-shrink-0 mt-0.5">
-        <Icon className="h-4 w-4 text-muted-foreground" />
-      </div>
+    <div className="flex min-w-0 items-start gap-2.5">
+      <Icon className="mt-[3px] h-4 w-4 flex-none text-fg3" aria-hidden="true" />
       <div className="min-w-0">
-        <p className="text-xs text-muted-foreground">{label}</p>
-        <p className="text-sm font-medium text-foreground truncate">{value}</p>
+        <dt className="text-[12px] font-medium text-muted-foreground">{label}</dt>
+        <dd
+          className={cn(
+            "mt-0.5 text-[14px] [overflow-wrap:anywhere]",
+            empty ? "text-fg3" : "font-semibold text-foreground"
+          )}
+        >
+          {empty ? "—" : value}
+        </dd>
       </div>
     </div>
   );
@@ -174,132 +164,142 @@ export default function PersonnelDetailPage() {
 
   if (!person) {
     return (
-      <div className="flex flex-col items-center justify-center py-24 text-muted-foreground">
-        <Users className="h-12 w-12 mb-3 opacity-40" />
-        <p className="text-lg font-medium">Personel bulunamadı</p>
-        <Link
-          href="/personnel"
-          className="mt-4 text-sm text-primary hover:underline"
-        >
-          Personel listesine dön
-        </Link>
+      <div className="bz-card">
+        <div className="bz-empty py-16">
+          <UserX className="h-8 w-8 text-fg3" aria-hidden="true" />
+          <p className="bz-empty__title">Personel bulunamadı</p>
+          <p className="bz-empty__text">
+            Kayıt silinmiş ya da bağlantı hatalı olabilir.
+          </p>
+          <Link href="/personnel" className="bz-btn">
+            <ArrowLeft />
+            Personel listesine dön
+          </Link>
+        </div>
       </div>
     );
   }
 
   const statusInfo = STATUS_MAP[person.status] ?? {
     label: person.status,
-    class: "text-muted-foreground bg-muted",
+    tone: "",
   };
+  const fullName = `${person.firstName} ${person.lastName}`;
 
   return (
-    <div className="space-y-6 w-full">
-      {/* Header */}
+    <div className="bz-record w-full">
+      {/* Kayıt başlığı: kimlik + durum + kayıt eylemleri (DESIGN.md §41) */}
       <motion.div
-        className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
+        className="bz-record__head"
         initial={{ opacity: 0, y: -8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}
       >
-        <div className="flex items-center gap-4">
+        <div className="flex min-w-0 items-center gap-3">
           <Link
             href="/personnel"
-            className="h-9 w-9 rounded-xl bg-muted/40 flex items-center justify-center text-muted-foreground hover:bg-muted/60 transition-colors"
+            className="bz-icon-btn"
+            aria-label="Personel listesine dön"
+            title="Personel listesine dön"
           >
-            <ArrowLeft className="h-4 w-4" />
+            <ArrowLeft />
           </Link>
-          <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold text-foreground">
-                {person.firstName} {person.lastName}
-              </h1>
-              <span
-                className={cn(
-                  "text-xs font-semibold px-2 py-1 rounded-full",
-                  statusInfo.class
-                )}
-              >
+          <span className="bz-avatar bz-avatar--lg" aria-hidden="true">
+            {person.firstName[0]}
+            {person.lastName[0]}
+          </span>
+          <div className="bz-record__heading gap-1">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <h1 className="bz-record__title">{fullName}</h1>
+              <span className={cn("bz-chip", statusInfo.tone)}>
                 {statusInfo.label}
               </span>
             </div>
-            <p className="text-sm text-muted-foreground mt-0.5">
-              Sicil No: {person.employeeId}
+            <p className="text-[13px] text-muted-foreground">
+              Sicil no{" "}
+              <span className="font-mono text-[12.5px] font-semibold text-fg2">
+                {person.employeeId}
+              </span>
             </p>
           </div>
         </div>
 
         {canManage && (
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={() => setShowPortalDialog(true)}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-muted/40 text-sm font-medium text-foreground hover:bg-muted/60 transition-colors"
-            title={person.hasPortalPassword ? "Portal şifresini sıfırla" : "Portal şifresi belirle"}
-          >
-            <KeyRound className="h-4 w-4" />
-            {person.hasPortalPassword ? "Portal Şifresini Sıfırla" : "Portal Şifresi Belirle"}
-          </button>
-          <Link
-            href={`/personnel/${id}/edit`}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-muted/40 text-sm font-medium text-foreground hover:bg-muted/60 transition-colors"
-          >
-            <Pencil className="h-4 w-4" />
-            Düzenle
-          </Link>
-          <button
-            onClick={() => setShowDeleteDialog(true)}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-destructive/10 text-sm font-medium text-destructive hover:bg-destructive/20 transition-colors"
-          >
-            <Trash2 className="h-4 w-4" />
-            Sil
-          </button>
-        </div>
+          <div className="bz-record__actions">
+            <button
+              type="button"
+              onClick={() => setShowPortalDialog(true)}
+              className="bz-btn"
+              title={
+                person.hasPortalPassword
+                  ? "Portal şifresini sıfırla"
+                  : "Portal şifresi belirle"
+              }
+            >
+              <KeyRound />
+              <span>
+                {person.hasPortalPassword
+                  ? "Portal şifresini sıfırla"
+                  : "Portal şifresi belirle"}
+              </span>
+            </button>
+            <Link
+              href={`/personnel/${id}/edit`}
+              className="bz-btn bz-record__edit"
+              title="Düzenle"
+            >
+              <Pencil />
+              <span>Düzenle</span>
+            </Link>
+            <button
+              type="button"
+              onClick={() => setShowDeleteDialog(true)}
+              className="bz-btn bz-btn--danger"
+              title="Sil"
+            >
+              <Trash2 />
+              <span>Sil</span>
+            </button>
+          </div>
         )}
       </motion.div>
 
+      {/* Portal şifresi yoksa kalıcı uyarı (DESIGN.md §17) */}
       {!person.hasPortalPassword && (
-        <div className="flex items-start gap-2 rounded-xl border border-accent-orange/30 bg-accent-orange/5 px-4 py-3 text-sm text-accent-orange">
-          <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-          <span>
-            Bu personelin portal şifresi yok; atanan değerlendirmelere giriş yapamaz.
-            {canManage && " “Portal Şifresi Belirle” ile şifre oluşturun."}
-          </span>
+        <div role="status" className="bz-alert bz-alert--warning">
+          <AlertTriangle aria-hidden="true" />
+          <div>
+            <p className="bz-alert__title">Portal şifresi yok</p>
+            <p>
+              Bu personel atanan değerlendirmelere giriş yapamaz.
+              {canManage && " “Portal şifresi belirle” ile şifre oluşturun."}
+            </p>
+          </div>
         </div>
       )}
 
       <motion.div
-        className="grid grid-cols-1 lg:grid-cols-3 gap-4"
-        initial={{ opacity: 0, y: 12 }}
+        className="grid grid-cols-1 gap-4 lg:grid-cols-3"
+        initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35, delay: 0.1 }}
+        transition={{ duration: 0.3, delay: 0.08 }}
       >
         {/* Bilgiler (2/3) */}
-        <div className="lg:col-span-2">
+        <div className="min-w-0 lg:col-span-2">
           <GlassCard hover={false} className="h-full">
-            <h2 className="text-base font-semibold text-foreground mb-4">
-              Kişisel &amp; İş Bilgileri
+            <h2 className="mb-4 text-[15px] font-bold text-foreground">
+              Kişisel ve iş bilgileri
             </h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <dl className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 xl:grid-cols-3">
               <InfoRow icon={Mail} label="E-posta" value={person.email} />
-              <InfoRow
-                icon={Phone}
-                label="Telefon"
-                value={person.phone ?? "—"}
-              />
-              <InfoRow
-                icon={Briefcase}
-                label="Pozisyon"
-                value={person.position}
-              />
+              <InfoRow icon={Phone} label="Telefon" value={person.phone} />
+              <InfoRow icon={Briefcase} label="Pozisyon" value={person.position} />
               <InfoRow
                 icon={Building2}
                 label="Departman"
-                value={person.department?.name ?? "—"}
+                value={person.department?.name}
               />
-              <InfoRow
-                icon={Users}
-                label="Takım"
-                value={person.team?.name ?? "—"}
-              />
+              <InfoRow icon={Users} label="Takım" value={person.team?.name} />
               <InfoRow
                 icon={Clock}
                 label="Vardiya"
@@ -308,30 +308,39 @@ export default function PersonnelDetailPage() {
               <InfoRow
                 icon={Briefcase}
                 label="Deneyim"
-                value={`${person.experienceYear} yıl`}
+                value={
+                  <span className="tabular-nums">
+                    {person.experienceYear} yıl
+                  </span>
+                }
               />
               <InfoRow
                 icon={Calendar}
-                label="İşe Giriş"
+                label="İşe giriş"
                 value={
-                  person.hireDate
-                    ? format(new Date(person.hireDate), "dd MMMM yyyy", {
+                  person.hireDate ? (
+                    <span className="tabular-nums">
+                      {format(new Date(person.hireDate), "dd MMMM yyyy", {
                         locale: tr,
-                      })
-                    : "—"
+                      })}
+                    </span>
+                  ) : null
                 }
               />
-            </div>
+            </dl>
 
             {person.notes && (
-              <div className="mt-4 pt-4 border-t border-border/20">
-                <div className="flex items-start gap-3">
-                  <div className="h-8 w-8 rounded-lg bg-muted/40 flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <FileText className="h-4 w-4 text-muted-foreground" />
-                  </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">Notlar</p>
-                    <p className="text-sm text-foreground mt-1 whitespace-pre-wrap">
+              <div className="mt-5 border-t border-divider pt-4">
+                <div className="flex items-start gap-2.5">
+                  <FileText
+                    className="mt-[3px] h-4 w-4 flex-none text-fg3"
+                    aria-hidden="true"
+                  />
+                  <div className="min-w-0">
+                    <p className="text-[12px] font-medium text-muted-foreground">
+                      Notlar
+                    </p>
+                    <p className="mt-1 whitespace-pre-wrap text-[14px] leading-relaxed text-foreground">
                       {person.notes}
                     </p>
                   </div>
@@ -342,136 +351,128 @@ export default function PersonnelDetailPage() {
         </div>
 
         {/* Skor (1/3) */}
-        <GlassCard hover={false} className="flex flex-col items-center justify-center gap-4">
-          <h2 className="text-base font-semibold text-foreground">
-            Genel Skor
-          </h2>
+        <GlassCard hover={false} className="flex flex-col">
+          <h2 className="text-[15px] font-bold text-foreground">Genel skor</h2>
           {person.avgScore != null ? (
-            <ScoreGauge
-              score={person.avgScore}
-              size="lg"
-              label="Ortalama Potansiyel"
-            />
+            <div className="flex flex-1 items-center justify-center py-4">
+              <ScoreGauge
+                score={person.avgScore}
+                size="lg"
+                label="Ortalama potansiyel"
+              />
+            </div>
           ) : (
-            <div className="flex flex-col items-center py-6 text-muted-foreground">
-              <p className="text-sm">Henüz değerlendirme yok</p>
+            <div className="bz-empty flex-1 justify-center px-2 py-8">
+              <Gauge className="h-7 w-7 text-fg3" aria-hidden="true" />
+              <p className="bz-empty__title text-[15px]">Henüz değerlendirme yok</p>
+              <p className="bz-empty__text">
+                İlk değerlendirme tamamlandığında ortalama skor burada görünür.
+              </p>
             </div>
           )}
         </GlassCard>
       </motion.div>
 
-      {/* Son Değerlendirmeler */}
+      {/* Değerlendirmeler */}
       <motion.div
-        initial={{ opacity: 0, y: 12 }}
+        initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35, delay: 0.2 }}
+        transition={{ duration: 0.3, delay: 0.16 }}
       >
-        <GlassCard hover={false}>
-          <h2 className="text-base font-semibold text-foreground mb-4">
-            Değerlendirmeler
-          </h2>
+        <GlassCard hover={false} className="overflow-hidden p-0">
+          <div className="flex items-center justify-between gap-3 px-5 pb-3 pt-4">
+            <h2 className="text-[15px] font-bold text-foreground">
+              Değerlendirmeler
+            </h2>
+            {!!person.sessions?.length && (
+              <span className="text-[12px] text-muted-foreground tabular-nums">
+                {person.sessions.length} kayıt
+              </span>
+            )}
+          </div>
 
           {!person.sessions?.length ? (
-            <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-              <FileText className="h-8 w-8 mb-2 opacity-40" />
-              <p className="text-sm">Henüz değerlendirme atanmamış</p>
+            <div className="bz-empty border-t border-divider py-12">
+              <FileText className="h-7 w-7 text-fg3" aria-hidden="true" />
+              <p className="bz-empty__title text-[15px]">
+                Henüz değerlendirme atanmamış
+              </p>
+              <p className="bz-empty__text">
+                Bu personele atanan değerlendirmeler burada listelenir.
+              </p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
+            <div className="overflow-x-auto border-t border-divider">
+              <table className="bz-table">
                 <thead>
-                  <tr className="border-b border-border/30">
-                    <th className="text-left text-xs font-medium text-muted-foreground uppercase pb-3 pr-4">
-                      Değerlendirme
-                    </th>
-                    <th className="text-left text-xs font-medium text-muted-foreground uppercase pb-3 pr-4">
-                      Durum
-                    </th>
-                    <th className="text-left text-xs font-medium text-muted-foreground uppercase pb-3 pr-4">
-                      Skor
-                    </th>
-                    <th className="text-left text-xs font-medium text-muted-foreground uppercase pb-3">
-                      Tarih
-                    </th>
+                  <tr>
+                    <th>Değerlendirme</th>
+                    <th>Durum</th>
+                    <th className="is-num">Skor</th>
+                    <th>Tarih</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-border/20">
+                <tbody>
                   {person.sessions.map((s) => {
-                    const sessionStatus = SESSION_STATUS_MAP[s.status] ?? {
-                      label: s.status,
-                      class: "text-muted-foreground bg-muted",
-                    };
+                    const sessionStatus = SESSION_STATUS_MAP[s.status];
                     return (
-                      <tr
-                        key={s.id}
-                        className="hover:bg-muted/30 transition-colors"
-                      >
-                        <td className="py-3 pr-4">
+                      <tr key={s.id}>
+                        <td>
                           <Link
                             href={`/assessments/${s.assessment.id}`}
-                            className="text-sm font-medium text-foreground hover:text-primary transition-colors"
+                            className="font-medium text-foreground hover:underline focus-visible:underline"
                           >
                             {s.assessment.title}
                           </Link>
                           {s.reportId && canAnalyze && (
                             <Link
                               href={`/reports/${s.reportId}`}
-                              className="ml-2 inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
+                              className="bz-link bz-link--data ml-2 inline-flex items-center gap-1 text-[12px]"
                             >
-                              <FileText className="h-3 w-3" />
+                              <FileText className="h-3 w-3" aria-hidden="true" />
                               Rapor
                             </Link>
                           )}
                         </td>
-                        <td className="py-3 pr-4">
-                          <span
-                            className={cn(
-                              "text-xs font-semibold px-2 py-1 rounded-full",
-                              sessionStatus.class
-                            )}
-                          >
-                            {sessionStatus.label}
-                          </span>
+                        <td>
+                          {sessionStatus ? (
+                            <span
+                              className="bz-status"
+                              data-status={sessionStatus.status}
+                            >
+                              {sessionStatus.label}
+                            </span>
+                          ) : (
+                            <span className="bz-chip">{s.status}</span>
+                          )}
                         </td>
-                        <td className="py-3 pr-4">
+                        <td className="is-num">
                           {s.avgScore != null ? (
                             <>
                               <span
                                 className={cn(
-                                  "text-sm font-bold tabular-nums",
+                                  "font-semibold",
                                   s.avgScore >= 8
-                                    ? "text-accent-green"
+                                    ? "text-success-ink"
                                     : s.avgScore >= 6
-                                      ? "text-accent-orange"
-                                      : "text-accent-red"
+                                      ? "text-warning-ink"
+                                      : "text-danger-ink"
                                 )}
                               >
                                 {s.avgScore.toFixed(1)}
                               </span>
-                              <span className="text-xs text-muted-foreground">
-                                /10
-                              </span>
+                              <span className="text-[12px] text-fg3"> /10</span>
                             </>
                           ) : (
-                            <span className="text-xs text-muted-foreground">
-                              —
-                            </span>
+                            <span className="text-fg3">—</span>
                           )}
                         </td>
-                        <td className="py-3">
-                          <span className="text-xs text-muted-foreground">
-                            {s.completedAt
-                              ? format(
-                                  new Date(s.completedAt),
-                                  "dd MMM yyyy",
-                                  { locale: tr }
-                                )
-                              : format(
-                                  new Date(s.createdAt),
-                                  "dd MMM yyyy",
-                                  { locale: tr }
-                                )}
-                          </span>
+                        <td className="text-fg2 tabular-nums">
+                          {format(
+                            new Date(s.completedAt ?? s.createdAt),
+                            "dd MMM yyyy",
+                            { locale: tr }
+                          )}
                         </td>
                       </tr>
                     );
@@ -483,146 +484,197 @@ export default function PersonnelDetailPage() {
         </GlassCard>
       </motion.div>
 
-      {/* Portal Şifresi */}
+      {/* Portal şifresi: form penceresi (DESIGN.md §16) */}
       <AnimatePresence>
         {showPortalDialog && (
           <PortalModal>
             <motion.div
-              className="fixed inset-0 z-50 flex items-center justify-center"
+              className="bz-scrim"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-            >
-              <div
-                className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-                onClick={() => setShowPortalDialog(false)}
-              />
+              transition={{ duration: 0.15 }}
+              onClick={() => setShowPortalDialog(false)}
+              aria-hidden="true"
+            />
+            <div className="pointer-events-none fixed inset-0 z-modal flex items-center justify-center p-3">
               <motion.form
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="portal-password-title"
+                aria-describedby="portal-password-desc"
                 onSubmit={handleSetPortalPassword}
-                className="relative glass-surface rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl space-y-4"
-                initial={{ scale: 0.95, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.95, opacity: 0 }}
+                className="pointer-events-auto relative w-full max-w-[480px] rounded-3xl border border-glass-border bg-popover p-6 shadow-3 backdrop-blur-xl"
+                initial={{ opacity: 0, scale: 0.98, y: 8 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.98, y: 8 }}
+                transition={{ duration: 0.2 }}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") setShowPortalDialog(false);
+                }}
               >
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold text-foreground">Portal Şifresi</h3>
-                  <button
-                    type="button"
-                    onClick={() => setShowPortalDialog(false)}
-                    className="p-1.5 rounded-lg hover:bg-muted/40 text-muted-foreground"
+                <button
+                  type="button"
+                  onClick={() => setShowPortalDialog(false)}
+                  className="bz-icon-btn bz-icon-btn--sm absolute right-4 top-4"
+                  aria-label="Kapat"
+                  title="Kapat"
+                >
+                  <X />
+                </button>
+
+                <div className="pr-8">
+                  <h2
+                    id="portal-password-title"
+                    className="font-display text-[19px] font-bold leading-snug text-foreground"
                   >
-                    <X className="h-4 w-4" />
-                  </button>
+                    Portal şifresi
+                  </h2>
+                  <p
+                    id="portal-password-desc"
+                    className="mt-1 text-[13px] leading-relaxed text-fg2"
+                  >
+                    <strong>{fullName}</strong> portala sicil numarası (
+                    <span className="font-mono text-[12.5px] font-semibold text-foreground">
+                      {person.employeeId}
+                    </span>
+                    ) ve bu şifreyle giriş yapar. Mevcut portal oturumları
+                    sonlandırılır.
+                  </p>
                 </div>
-                <p className="text-sm text-muted-foreground">
-                  {person.firstName} {person.lastName} portala sicil numarası (
-                  <span className="font-medium text-foreground">{person.employeeId}</span>) ve bu
-                  şifreyle giriş yapar. Mevcut portal oturumları sonlandırılır.
-                </p>
-                <input
-                  type="password"
-                  autoComplete="new-password"
-                  value={portalPassword}
-                  onChange={(e) => setPortalPasswordValue(e.target.value)}
-                  placeholder="En az 6 karakter"
-                  className="w-full h-10 px-3 rounded-xl bg-muted/40 border border-border/30 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  autoFocus
-                />
-                <div className="flex justify-end gap-2">
+
+                <div className="bz-form-row mt-5">
+                  <label htmlFor="portal-password" className="bz-label">
+                    Yeni şifre <span className="bz-req">*</span>
+                  </label>
+                  <input
+                    id="portal-password"
+                    type="password"
+                    autoComplete="new-password"
+                    value={portalPassword}
+                    onChange={(e) => setPortalPasswordValue(e.target.value)}
+                    placeholder="En az 6 karakter"
+                    aria-describedby="portal-password-hint"
+                    className="bz-field"
+                    autoFocus
+                  />
+                  <span id="portal-password-hint" className="bz-hint">
+                    Şifre en az 6 karakter olmalıdır.
+                  </span>
+                </div>
+
+                <div className="mt-6 flex justify-end gap-2">
                   <button
                     type="button"
                     onClick={() => setShowPortalDialog(false)}
-                    className="px-4 py-2 rounded-xl text-sm font-medium text-muted-foreground hover:bg-muted/40"
+                    className="bz-btn"
                   >
-                    İptal
+                    Vazgeç
                   </button>
                   <button
                     type="submit"
                     disabled={setPortalPassword.isPending}
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
+                    className="bz-btn bz-btn--primary"
                   >
-                    {setPortalPassword.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-                    Kaydet
+                    {setPortalPassword.isPending ? (
+                      <Loader2 className="animate-spin" />
+                    ) : (
+                      <KeyRound />
+                    )}
+                    {setPortalPassword.isPending ? "Kaydediliyor" : "Şifreyi kaydet"}
                   </button>
                 </div>
               </motion.form>
-            </motion.div>
+            </div>
           </PortalModal>
         )}
       </AnimatePresence>
 
-      {/* Delete Confirmation Dialog */}
+      {/* Silme onayı: yıkıcı onay penceresi (DESIGN.md §16) */}
       <AnimatePresence>
         {showDeleteDialog && (
           <PortalModal>
             <motion.div
-              className="fixed inset-0 z-50 flex items-center justify-center"
+              className="bz-scrim"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-            >
-              <div
-                className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-                onClick={() => setShowDeleteDialog(false)}
-              />
+              transition={{ duration: 0.15 }}
+              onClick={() => setShowDeleteDialog(false)}
+              aria-hidden="true"
+            />
+            <div className="pointer-events-none fixed inset-0 z-modal flex items-center justify-center p-3">
               <motion.div
-                className="relative glass-surface rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl"
-                initial={{ opacity: 0, scale: 0.95, y: 10 }}
+                role="alertdialog"
+                aria-modal="true"
+                aria-labelledby="delete-personnel-title"
+                aria-describedby="delete-personnel-desc"
+                className="pointer-events-auto relative w-full max-w-[480px] rounded-3xl border border-glass-border bg-popover p-6 shadow-3 backdrop-blur-xl"
+                initial={{ opacity: 0, scale: 0.98, y: 8 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95, y: 10 }}
+                exit={{ opacity: 0, scale: 0.98, y: 8 }}
                 transition={{ duration: 0.2 }}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") setShowDeleteDialog(false);
+                }}
               >
                 <button
+                  type="button"
                   onClick={() => setShowDeleteDialog(false)}
-                  className="absolute top-4 right-4 h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-muted/40 transition-colors"
+                  className="bz-icon-btn bz-icon-btn--sm absolute right-4 top-4"
+                  aria-label="Kapat"
+                  title="Kapat"
                 >
-                  <X className="h-4 w-4" />
+                  <X />
                 </button>
 
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="h-10 w-10 rounded-xl bg-destructive/10 flex items-center justify-center">
-                    <AlertTriangle className="h-5 w-5 text-destructive" />
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-semibold text-foreground">
-                      Personeli Sil
-                    </h3>
-                    <p className="text-sm text-muted-foreground">
-                      Bu işlem geri alınamaz
+                <div className="flex items-start gap-3 pr-8">
+                  <span className="flex h-10 w-10 flex-none items-center justify-center rounded-xl bg-danger-soft text-danger-ink">
+                    <AlertTriangle className="h-5 w-5" aria-hidden="true" />
+                  </span>
+                  <div className="min-w-0">
+                    <h2
+                      id="delete-personnel-title"
+                      className="font-display text-[19px] font-bold leading-snug text-foreground"
+                    >
+                      Personel silinsin mi?
+                    </h2>
+                    <p
+                      id="delete-personnel-desc"
+                      className="mt-1 text-[13px] leading-relaxed text-fg2"
+                    >
+                      <strong>{fullName}</strong> ve bu kişiye ait tüm
+                      değerlendirme verileri kalıcı olarak silinecek. Bu işlem
+                      geri alınamaz.
                     </p>
                   </div>
                 </div>
 
-                <p className="text-sm text-muted-foreground mb-6">
-                  <strong className="text-foreground">
-                    {person.firstName} {person.lastName}
-                  </strong>{" "}
-                  adlı personeli silmek istediğinizden emin misiniz? Tüm
-                  değerlendirme verileri de silinecektir.
-                </p>
-
-                <div className="flex items-center justify-end gap-3">
+                <div className="mt-6 flex justify-end gap-2">
                   <button
+                    type="button"
+                    autoFocus
                     onClick={() => setShowDeleteDialog(false)}
-                    className="px-4 py-2.5 rounded-xl text-sm font-medium text-muted-foreground hover:bg-muted/40 transition-colors"
+                    className="bz-btn"
                   >
-                    İptal
+                    Vazgeç
                   </button>
                   <button
+                    type="button"
                     onClick={handleDelete}
                     disabled={deleteMutation.isPending}
-                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-destructive text-destructive-foreground text-sm font-medium hover:bg-destructive/90 disabled:opacity-50 transition-colors"
+                    className="bz-btn bz-btn--danger-solid"
                   >
                     {deleteMutation.isPending ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <Loader2 className="animate-spin" />
                     ) : (
-                      <Trash2 className="h-4 w-4" />
+                      <Trash2 />
                     )}
-                    Evet, Sil
+                    {deleteMutation.isPending ? "Siliniyor" : "Sil"}
                   </button>
                 </div>
               </motion.div>
-            </motion.div>
+            </div>
           </PortalModal>
         )}
       </AnimatePresence>

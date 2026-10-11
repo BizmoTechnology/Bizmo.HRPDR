@@ -1,0 +1,4 @@
+node_modules/
+tests/visual/diff/
+.DS_Store
+*.log

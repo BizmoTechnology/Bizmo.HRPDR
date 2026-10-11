@@ -1,0 +1,82 @@
+/*
+ * Bizmo Universal Theme · Tailwind CSS v4 + shadcn/ui uyumluluğu
+ *
+ *   @import "tailwindcss";
+ *   @import "@bizmo/theme/tokens.css";
+ *   @import "@bizmo/theme/tailwind.css";
+ *   @import "@bizmo/theme/components.css";   (isteğe bağlı: bz-* sınıfları)
+ *
+ * shadcn/ui kullanan projeler bu dosya yerine shadcn.css'i içe aktarır ("accent" shadcn'de hover zeminidir).
+ *
+ * Koyu tema: <html data-theme="dark"> veya <html class="dark">. Tailwind "dark:" varyantı ikisini de tanır.
+ */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *, .dark, .dark *));
+
+@theme inline {
+  --font-sans: var(--bz-font-sans);
+  --font-display: var(--bz-font-display);
+  --font-mono: var(--bz-font-mono);
+
+  /* Bizmo adlarıyla (önerilen): bg-surface, text-fg2, bg-accent, text-ink, border-divider ... */
+  --color-page: var(--bz-bg);
+  --color-sunken: var(--bz-bg-sunken);
+  --color-surface: var(--bz-surface);
+  --color-surface-2: var(--bz-surface-2);
+  --color-surface-3: var(--bz-surface-3);
+  --color-fg: var(--bz-text);
+  --color-fg2: var(--bz-text-2);
+  --color-fg3: var(--bz-text-3);
+  --color-divider: var(--bz-divider);
+  --color-hover: var(--bz-hover);
+  --color-press: var(--bz-press);
+  --color-field: var(--bz-field);
+  --color-accent: var(--bz-accent);
+  --color-accent-strong: var(--bz-accent-strong);
+  --color-accent-soft: var(--bz-accent-soft);
+  --color-on-accent: var(--bz-accent-contrast);
+  --color-ink: var(--bz-accent-ink);
+  --color-data: var(--bz-data);
+  --color-data-ink: var(--bz-data-ink);
+  --color-data-soft: var(--bz-data-soft);
+  --color-data-solid: var(--bz-data-solid);
+  --color-on-data: var(--bz-data-contrast);
+  --color-success: var(--bz-success);
+  --color-success-ink: var(--bz-success-ink);
+  --color-warning: var(--bz-warning);
+  --color-warning-ink: var(--bz-warning-ink);
+  --color-danger: var(--bz-danger);
+  --color-danger-ink: var(--bz-danger-ink);
+  --color-danger-solid: var(--bz-danger-solid);
+  --color-info: var(--bz-info);
+  --color-series-1: var(--bz-series-1);
+  --color-series-2: var(--bz-series-2);
+  --color-series-3: var(--bz-series-3);
+  --color-series-4: var(--bz-series-4);
+  --color-series-5: var(--bz-series-5);
+  --color-series-6: var(--bz-series-6);
+  --color-bizmo-green: var(--bz-green-500);
+  --color-bizmo-blue: var(--bz-blue-500);
+  --color-bizmo-navy: var(--bz-navy-800);
+  --color-bizmo-cream: var(--bz-cream-100);
+
+  --radius-xs: var(--bz-radius-xs);
+  --radius-sm: var(--bz-radius-sm);
+  --radius-md: var(--bz-radius-md);
+  --radius-lg: var(--bz-radius-lg);
+  --radius: var(--bz-radius-md);
+
+  --shadow-1: var(--bz-shadow-1);
+  --shadow-2: var(--bz-shadow-2);
+  --shadow-3: var(--bz-shadow-3);
+  --shadow-green: var(--bz-shadow-green);
+
+  --ease-bizmo: var(--bz-ease);
+  --ease-bizmo-exit: var(--bz-ease-exit);
+}
+
+/* Vurgu (DESIGN.md §3.1): soluk metin yardımcılarının içindeki strong / b birincil renge çıkar — gri üstüne kalın gri düz yazı gibi görünür */
+:where(.text-fg2, .text-fg3, .text-muted-foreground) > :where(strong, b),
+:where(.text-fg2, .text-fg3, .text-muted-foreground) > :where(p, span, li) > :where(strong, b) {
+  color: var(--bz-text);
+}
+

@@ -8,7 +8,6 @@ import { motion } from "framer-motion";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { GlassCard } from "@ph/ui";
-import { cn } from "@/lib/utils";
 import { DateTimePicker } from "@/components/ui/datetime-picker";
 import { useCreateAssessment, useQuestionSetList } from "@/hooks/use-api";
 
@@ -71,11 +70,10 @@ export default function NewAssessmentPage() {
     }
   };
 
-  const inputCls =
-    "w-full px-3 py-2.5 rounded-xl bg-muted/50 border border-border/40 text-sm placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all";
+  const submitting = isSubmitting || createMutation.isPending;
 
   return (
-    <div className="w-full max-w-4xl mx-auto space-y-6">
+    <div className="mx-auto w-full max-w-4xl">
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -8 }}
@@ -83,141 +81,153 @@ export default function NewAssessmentPage() {
         transition={{ duration: 0.3 }}
       >
         <button
+          type="button"
           onClick={() => router.back()}
-          className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-4"
+          className="bz-btn bz-btn--subtle bz-btn--sm mb-4"
         >
-          <ArrowLeft className="h-4 w-4" />
+          <ArrowLeft />
           Geri
         </button>
-        <h1 className="text-2xl font-bold text-foreground">
-          Yeni Değerlendirme
-        </h1>
-        <p className="text-sm text-muted-foreground mt-0.5">
-          Değerlendirme bilgilerini girerek oluşturun
-        </p>
+        <div className="bz-page-header">
+          <div className="bz-page-header__text">
+            <h1 className="bz-page-header__title">Yeni değerlendirme</h1>
+            <p className="bz-page-header__sub">
+              Değerlendirme bilgilerini girerek oluşturun
+            </p>
+          </div>
+        </div>
       </motion.div>
 
       <GlassCard hover={false}>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
-          {/* Title */}
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1.5">
-              Başlık <span className="text-destructive">*</span>
-            </label>
-            <input
-              {...register("title")}
-              placeholder="Değerlendirme başlığı"
-              className={cn(inputCls, errors.title && "border-destructive/50")}
-            />
-            {errors.title && (
-              <p className="text-xs text-destructive mt-1">
-                {errors.title.message}
-              </p>
-            )}
-          </div>
-
-          {/* Description */}
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1.5">
-              Açıklama
-            </label>
-            <textarea
-              {...register("description")}
-              rows={3}
-              placeholder="Opsiyonel açıklama"
-              className={cn(inputCls, "resize-none")}
-            />
-          </div>
-
-          {/* Question Set */}
-          <div>
-            <label className="block text-sm font-medium text-foreground mb-1.5">
-              Soru Seti <span className="text-destructive">*</span>
-            </label>
-            <select
-              {...register("questionSetId")}
-              className={cn(
-                inputCls,
-                errors.questionSetId && "border-destructive/50",
-              )}
-              disabled={qsLoading}
-            >
-              <option value="">
-                {qsLoading ? "Yükleniyor..." : "Soru seti seçin"}
-              </option>
-              {questionSets.map((qs: any) => (
-                <option key={qs.id} value={qs.id}>
-                  {qs.name} (v{qs.version})
-                </option>
-              ))}
-            </select>
-            {errors.questionSetId && (
-              <p className="text-xs text-destructive mt-1">
-                {errors.questionSetId.message}
-              </p>
-            )}
-          </div>
-
-          {/* Dates */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-1.5">
-                Başlangıç Tarihi
+        <form onSubmit={handleSubmit(onSubmit)}>
+          <div className="space-y-4">
+            {/* Title */}
+            <div className="bz-form-row">
+              <label className="bz-label" htmlFor="assessment-title">
+                Başlık <span className="bz-req">*</span>
               </label>
-              <Controller
-                name="startsAt"
-                control={control}
-                render={({ field }) => (
-                  <DateTimePicker
-                    value={field.value}
-                    onChange={field.onChange}
-                    placeholder="Başlangıç seçin"
-                  />
-                )}
+              <input
+                id="assessment-title"
+                {...register("title")}
+                placeholder="Ör. 2026 güz dönemi potansiyel değerlendirmesi"
+                className="bz-field"
+                aria-invalid={errors.title ? true : undefined}
+                aria-describedby={errors.title ? "assessment-title-error" : undefined}
               />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-1.5">
-                Bitiş Tarihi
-              </label>
-              <Controller
-                name="endsAt"
-                control={control}
-                render={({ field }) => (
-                  <DateTimePicker
-                    value={field.value}
-                    onChange={field.onChange}
-                    placeholder="Bitiş seçin"
-                    error={Boolean(errors.endsAt)}
-                  />
-                )}
-              />
-              {errors.endsAt && (
-                <p className="text-xs text-destructive mt-1">
-                  {errors.endsAt.message}
+              {errors.title && (
+                <p id="assessment-title-error" className="bz-error-text">
+                  {errors.title.message}
                 </p>
               )}
+            </div>
+
+            {/* Description */}
+            <div className="bz-form-row">
+              <label className="bz-label" htmlFor="assessment-description">
+                Açıklama{" "}
+                <span className="font-normal text-muted-foreground">
+                  (isteğe bağlı)
+                </span>
+              </label>
+              <textarea
+                id="assessment-description"
+                {...register("description")}
+                rows={3}
+                placeholder="Değerlendirmenin amacı ve kapsamı"
+                className="bz-field"
+              />
+            </div>
+
+            {/* Question Set */}
+            <div className="bz-form-row">
+              <label className="bz-label" htmlFor="assessment-question-set">
+                Soru seti <span className="bz-req">*</span>
+              </label>
+              <select
+                id="assessment-question-set"
+                {...register("questionSetId")}
+                className="bz-field"
+                disabled={qsLoading}
+                aria-invalid={errors.questionSetId ? true : undefined}
+                aria-describedby={
+                  errors.questionSetId ? "assessment-question-set-error" : undefined
+                }
+              >
+                <option value="">
+                  {qsLoading ? "Yükleniyor..." : "Soru seti seçin"}
+                </option>
+                {questionSets.map((qs: any) => (
+                  <option key={qs.id} value={qs.id}>
+                    {qs.name} (v{qs.version})
+                  </option>
+                ))}
+              </select>
+              {errors.questionSetId && (
+                <p id="assessment-question-set-error" className="bz-error-text">
+                  {errors.questionSetId.message}
+                </p>
+              )}
+            </div>
+
+            {/* Dates */}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="bz-form-row">
+                <label className="bz-label" htmlFor="assessment-starts-at">
+                  Başlangıç tarihi
+                </label>
+                <Controller
+                  name="startsAt"
+                  control={control}
+                  render={({ field }) => (
+                    <DateTimePicker
+                      id="assessment-starts-at"
+                      value={field.value}
+                      onChange={field.onChange}
+                      placeholder="Başlangıç seçin"
+                    />
+                  )}
+                />
+              </div>
+              <div className="bz-form-row">
+                <label className="bz-label" htmlFor="assessment-ends-at">
+                  Bitiş tarihi
+                </label>
+                <Controller
+                  name="endsAt"
+                  control={control}
+                  render={({ field }) => (
+                    <DateTimePicker
+                      id="assessment-ends-at"
+                      value={field.value}
+                      onChange={field.onChange}
+                      placeholder="Bitiş seçin"
+                      error={Boolean(errors.endsAt)}
+                    />
+                  )}
+                />
+                {errors.endsAt && (
+                  <p className="bz-error-text">{errors.endsAt.message}</p>
+                )}
+              </div>
             </div>
           </div>
 
           {/* Submit */}
-          <div className="flex justify-end gap-3 pt-2">
+          <div className="mt-6 flex justify-end gap-2 border-t border-divider pt-5">
             <button
               type="button"
               onClick={() => router.back()}
-              className="px-4 py-2.5 rounded-xl text-sm font-medium text-muted-foreground hover:bg-muted/60 transition-colors"
+              className="bz-btn"
             >
               İptal
             </button>
             <button
               type="submit"
-              disabled={isSubmitting || createMutation.isPending}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-60 disabled:cursor-not-allowed active:scale-[0.97]"
+              disabled={submitting}
+              className="bz-btn bz-btn--primary"
             >
-              {(isSubmitting || createMutation.isPending) && (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              )}
-              Oluştur
+              {submitting && <Loader2 className="animate-spin" />}
+              {submitting ? "Oluşturuluyor" : "Oluştur"}
             </button>
           </div>
         </form>

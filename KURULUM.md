@@ -153,7 +153,8 @@ potansiyel-haritasi/
 │   └── portal/     → Personel Test Portalı (port 3002)
 ├── packages/
 │   ├── shared/     → Paylaşımlı tipler + Zod şemaları
-│   └── ui/         → Paylaşımlı UI bileşenleri (Design.md)
+│   ├── theme/      → @bizmo/theme kopyası (Bizmo Universal Theme — elle düzenlenmez)
+│   └── ui/         → Paylaşımlı UI bileşenleri + Tailwind preset (Design.md)
 ├── server/         → Fastify API (port 3001)
 │   └── prisma/     → Schema + migrations + seed
 ├── docker-compose.yml
@@ -162,8 +163,11 @@ potansiyel-haritasi/
 
 ## Tasarım Sistemi
 
-- Renk paleti: Design.md'de tanımlı HSL token sistemi
-- Glassmorphism: `glass-surface` ve `glass-surface-static` sınıfları
-- Birincil renk: Zümrüt yeşili `hsl(153 60% 43%)`
-- Font: Inter (Google Fonts)
-- Dark mode: `classList.toggle("dark")`
+Arayüz **Bizmo Universal Theme** (`@bizmo/theme`) ile çizilir; ayrıntılar için [Design.md](./Design.md) ve
+[packages/theme/DESIGN.md](./packages/theme/DESIGN.md).
+
+- Token'lar ve `bz-*` bileşen sınıfları: `packages/theme` (kopya; tema deposundan `npm run theme:sync` ile yenilenir)
+- Tailwind adları Bizmo token'larına eşlenir: `packages/ui/tailwind.preset.cjs`
+- Birincil renk: Bizmo yeşili `#6DB92C` (üstünde lacivert yazı), veri mavisi `#00A7E1`, sayfa zemini bulut `#F3F6FA`
+- Yazı aileleri: Inter (arayüz) + Manrope (başlık), `next/font` ile kendi sunucumuzdan
+- Koyu tema: `<html data-theme="dark">`, tercih `localStorage["bz-theme"]`

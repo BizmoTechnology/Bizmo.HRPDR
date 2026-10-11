@@ -17,12 +17,13 @@ export function AiChatButton({
       aria-expanded={open}
       aria-label={open ? "Sohbet panelini kapat" : "İK AI Asistanını aç"}
       className={cn(
-        "fixed bottom-6 right-6 z-[60] flex h-14 w-14 items-center justify-center rounded-full shadow-lg transition",
-        "border border-white/15 bg-gradient-to-br from-primary to-primary/70 text-primary-foreground",
-        "hover:scale-105 hover:shadow-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+        // Yüzen eylem (DESIGN.md §10 .bz-fab): yeşil zemin + lacivert ikon, yeşil gölge yalnız birincil eylemde
+        "fixed bottom-6 right-6 z-sticky flex h-[52px] w-[52px] items-center justify-center rounded-full",
+        "bg-primary text-primary-foreground shadow-green transition-[background-color,transform] duration-150",
+        "hover:bg-brand-strong active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
       )}
     >
-      <MessageCircle className="h-7 w-7" />
+      <MessageCircle className="h-6 w-6" strokeWidth={1.8} />
     </button>
   );
 }

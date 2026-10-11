@@ -22,11 +22,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       {children}
-      <Toaster
-        position="top-right"
-        richColors
-        toastOptions={{ className: "rounded-xl" }}
-      />
+      {/* Bildirimler sağ altta, cam yüzey (DESIGN.md §17 · görünüm globals.css) */}
+      <Toaster position="bottom-right" richColors closeButton />
     </QueryClientProvider>
   );
 }

@@ -25,31 +25,33 @@ export default function NewPersonnelPage() {
   };
 
   return (
-    <div className="space-y-6 w-full max-w-4xl mx-auto">
+    <div className="mx-auto w-full max-w-4xl">
+      {/* Başlık */}
       <motion.div
-        className="flex items-center gap-4"
+        className="bz-page-header"
         initial={{ opacity: 0, y: -8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}
       >
         <Link
           href="/personnel"
-          className="h-9 w-9 rounded-xl bg-muted/40 flex items-center justify-center text-muted-foreground hover:bg-muted/60 transition-colors"
+          className="bz-icon-btn"
+          aria-label="Personel listesine dön"
+          title="Personel listesine dön"
         >
-          <ArrowLeft className="h-4 w-4" />
+          <ArrowLeft />
         </Link>
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">Yeni Personel</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
-            Yeni personel kaydı oluşturun
-          </p>
+        <div className="bz-page-header__text">
+          <h1 className="bz-page-header__title">Yeni personel</h1>
+          <p className="bz-page-header__sub">Yeni personel kaydı oluşturun</p>
         </div>
       </motion.div>
 
+      {/* Form: oluşturma ve düzenleme ortak bileşeni */}
       <motion.div
-        initial={{ opacity: 0, y: 12 }}
+        initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.35, delay: 0.1 }}
+        transition={{ duration: 0.3, delay: 0.08 }}
       >
         <PersonnelForm
           mode="create"

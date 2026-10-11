@@ -4,10 +4,10 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   BrainCircuit, Plus, Pencil, Trash2, Loader2, AlertCircle,
-  Star, X, Activity, DollarSign, Hash, Shield, RefreshCw,
-  FileText, Heart, Check, PlugZap,
+  Star, X, DollarSign, Hash, Shield, RefreshCw,
+  FileText, Heart, PlugZap,
 } from "lucide-react";
-import { GlassCard } from "@ph/ui";
+import { GlassCard, StatCard } from "@ph/ui";
 import { cn } from "@/lib/utils";
 import { apiErrorMessage } from "@/lib/api";
 import { usePermissions } from "@/lib/roles";
@@ -32,13 +32,21 @@ import { toast } from "sonner";
 
 type Provider = "CLAUDE" | "OPENAI" | "GEMINI" | "ABACUS" | "MOCK";
 
-const PROVIDER_META: Record<Provider, { label: string; color: string }> = {
-  CLAUDE: { label: "Claude (Anthropic)", color: "text-accent-purple" },
-  OPENAI: { label: "OpenAI GPT", color: "text-accent-green" },
-  GEMINI: { label: "Google Gemini", color: "text-primary" },
-  ABACUS: { label: "Abacus.AI", color: "text-accent-orange" },
-  MOCK: { label: "Mock (Test)", color: "text-muted-foreground" },
+// Sağlayıcılar kategori olarak renklendirilmez; ad metin renginde, simge nötr kutuda (DESIGN §2.4, §28).
+const PROVIDER_META: Record<Provider, { label: string }> = {
+  CLAUDE: { label: "Claude (Anthropic)" },
+  OPENAI: { label: "OpenAI GPT" },
+  GEMINI: { label: "Google Gemini" },
+  ABACUS: { label: "Abacus.AI" },
+  MOCK: { label: "Mock (Test)" },
 };
+
+const usd = new Intl.NumberFormat("tr-TR", {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
 
 interface ModelOption {
   id: string;
@@ -302,158 +310,170 @@ function ConfigFormDialog({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+      <div className="bz-scrim" aria-hidden="true" />
       <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.95 }}
-        className="w-full max-w-md mx-4"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="ai-config-dialog-title"
+        initial={{ opacity: 0, scale: 0.98, y: 8 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.98, y: 8 }}
+        transition={{ duration: 0.2 }}
+        className="relative z-modal max-h-[86vh] w-full max-w-[480px] overflow-y-auto rounded-3xl border border-glass-border bg-popover p-6 shadow-3 backdrop-blur-xl"
       >
-        <GlassCard className="rounded-2xl">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-semibold text-foreground">
-              {isEditing ? "Sağlayıcıyı Düzenle" : "Yeni Sağlayıcı Ekle"}
+        <div className="mb-5 flex items-start justify-between gap-4">
+          <div>
+            <h2
+              id="ai-config-dialog-title"
+              className="font-display text-[19px] font-bold text-foreground"
+            >
+              {isEditing ? "Sağlayıcıyı düzenle" : "Yeni sağlayıcı ekle"}
             </h2>
-            <button onClick={onClose} className="p-1 rounded-lg hover:bg-muted/50 transition-colors">
-              <X className="h-4 w-4 text-muted-foreground" />
-            </button>
+            <p className="mt-1 text-[13px] text-fg2">
+              {isEditing
+                ? "Model, kullanım amacı ve API anahtarını güncelleyin."
+                : "AI sağlayıcısını, modelini ve API anahtarını girin."}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="bz-icon-btn bz-icon-btn--sm -mr-2"
+            aria-label="Kapat"
+            title="Kapat"
+          >
+            <X />
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          <div className="bz-form-row">
+            <label htmlFor="ai-provider" className="bz-label">Sağlayıcı</label>
+            <select
+              id="ai-provider"
+              value={form.provider}
+              onChange={(e) => handleProviderChange(e.target.value as Provider)}
+              className="bz-field"
+            >
+              {Object.entries(PROVIDER_META).map(([key, meta]) => (
+                <option key={key} value={key}>{meta.label}</option>
+              ))}
+            </select>
           </div>
 
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-1.5">Sağlayıcı</label>
-              <select
-                value={form.provider}
-                onChange={(e) => handleProviderChange(e.target.value as Provider)}
-                className="w-full h-10 px-3 rounded-xl bg-muted/50 border border-border/50 text-sm
-                  focus:outline-none focus:ring-2 focus:ring-primary/30"
-              >
-                {Object.entries(PROVIDER_META).map(([key, meta]) => (
-                  <option key={key} value={key}>{meta.label}</option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-1.5">
-                API Anahtarı {isEditing && <span className="text-muted-foreground font-normal">(boş = değiştirme)</span>}
-              </label>
-              <input
-                type="password"
-                value={form.apiKey}
-                onChange={(e) => setForm((f) => ({ ...f, apiKey: e.target.value }))}
-                placeholder={isEditing ? "Değiştirmek için yeni key girin" : "sk-..."}
-                className="w-full h-10 px-3 rounded-xl bg-muted/50 border border-border/50 text-sm
-                  placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/30"
-              />
-              {form.provider === "ABACUS" && (
-                <p className="mt-1.5 text-xs text-muted-foreground">
-                  Liste: en az 8 karakterlik anahtarı yazdıysanız onunla çekilir; düzenlemede alan boşsa
-                  kayıtlı anahtar kullanılır.
-                </p>
-              )}
-            </div>
-
+          <div className="bz-form-row">
+            <label htmlFor="ai-api-key" className="bz-label">
+              API anahtarı{" "}
+              {isEditing && <span className="text-xs font-normal text-fg3">(boş = değiştirme)</span>}
+            </label>
+            <input
+              id="ai-api-key"
+              type="password"
+              value={form.apiKey}
+              onChange={(e) => setForm((f) => ({ ...f, apiKey: e.target.value }))}
+              placeholder={isEditing ? "Değiştirmek için yeni anahtar girin" : "sk-..."}
+              autoComplete="off"
+              className="bz-field"
+            />
             {form.provider === "ABACUS" && (
-              <button
-                type="button"
-                onClick={handleLoadAbacusModels}
-                disabled={listAbacus.isPending}
-                className="w-full flex items-center justify-center gap-2 h-10 rounded-xl border border-border/50 text-sm font-medium
-                  text-foreground hover:bg-muted/50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {listAbacus.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <RefreshCw className="h-4 w-4 text-accent-orange" />
-                )}
-                RouteLLM modellerini API&apos;den yükle
-              </button>
+              <span className="bz-hint">
+                Liste: en az 8 karakterlik anahtarı yazdıysanız onunla çekilir; düzenlemede alan boşsa
+                kayıtlı anahtar kullanılır.
+              </span>
             )}
+          </div>
 
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-1.5">Model Adı</label>
-              <select
-                value={selectValue}
-                onChange={(e) => handleModelSelectChange(e.target.value)}
-                className="w-full h-10 px-3 rounded-xl bg-muted/50 border border-border/50 text-sm
-                  focus:outline-none focus:ring-2 focus:ring-primary/30"
-              >
-                {form.provider === "ABACUS" && modelsForProvider.length === 0 && (
-                  <option value="" disabled>
-                    Liste boş — önce API&apos;den yükleyin veya özel model seçin
-                  </option>
-                )}
-                {modelsForProvider.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.label} — {m.description}
-                  </option>
-                ))}
-                <option value="__custom__">Özel model adı gir...</option>
-              </select>
-              {showCustomInput && (
-                <input
-                  type="text"
-                  value={form.customModel}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, customModel: e.target.value }))
-                  }
-                  placeholder={
-                    form.provider === "ABACUS"
-                      ? "Abacus RouteLLM model ID"
-                      : "Özel model ID girin (ör: gpt-5.4-turbo)"
-                  }
-                  className="mt-2 w-full h-10 px-3 rounded-xl bg-muted/50 border border-border/50 text-sm
-                    placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/30"
-                />
+          {form.provider === "ABACUS" && (
+            <button
+              type="button"
+              onClick={handleLoadAbacusModels}
+              disabled={listAbacus.isPending}
+              className="bz-btn bz-btn--block"
+            >
+              {listAbacus.isPending ? (
+                <Loader2 className="animate-spin" />
+              ) : (
+                <RefreshCw />
               )}
-            </div>
+              RouteLLM modellerini API&apos;den yükle
+            </button>
+          )}
 
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-1.5">Kullanım Amacı</label>
+          <div className="bz-form-row">
+            <label htmlFor="ai-model" className="bz-label">Model adı</label>
+            <select
+              id="ai-model"
+              value={selectValue}
+              onChange={(e) => handleModelSelectChange(e.target.value)}
+              className="bz-field"
+            >
+              {form.provider === "ABACUS" && modelsForProvider.length === 0 && (
+                <option value="" disabled>
+                  Liste boş — önce API&apos;den yükleyin veya özel model seçin
+                </option>
+              )}
+              {modelsForProvider.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label} — {m.description}
+                </option>
+              ))}
+              <option value="__custom__">Özel model adı gir...</option>
+            </select>
+            {showCustomInput && (
               <input
                 type="text"
-                value={form.purpose}
-                onChange={(e) => setForm((f) => ({ ...f, purpose: e.target.value }))}
-                placeholder="Potansiyel analizi, rapor oluşturma..."
-                className="w-full h-10 px-3 rounded-xl bg-muted/50 border border-border/50 text-sm
-                  placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/30"
+                aria-label="Özel model adı"
+                value={form.customModel}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, customModel: e.target.value }))
+                }
+                placeholder={
+                  form.provider === "ABACUS"
+                    ? "Abacus RouteLLM model ID"
+                    : "Özel model ID girin (ör: gpt-5.4-turbo)"
+                }
+                className="bz-field mt-1"
               />
-            </div>
-
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={form.isDefault}
-                onChange={(e) => setForm((f) => ({ ...f, isDefault: e.target.checked }))}
-                className="h-4 w-4 rounded border-border text-primary focus:ring-primary/30"
-              />
-              <span className="text-sm text-foreground">Varsayılan sağlayıcı olarak ayarla</span>
-            </label>
+            )}
           </div>
 
-          <div className="flex gap-3 mt-6">
-            <button
-              onClick={onClose}
-              className="flex-1 h-10 rounded-xl border border-border/50 text-sm font-medium
-                text-muted-foreground hover:bg-muted/50 transition-colors"
-            >
-              İptal
-            </button>
-            <motion.button
-              onClick={handleSubmit}
-              disabled={isPending}
-              className="flex-1 h-10 rounded-xl bg-primary text-primary-foreground text-sm font-semibold
-                hover:bg-primary/90 transition-all disabled:opacity-40 disabled:cursor-not-allowed
-                flex items-center justify-center gap-2"
-              whileHover={{ scale: 1.01 }}
-              whileTap={{ scale: 0.98 }}
-            >
-              {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-              {isEditing ? "Güncelle" : "Ekle"}
-            </motion.button>
+          <div className="bz-form-row">
+            <label htmlFor="ai-purpose" className="bz-label">Kullanım amacı</label>
+            <input
+              id="ai-purpose"
+              type="text"
+              value={form.purpose}
+              onChange={(e) => setForm((f) => ({ ...f, purpose: e.target.value }))}
+              placeholder="Potansiyel analizi, rapor oluşturma..."
+              className="bz-field"
+            />
           </div>
-        </GlassCard>
+
+          <label className="bz-check">
+            <input
+              type="checkbox"
+              checked={form.isDefault}
+              onChange={(e) => setForm((f) => ({ ...f, isDefault: e.target.checked }))}
+            />
+            Varsayılan sağlayıcı olarak ayarla
+          </label>
+        </div>
+
+        <div className="mt-6 flex justify-end gap-2">
+          <button type="button" onClick={onClose} className="bz-btn">
+            Vazgeç
+          </button>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={isPending}
+            className="bz-btn bz-btn--primary"
+          >
+            {isPending && <Loader2 className="animate-spin" />}
+            {isEditing ? "Değişiklikleri kaydet" : "Sağlayıcıyı ekle"}
+          </button>
+        </div>
       </motion.div>
     </div>
   );
@@ -463,11 +483,15 @@ export default function AiConfigPage() {
   const { canConfigureAi } = usePermissions();
   if (!canConfigureAi) {
     return (
-      <GlassCard hover={false} className="flex flex-col items-center justify-center py-16 text-center">
-        <Shield className="h-8 w-8 text-muted-foreground mb-3" />
-        <p className="text-sm font-medium text-foreground">AI yapılandırmasına erişim yetkiniz yok</p>
-        <p className="text-xs text-muted-foreground mt-1">Bu bölüm yalnızca yöneticiler içindir.</p>
-      </GlassCard>
+      <div className="bz-card">
+        <div className="bz-empty">
+          <span className="bz-icon-box" aria-hidden="true">
+            <Shield />
+          </span>
+          <p className="bz-empty__title">AI yapılandırmasına erişim yetkiniz yok</p>
+          <p className="bz-empty__text">Bu bölüm yalnızca yöneticiler içindir.</p>
+        </div>
+      </div>
     );
   }
   return <AiConfigContent />;
@@ -494,7 +518,7 @@ function AiConfigContent() {
   const usage = usageData as UsageStats | undefined;
 
   const handleDelete = (id: string) => {
-    if (!confirm("Bu yapılandırmayı silmek istediğinize emin misiniz?")) return;
+    if (!confirm("Yapılandırma silinsin mi? Bu işlem geri alınamaz.")) return;
     deleteConfig.mutate(id, {
       onSuccess: () => toast.success("Yapılandırma silindi"),
       onError: (err) => toast.error(apiErrorMessage(err, "Silme başarısız")),
@@ -517,53 +541,65 @@ function AiConfigContent() {
     show: { opacity: 1, y: 0, transition: { duration: 0.3 } },
   };
 
+  const openCreateConfig = () => {
+    setEditConfig(null);
+    setDialogOpen(true);
+  };
+
   return (
-    <div className="space-y-6 w-full">
+    <div className="space-y-8 w-full">
       <motion.div
+        className="bz-page-header mb-0"
         initial={{ opacity: 0, y: -8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}
       >
-        <h1 className="text-2xl font-bold text-foreground">AI Yapılandırması</h1>
-        <p className="text-sm text-muted-foreground mt-0.5">
-          AI sağlayıcılarını ve kullanım istatistiklerini yönetin
-        </p>
+        <div className="bz-page-header__text">
+          <h1 className="bz-page-header__title">AI yapılandırması</h1>
+          <p className="bz-page-header__sub">
+            AI sağlayıcılarını, kullanım istatistiklerini ve analiz promptlarını yönetin
+          </p>
+        </div>
       </motion.div>
 
       {/* AI Providers Section */}
-      <div>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
-            <BrainCircuit className="h-4 w-4 text-primary" />
-            AI Sağlayıcıları
+      <section aria-labelledby="ai-providers-title">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <h2 id="ai-providers-title" className="text-[17px] font-bold text-foreground">
+            AI sağlayıcıları
           </h2>
-          <motion.button
-            onClick={() => {
-              setEditConfig(null);
-              setDialogOpen(true);
-            }}
-            className="h-9 px-4 rounded-xl bg-primary text-primary-foreground text-sm font-semibold
-              hover:bg-primary/90 transition-all flex items-center gap-2"
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
+          <button
+            type="button"
+            onClick={openCreateConfig}
+            className="bz-btn bz-btn--primary"
           >
-            <Plus className="h-4 w-4" />
-            Yeni Sağlayıcı Ekle
-          </motion.button>
+            <Plus />
+            Yeni sağlayıcı
+          </button>
         </div>
 
         {configLoading ? (
-          <GlassCard hover={false} className="flex items-center justify-center py-12">
-            <Loader2 className="h-6 w-6 animate-spin text-primary" />
-            <span className="ml-3 text-sm text-muted-foreground">Yükleniyor...</span>
-          </GlassCard>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4" aria-busy="true">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="bz-skeleton h-44 rounded-2xl" />
+            ))}
+          </div>
         ) : configs.length === 0 ? (
-          <GlassCard hover={false} className="flex flex-col items-center justify-center py-12">
-            <div className="h-12 w-12 rounded-xl bg-muted/50 flex items-center justify-center mb-3">
-              <BrainCircuit className="h-6 w-6 text-muted-foreground" />
+          <div className="bz-card">
+            <div className="bz-empty">
+              <span className="bz-icon-box" aria-hidden="true">
+                <BrainCircuit />
+              </span>
+              <p className="bz-empty__title">Henüz AI sağlayıcısı yok</p>
+              <p className="bz-empty__text">
+                Analiz ve soru üretimi için bir sağlayıcı ekleyin. Test için Mock sağlayıcısını kullanabilirsiniz.
+              </p>
+              <button type="button" onClick={openCreateConfig} className="bz-btn bz-btn--soft">
+                <Plus />
+                Yeni sağlayıcı
+              </button>
             </div>
-            <p className="text-sm text-muted-foreground">Henüz AI sağlayıcısı eklenmemiş</p>
-          </GlassCard>
+          </div>
         ) : (
           <motion.div
             className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4"
@@ -574,83 +610,90 @@ function AiConfigContent() {
             {configs.map((cfg) => {
               const providerMeta = PROVIDER_META[cfg.provider] ?? PROVIDER_META.MOCK;
               return (
-                <motion.div key={cfg.id} variants={item}>
-                  <GlassCard className="relative">
-                    {cfg.isDefault && (
-                      <span className="absolute top-3 right-3 text-[10px] font-semibold px-2 py-0.5 rounded-md bg-accent-green/10 text-accent-green flex items-center gap-1">
-                        <Star className="h-2.5 w-2.5" />
-                        Varsayılan
+                <motion.div key={cfg.id} variants={item} className="h-full">
+                  <GlassCard hover={false} className="flex h-full flex-col">
+                    <div className="flex items-start gap-3">
+                      <span className="bz-icon-box" aria-hidden="true">
+                        <BrainCircuit />
                       </span>
-                    )}
-
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
-                        <BrainCircuit className={cn("h-5 w-5", providerMeta.color)} />
-                      </div>
-                      <div className="min-w-0">
-                        <p className={cn("text-sm font-semibold", providerMeta.color)}>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-foreground">
                           {providerMeta.label}
                         </p>
-                        <p className="text-xs text-muted-foreground truncate">
+                        <p className="font-mono text-xs text-fg2 truncate" title={cfg.modelName}>
                           {cfg.modelName}
                         </p>
                       </div>
+                      {cfg.isDefault && (
+                        <span className="bz-chip bz-chip--success shrink-0">
+                          <Star />
+                          Varsayılan
+                        </span>
+                      )}
                     </div>
 
                     {cfg.purpose && (
-                      <p className="text-xs text-muted-foreground mb-2 line-clamp-2">
+                      <p className="mt-3 text-[13px] text-fg2 line-clamp-2">
                         {cfg.purpose}
                       </p>
                     )}
 
-                    <div className="flex items-center gap-1.5 mb-4">
-                      <Shield className="h-3 w-3 text-muted-foreground/50" />
-                      <span className="text-[11px] text-muted-foreground/60 font-mono">
+                    <div className="mt-3 mb-4 flex items-center gap-1.5 text-fg3">
+                      <Shield className="h-3.5 w-3.5" aria-hidden="true" />
+                      <span className="sr-only">API anahtarı:</span>
+                      <span className="font-mono text-xs">
                         {cfg.provider === "MOCK" ? "anahtar gerekmez" : formatMaskedKey(cfg.maskedApiKey)}
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-2 border-t border-border/20 pt-3">
+                    <div className="mt-auto flex items-center gap-1 border-t border-divider pt-3">
                       {!cfg.isDefault && (
                         <button
+                          type="button"
                           onClick={() => handleSetDefault(cfg.id)}
                           disabled={setDefault.isPending}
-                          className="text-[11px] text-primary hover:underline underline-offset-4 flex items-center gap-1"
+                          className="bz-btn bz-btn--ghost bz-btn--sm -ml-3"
                         >
-                          <Star className="h-3 w-3" />
+                          <Star />
                           Varsayılan yap
                         </button>
                       )}
                       <div className="flex-1" />
                       <button
+                        type="button"
                         onClick={() => handleTest(cfg.id)}
                         disabled={testConfig.isPending}
-                        className="p-1.5 rounded-lg hover:bg-primary/10 transition-colors disabled:opacity-50"
+                        className="bz-icon-btn bz-icon-btn--sm"
                         title="Bağlantıyı test et"
+                        aria-label={`${providerMeta.label} bağlantısını test et`}
                       >
                         {testConfig.isPending && testConfig.variables === cfg.id ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                          <Loader2 className="animate-spin" />
                         ) : (
-                          <PlugZap className="h-3.5 w-3.5 text-primary" />
+                          <PlugZap />
                         )}
                       </button>
                       <button
+                        type="button"
                         onClick={() => {
                           setEditConfig(cfg);
                           setDialogOpen(true);
                         }}
-                        className="p-1.5 rounded-lg hover:bg-primary/10 transition-colors"
+                        className="bz-icon-btn bz-icon-btn--sm"
                         title="Düzenle"
+                        aria-label={`${providerMeta.label} yapılandırmasını düzenle`}
                       >
-                        <Pencil className="h-3.5 w-3.5 text-primary" />
+                        <Pencil />
                       </button>
                       <button
+                        type="button"
                         onClick={() => handleDelete(cfg.id)}
                         disabled={deleteConfig.isPending}
-                        className="p-1.5 rounded-lg hover:bg-accent-red/10 transition-colors"
+                        className="bz-icon-btn bz-icon-btn--sm -mr-1.5 hover:text-danger-ink"
                         title="Sil"
+                        aria-label={`${providerMeta.label} yapılandırmasını sil`}
                       >
-                        <Trash2 className="h-3.5 w-3.5 text-accent-red" />
+                        <Trash2 />
                       </button>
                     </div>
                   </GlassCard>
@@ -659,104 +702,112 @@ function AiConfigContent() {
             })}
           </motion.div>
         )}
-      </div>
+      </section>
 
       {/* Usage Stats Section */}
-      <div>
-        <h2 className="text-base font-semibold text-foreground mb-4 flex items-center gap-2">
-          <Activity className="h-4 w-4 text-primary" />
-          Kullanım İstatistikleri
+      <section aria-labelledby="ai-usage-title">
+        <h2 id="ai-usage-title" className="text-[17px] font-bold text-foreground mb-4">
+          Kullanım istatistikleri
         </h2>
 
         {usageLoading ? (
-          <GlassCard hover={false} className="flex items-center justify-center py-12">
-            <Loader2 className="h-6 w-6 animate-spin text-primary" />
-          </GlassCard>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4" aria-busy="true">
+            <div className="bz-skeleton h-32 rounded-2xl" />
+            <div className="bz-skeleton h-32 rounded-2xl" />
+          </div>
         ) : !usage ? (
-          <GlassCard hover={false} className="flex flex-col items-center justify-center py-12">
-            <AlertCircle className="h-6 w-6 text-muted-foreground mb-2" />
-            <p className="text-sm text-muted-foreground">Kullanım verisi bulunamadı</p>
-          </GlassCard>
+          <div className="bz-card">
+            <div className="bz-empty">
+              <span className="bz-icon-box" aria-hidden="true">
+                <AlertCircle />
+              </span>
+              <p className="bz-empty__title">Kullanım verisi yok</p>
+              <p className="bz-empty__text">
+                AI çağrısı yapıldığında çağrı sayısı ve maliyet burada görünür.
+              </p>
+            </div>
+          </div>
         ) : (
-          <>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-              <GlassCard hover={false} className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
-                  <Hash className="h-5 w-5 text-primary" />
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Toplam Çağrı</p>
-                  <p className="text-xl font-bold tabular-nums">
-                    {(usage.totalCalls ?? 0).toLocaleString("tr-TR")}
-                  </p>
-                </div>
-              </GlassCard>
-
-              <GlassCard hover={false} className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-xl bg-accent-green/10 flex items-center justify-center flex-shrink-0">
-                  <DollarSign className="h-5 w-5 text-accent-green" />
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Toplam Maliyet</p>
-                  <p className="text-xl font-bold tabular-nums">
-                    ${Number(usage.totalCostUsd ?? 0).toFixed(2)}
-                  </p>
-                </div>
-              </GlassCard>
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <StatCard
+                title="Toplam çağrı"
+                value={(usage.totalCalls ?? 0).toLocaleString("tr-TR")}
+                icon={Hash}
+              />
+              <StatCard
+                title="Toplam maliyet"
+                value={usd.format(Number(usage.totalCostUsd ?? 0))}
+                icon={DollarSign}
+              />
             </div>
 
             {usage.byProvider && usage.byProvider.length > 0 && (
-              <GlassCard hover={false}>
-                <h3 className="text-sm font-semibold text-foreground mb-3">
-                  Sağlayıcı Bazlı Dağılım
+              <div>
+                <h3 className="text-[15px] font-bold text-foreground mb-3">
+                  Sağlayıcı bazlı dağılım
                 </h3>
-                <div className="overflow-x-auto">
-                  <table className="w-full">
+                <div className="bz-table-wrap">
+                  <table className="bz-table">
                     <thead>
-                      <tr className="border-b border-border/30">
-                        {["Sağlayıcı", "Çağrı Sayısı", "Token (girdi/çıktı)", "Maliyet"].map((h) => (
-                          <th key={h} className="text-left text-xs font-medium text-muted-foreground uppercase pb-3 pr-4">
-                            {h}
-                          </th>
-                        ))}
+                      <tr>
+                        <th>Sağlayıcı</th>
+                        <th className="is-num">Çağrı sayısı</th>
+                        <th className="hidden sm:table-cell">Çağrı payı</th>
+                        <th className="is-num">Token (girdi / çıktı)</th>
+                        <th className="is-num">Maliyet</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-border/20">
+                    <tbody>
                       {usage.byProvider.map((row) => {
                         const meta = PROVIDER_META[row.provider as Provider];
+                        const share = usage.totalCalls
+                          ? Math.round((row.calls / usage.totalCalls) * 100)
+                          : 0;
                         return (
-                          <tr key={row.provider} className="hover:bg-muted/30 transition-colors">
-                            <td className="py-3 pr-4">
-                              <span className={cn("text-sm font-medium", meta?.color ?? "text-foreground")}>
-                                {meta?.label ?? row.provider}
-                              </span>
+                          <tr key={row.provider}>
+                            <td className="font-medium text-foreground">
+                              {meta?.label ?? row.provider}
                             </td>
-                            <td className="py-3 pr-4">
-                              <span className="text-sm tabular-nums text-muted-foreground">
-                                {row.calls.toLocaleString("tr-TR")}
-                              </span>
+                            <td className="is-num">
+                              {row.calls.toLocaleString("tr-TR")}
                             </td>
-                            <td className="py-3 pr-4">
-                              <span className="text-sm tabular-nums text-muted-foreground">
-                                {row.inputTokens.toLocaleString("tr-TR")} / {row.outputTokens.toLocaleString("tr-TR")}
-                              </span>
+                            <td className="hidden sm:table-cell">
+                              <div className="flex items-center gap-2">
+                                <div className="bz-progress bz-progress--data w-28" aria-hidden="true">
+                                  <span style={{ "--value": `${share}%` } as React.CSSProperties} />
+                                </div>
+                                <span className="text-xs tabular-nums text-fg2">%{share}</span>
+                              </div>
                             </td>
-                            <td className="py-3">
-                              <span className="text-sm tabular-nums text-muted-foreground">
-                                ${Number(row.costUsd ?? 0).toFixed(2)}
-                              </span>
+                            <td className="is-num">
+                              {row.inputTokens.toLocaleString("tr-TR")} / {row.outputTokens.toLocaleString("tr-TR")}
                             </td>
+                            <td className="is-num">{usd.format(Number(row.costUsd ?? 0))}</td>
                           </tr>
                         );
                       })}
                     </tbody>
+                    <tfoot>
+                      <tr>
+                        <td>Toplam</td>
+                        <td className="is-num">{(usage.totalCalls ?? 0).toLocaleString("tr-TR")}</td>
+                        <td className="hidden sm:table-cell" />
+                        <td className="is-num">
+                          {usage.byProvider.reduce((s, r) => s + (r.inputTokens ?? 0), 0).toLocaleString("tr-TR")}
+                          {" / "}
+                          {usage.byProvider.reduce((s, r) => s + (r.outputTokens ?? 0), 0).toLocaleString("tr-TR")}
+                        </td>
+                        <td className="is-num">{usd.format(Number(usage.totalCostUsd ?? 0))}</td>
+                      </tr>
+                    </tfoot>
                   </table>
                 </div>
-              </GlassCard>
+              </div>
             )}
-          </>
+          </div>
         )}
-      </div>
+      </section>
 
       {/* Analiz Prompt Şablonları */}
       <PromptTemplatesSection />
@@ -781,9 +832,13 @@ function AiConfigContent() {
    Analiz Prompt Şablonları Bölümü
    ═══════════════════════════════════════════════════════ */
 
-const PROMPT_TYPE_META: Record<string, { label: string; icon: React.ElementType; color: string }> = {
-  HR_PDR_ANALYSIS: { label: "HR PDR Analizi", icon: FileText, color: "text-primary" },
-  PSYCHOLOGICAL_ANALYSIS: { label: "Psikolojik Analiz", icon: Heart, color: "text-purple-500" },
+// Tür ayrımı: HR PDR nötr, psikolojik analiz veri mavisi (simge `data`, yazı `data-ink`)
+const PROMPT_TYPE_META: Record<
+  string,
+  { label: string; icon: React.ElementType; iconClass: string; labelClass: string }
+> = {
+  HR_PDR_ANALYSIS: { label: "HR PDR analizi", icon: FileText, iconClass: "text-fg2", labelClass: "text-fg2" },
+  PSYCHOLOGICAL_ANALYSIS: { label: "Psikolojik analiz", icon: Heart, iconClass: "text-data", labelClass: "text-data-ink" },
 };
 
 const DEFAULT_PROMPT_TYPE_META = PROMPT_TYPE_META["HR_PDR_ANALYSIS"]!;
@@ -801,7 +856,7 @@ function PromptTemplatesSection() {
     : (templates as any)?.data ?? [];
 
   const handleDelete = (id: string) => {
-    if (!confirm("Bu prompt şablonunu silmek istediğinize emin misiniz?")) return;
+    if (!confirm("Prompt şablonu silinsin mi? Bu işlem geri alınamaz.")) return;
     deleteTemplate.mutate(id, {
       onSuccess: () => toast.success("Prompt şablonu silindi"),
       onError: (err) => toast.error(apiErrorMessage(err, "Silme başarısız")),
@@ -821,97 +876,103 @@ function PromptTemplatesSection() {
   };
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
-          <BrainCircuit className="h-4 w-4 text-primary" />
-          Analiz Prompt Şablonları
+    <section aria-labelledby="ai-prompts-title">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+        <h2 id="ai-prompts-title" className="text-[17px] font-bold text-foreground">
+          Analiz prompt şablonları
         </h2>
         <div className="flex gap-2">
-          <motion.button
+          <button
+            type="button"
             onClick={() => openCreate("HR_PDR_ANALYSIS")}
-            className="h-9 px-4 rounded-xl bg-primary/10 text-primary text-sm font-medium hover:bg-primary/20 transition-all flex items-center gap-2"
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
+            className="bz-btn bz-btn--sm"
+            title="Yeni HR PDR analiz şablonu"
           >
-            <Plus className="h-4 w-4" />
+            <Plus />
             HR PDR
-          </motion.button>
-          <motion.button
+          </button>
+          <button
+            type="button"
             onClick={() => openCreate("PSYCHOLOGICAL_ANALYSIS")}
-            className="h-9 px-4 rounded-xl bg-purple-500/10 text-purple-500 text-sm font-medium hover:bg-purple-500/20 transition-all flex items-center gap-2"
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
+            className="bz-btn bz-btn--sm"
+            title="Yeni psikolojik analiz şablonu"
           >
-            <Plus className="h-4 w-4" />
+            <Plus />
             Psikolojik
-          </motion.button>
+          </button>
         </div>
       </div>
 
-      <p className="text-xs text-muted-foreground mb-4">
+      <p className="text-[13px] text-fg2 mb-4 max-w-3xl">
         Oturum cevaplarından AI analizi yapılırken kullanılacak sistem promptlarını burada yönetin.
         Varsayılan şablon yoksa yerleşik prompt kullanılır.
       </p>
 
       {isLoading ? (
-        <GlassCard hover={false} className="flex items-center justify-center py-8">
-          <Loader2 className="h-5 w-5 animate-spin text-primary" />
-        </GlassCard>
+        <div className="space-y-3" aria-busy="true">
+          <div className="bz-skeleton h-24 rounded-2xl" />
+          <div className="bz-skeleton h-24 rounded-2xl" />
+        </div>
       ) : templateList.length === 0 ? (
-        <GlassCard hover={false} className="flex flex-col items-center justify-center py-10">
-          <BrainCircuit className="h-8 w-8 text-muted-foreground/30 mb-3" />
-          <p className="text-sm text-muted-foreground mb-1">Henüz özel prompt şablonu yok</p>
-          <p className="text-xs text-muted-foreground/60">Yerleşik varsayılan promptlar kullanılıyor</p>
-        </GlassCard>
+        <div className="bz-card">
+          <div className="bz-empty">
+            <span className="bz-icon-box" aria-hidden="true">
+              <FileText />
+            </span>
+            <p className="bz-empty__title">Henüz özel prompt şablonu yok</p>
+            <p className="bz-empty__text">
+              Yerleşik varsayılan promptlar kullanılıyor. Kendi şablonunuzu eklemek için yukarıdaki düğmeleri kullanın.
+            </p>
+          </div>
+        </div>
       ) : (
         <div className="space-y-3">
           {templateList.map((tpl) => {
             const meta = PROMPT_TYPE_META[tpl.type] ?? DEFAULT_PROMPT_TYPE_META;
             const Icon = meta.icon;
             return (
-              <GlassCard key={tpl.id} className="relative">
+              <GlassCard key={tpl.id} hover={false}>
                 <div className="flex items-start gap-3">
-                  <div className={cn("h-9 w-9 rounded-xl flex items-center justify-center flex-shrink-0",
-                    tpl.type === "HR_PDR_ANALYSIS" ? "bg-primary/10" : "bg-purple-500/10"
-                  )}>
-                    <Icon className={cn("h-4.5 w-4.5", meta.color)} />
-                  </div>
+                  <span className="bz-icon-box" aria-hidden="true">
+                    <Icon className={meta.iconClass} />
+                  </span>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <p className="text-sm font-semibold text-foreground truncate">{tpl.name}</p>
                       {tpl.isDefault && (
-                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-accent-green/10 text-accent-green flex items-center gap-1">
-                          <Star className="h-2.5 w-2.5" />
+                        <span className="bz-chip bz-chip--success">
+                          <Star />
                           Varsayılan
                         </span>
                       )}
                       {!tpl.isActive && (
-                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-muted text-muted-foreground">
-                          Pasif
-                        </span>
+                        <span className="bz-chip bz-chip--outline">Pasif</span>
                       )}
                     </div>
-                    <p className={cn("text-[11px] font-medium", meta.color)}>{meta.label}</p>
-                    <p className="text-xs text-muted-foreground mt-1 line-clamp-2 font-mono">
+                    <p className={cn("text-xs font-medium", meta.labelClass)}>{meta.label}</p>
+                    <p className="mt-2 text-xs text-fg3 line-clamp-2 font-mono leading-relaxed">
                       {tpl.systemPrompt.slice(0, 150)}...
                     </p>
                   </div>
-                  <div className="flex items-center gap-1 flex-shrink-0">
+                  <div className="flex items-center gap-0.5 flex-shrink-0 -mr-1.5 -mt-1">
                     <button
+                      type="button"
                       onClick={() => openEdit(tpl)}
-                      className="p-1.5 rounded-lg hover:bg-primary/10 transition-colors"
+                      className="bz-icon-btn bz-icon-btn--sm"
                       title="Düzenle"
+                      aria-label={`${tpl.name} şablonunu düzenle`}
                     >
-                      <Pencil className="h-3.5 w-3.5 text-primary" />
+                      <Pencil />
                     </button>
                     <button
+                      type="button"
                       onClick={() => handleDelete(tpl.id)}
                       disabled={deleteTemplate.isPending}
-                      className="p-1.5 rounded-lg hover:bg-destructive/10 transition-colors"
+                      className="bz-icon-btn bz-icon-btn--sm hover:text-danger-ink"
                       title="Sil"
+                      aria-label={`${tpl.name} şablonunu sil`}
                     >
-                      <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                      <Trash2 />
                     </button>
                   </div>
                 </div>
@@ -936,9 +997,10 @@ function PromptTemplatesSection() {
           />
         )}
       </AnimatePresence>
-    </div>
+    </section>
   );
 }
+
 
 function PromptTemplateFormDialog({
   open,
@@ -1022,109 +1084,117 @@ function PromptTemplateFormDialog({
   const meta = PROMPT_TYPE_META[promptType] ?? DEFAULT_PROMPT_TYPE_META;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+      <div className="bz-scrim" aria-hidden="true" />
       <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.95 }}
-        className="w-full max-w-2xl mx-4 max-h-[90vh] flex flex-col"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="ai-prompt-dialog-title"
+        initial={{ opacity: 0, scale: 0.98, y: 8 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.98, y: 8 }}
+        transition={{ duration: 0.2 }}
+        className="relative z-modal flex max-h-[86vh] w-full max-w-[720px] flex-col overflow-hidden rounded-3xl border border-glass-border bg-popover shadow-3 backdrop-blur-xl"
       >
-        <GlassCard className="rounded-2xl flex flex-col overflow-hidden">
-          <div className="flex items-center justify-between mb-4 shrink-0">
-            <div className="flex items-center gap-2">
-              <meta.icon className={cn("h-5 w-5", meta.color)} />
-              <h2 className="text-lg font-semibold text-foreground">
-                {isEditing ? "Prompt Şablonunu Düzenle" : `Yeni ${meta.label} Promptu`}
+        <div className="flex shrink-0 items-start justify-between gap-4 px-6 pt-5 pb-4">
+          <div className="flex items-start gap-3">
+            <span className="bz-icon-box" aria-hidden="true">
+              <meta.icon className={meta.iconClass} />
+            </span>
+            <div>
+              <h2
+                id="ai-prompt-dialog-title"
+                className="font-display text-[19px] font-bold text-foreground"
+              >
+                {isEditing ? "Prompt şablonunu düzenle" : `Yeni ${meta.label.toLocaleLowerCase("tr")} promptu`}
               </h2>
+              <p className="mt-0.5 text-[13px] text-fg2">{meta.label}</p>
             </div>
-            <button onClick={onClose} className="p-1 rounded-lg hover:bg-muted/50 transition-colors">
-              <X className="h-4 w-4 text-muted-foreground" />
-            </button>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="bz-icon-btn bz-icon-btn--sm -mr-2"
+            aria-label="Kapat"
+            title="Kapat"
+          >
+            <X />
+          </button>
+        </div>
+
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 pb-5">
+          <div className="bz-form-row">
+            <label htmlFor="ai-prompt-name" className="bz-label">Şablon adı</label>
+            <input
+              id="ai-prompt-name"
+              type="text"
+              value={form.name}
+              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+              placeholder="Örn: Standart HR PDR analiz promptu"
+              className="bz-field"
+            />
           </div>
 
-          <div className="space-y-4 flex-1 overflow-y-auto min-h-0">
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-1.5">Şablon Adı</label>
+          <div className="bz-form-row">
+            <div className="flex items-center justify-between gap-2">
+              <label htmlFor="ai-prompt-system" className="bz-label">Sistem promptu</label>
+              <button
+                type="button"
+                onClick={handleLoadDefault}
+                className="bz-btn bz-btn--ghost bz-btn--sm -mr-3"
+              >
+                Varsayılanı yükle
+              </button>
+            </div>
+            <textarea
+              id="ai-prompt-system"
+              value={form.systemPrompt}
+              onChange={(e) => setForm((f) => ({ ...f, systemPrompt: e.target.value }))}
+              rows={14}
+              placeholder="AI'a gönderilecek sistem promptunu yazın..."
+              aria-describedby="ai-prompt-system-hint"
+              className="bz-field font-mono text-[13px] leading-relaxed"
+            />
+            <span id="ai-prompt-system-hint" className="bz-hint">
+              Bu prompt, oturum cevapları ile birlikte AI modeline gönderilecektir.
+              JSON formatında çıktı beklendiğini belirtin.
+            </span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+            <label className="bz-check">
               <input
-                type="text"
-                value={form.name}
-                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                placeholder="Örn: Standart HR PDR Analiz Promptu"
-                className="w-full h-10 px-3 rounded-xl bg-muted/50 border border-border/50 text-sm
-                  placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/30"
+                type="checkbox"
+                checked={form.isActive}
+                onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))}
               />
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-sm font-medium text-foreground">Sistem Promptu</label>
-                <button
-                  type="button"
-                  onClick={handleLoadDefault}
-                  className="text-xs text-primary hover:underline underline-offset-4"
-                >
-                  Varsayılanı Yükle
-                </button>
-              </div>
-              <textarea
-                value={form.systemPrompt}
-                onChange={(e) => setForm((f) => ({ ...f, systemPrompt: e.target.value }))}
-                rows={14}
-                placeholder="AI'a gönderilecek sistem promptunu yazın..."
-                className="w-full px-3 py-2.5 rounded-xl bg-muted/50 border border-border/50 text-sm font-mono leading-relaxed
-                  placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/30 resize-y"
+              Aktif
+            </label>
+            <label className="bz-check">
+              <input
+                type="checkbox"
+                checked={form.isDefault}
+                onChange={(e) => setForm((f) => ({ ...f, isDefault: e.target.checked }))}
               />
-              <p className="text-[10px] text-muted-foreground mt-1">
-                Bu prompt, oturum cevapları ile birlikte AI modeline gönderilecektir.
-                JSON formatında çıktı beklendiğini belirtin.
-              </p>
-            </div>
-
-            <div className="flex items-center gap-4">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={form.isActive}
-                  onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))}
-                  className="h-4 w-4 rounded border-border text-primary focus:ring-primary/30"
-                />
-                <span className="text-sm text-foreground">Aktif</span>
-              </label>
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={form.isDefault}
-                  onChange={(e) => setForm((f) => ({ ...f, isDefault: e.target.checked }))}
-                  className="h-4 w-4 rounded border-border text-primary focus:ring-primary/30"
-                />
-                <span className="text-sm text-foreground">Varsayılan şablon olarak ayarla</span>
-              </label>
-            </div>
+              Varsayılan şablon olarak ayarla
+            </label>
           </div>
+        </div>
 
-          <div className="flex gap-3 mt-6 shrink-0">
-            <button
-              onClick={onClose}
-              className="flex-1 h-10 rounded-xl border border-border/50 text-sm font-medium
-                text-muted-foreground hover:bg-muted/50 transition-colors"
-            >
-              İptal
-            </button>
-            <motion.button
-              onClick={handleSubmit}
-              disabled={isPending}
-              className={cn(
-                "flex-1 h-10 rounded-xl text-white text-sm font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2",
-                promptType === "PSYCHOLOGICAL_ANALYSIS" ? "bg-purple-500 hover:bg-purple-500/90" : "bg-primary hover:bg-primary/90",
-              )}
-              whileHover={{ scale: 1.01 }}
-              whileTap={{ scale: 0.98 }}
-            >
-              {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-              {isEditing ? "Güncelle" : "Oluştur"}
-            </motion.button>
-          </div>
-        </GlassCard>
+        <div className="flex shrink-0 justify-end gap-2 border-t border-divider px-6 py-4">
+          <button type="button" onClick={onClose} className="bz-btn">
+            Vazgeç
+          </button>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={isPending}
+            className="bz-btn bz-btn--primary"
+          >
+            {isPending && <Loader2 className="animate-spin" />}
+            {isEditing ? "Değişiklikleri kaydet" : "Şablonu oluştur"}
+          </button>
+        </div>
       </motion.div>
     </div>
   );

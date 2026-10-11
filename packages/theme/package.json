@@ -1,0 +1,150 @@
+{
+  "name": "@bizmo/theme",
+  "version": "1.1.0",
+  "description": "Bizmo Universal Theme — Bizmo.OS tasarım dilinin tüm yazılımlarda kullanılabilen token, bileşen, AG Grid, grafik ve three.js teması",
+  "license": "UNLICENSED",
+  "private": true,
+  "packageManager": "pnpm@11.24.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/BizmoTechnology/Bizmo.UniversalTheme.git"
+  },
+  "type": "module",
+  "sideEffects": [
+    "*.css"
+  ],
+  "files": [
+    "*.css",
+    "*.ts",
+    "*.cjs",
+    "tokens.json",
+    "DESIGN.md",
+    "README.md",
+    "preview.html",
+    "dist",
+    "platforms",
+    "scripts",
+    "tests"
+  ],
+  "exports": {
+    "./tokens.css": "./tokens.css",
+    "./components.css": "./components.css",
+    "./tailwind.css": "./tailwind.css",
+    "./shadcn.css": "./shadcn.css",
+    "./ag-grid.css": "./ag-grid.css",
+    "./tailwind.preset.cjs": "./tailwind.preset.cjs",
+    "./tokens.json": "./tokens.json",
+    "./tokens": {
+      "types": "./dist/tokens.d.ts",
+      "import": "./dist/tokens.js",
+      "default": "./dist/tokens.js"
+    },
+    "./ag-grid": {
+      "types": "./dist/ag-grid.d.ts",
+      "import": "./dist/ag-grid.js",
+      "default": "./dist/ag-grid.js"
+    },
+    "./charts": {
+      "types": "./dist/charts.d.ts",
+      "import": "./dist/charts.js",
+      "default": "./dist/charts.js"
+    },
+    "./three": {
+      "types": "./dist/three.d.ts",
+      "import": "./dist/three.js",
+      "default": "./dist/three.js"
+    },
+    "./icons": {
+      "types": "./dist/icons.d.ts",
+      "import": "./dist/icons.js",
+      "default": "./dist/icons.js"
+    },
+    "./layout": {
+      "types": "./dist/layout.d.ts",
+      "import": "./dist/layout.js",
+      "default": "./dist/layout.js"
+    },
+    "./pickers": {
+      "types": "./dist/pickers.d.ts",
+      "import": "./dist/pickers.js",
+      "default": "./dist/pickers.js"
+    },
+    "./gestures": {
+      "types": "./dist/gestures.d.ts",
+      "import": "./dist/gestures.js",
+      "default": "./dist/gestures.js"
+    },
+    "./location": {
+      "types": "./dist/location.d.ts",
+      "import": "./dist/location.js",
+      "default": "./dist/location.js"
+    },
+    "./alerts": {
+      "types": "./dist/alerts.d.ts",
+      "import": "./dist/alerts.js",
+      "default": "./dist/alerts.js"
+    },
+    "./scan": {
+      "types": "./dist/scan.d.ts",
+      "import": "./dist/scan.js",
+      "default": "./dist/scan.js"
+    },
+    "./labels": {
+      "types": "./dist/labels.d.ts",
+      "import": "./dist/labels.js",
+      "default": "./dist/labels.js"
+    },
+    "./privacy": {
+      "types": "./dist/privacy.d.ts",
+      "import": "./dist/privacy.js",
+      "default": "./dist/privacy.js"
+    },
+    "./offline": {
+      "types": "./dist/offline.d.ts",
+      "import": "./dist/offline.js",
+      "default": "./dist/offline.js"
+    },
+    "./records": {
+      "types": "./dist/records.d.ts",
+      "import": "./dist/records.js",
+      "default": "./dist/records.js"
+    },
+    "./lists": {
+      "types": "./dist/lists.d.ts",
+      "import": "./dist/lists.js",
+      "default": "./dist/lists.js"
+    },
+    "./planning": {
+      "types": "./dist/planning.d.ts",
+      "import": "./dist/planning.js",
+      "default": "./dist/planning.js"
+    },
+    "./quality": {
+      "types": "./dist/quality.d.ts",
+      "import": "./dist/quality.js",
+      "default": "./dist/quality.js"
+    },
+    "./docs": {
+      "types": "./dist/docs.d.ts",
+      "import": "./dist/docs.js",
+      "default": "./dist/docs.js"
+    },
+    "./platforms/*": "./platforms/*"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "build:tokens": "node scripts/build.mjs --no-dist",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "check": "node scripts/check.mjs",
+    "test:unit": "node --test \"tests/unit/*.test.mjs\"",
+    "preview": "node scripts/build.mjs && node scripts/serve.mjs",
+    "test:visual": "node scripts/visual.mjs",
+    "test:visual:update": "node scripts/visual.mjs --update"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  }
+}

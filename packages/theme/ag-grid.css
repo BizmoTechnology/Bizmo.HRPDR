@@ -1,0 +1,56 @@
+/*
+ * Bizmo Universal Theme · AG Grid (CSS temaları, AG Grid ≤ v32 ve "legacy" kip)
+ * Kullanım: <div class="ag-theme-quartz ag-theme-bizmo"> … </div>
+ * AG Grid v33+ için ag-grid.ts (Theming API) tercih edilir; bu dosya yalnız eski sürümler içindir.
+ */
+.ag-theme-bizmo {
+  --ag-font-family: var(--bz-font-sans);
+  --ag-font-size: 13.5px;
+  --ag-foreground-color: var(--bz-text);
+  --ag-data-color: var(--bz-text);
+  --ag-secondary-foreground-color: var(--bz-text-3);
+  --ag-header-foreground-color: var(--bz-text-2);
+  --ag-background-color: var(--bz-surface);
+  --ag-header-background-color: var(--bz-grid-header-bg);
+  --ag-control-panel-background-color: var(--bz-surface);
+  --ag-subheader-background-color: var(--bz-grid-header-bg);
+  --ag-odd-row-background-color: transparent;
+  --ag-row-hover-color: var(--bz-grid-row-hover);
+  --ag-selected-row-background-color: var(--bz-grid-row-selected);
+  --ag-active-color: var(--bz-accent);
+  --ag-alpine-active-color: var(--bz-accent);
+  --ag-quartz-active-color: var(--bz-accent);
+  --ag-checkbox-checked-color: var(--bz-accent);
+  --ag-checkbox-unchecked-color: var(--bz-control-border);
+  --ag-range-selection-border-color: var(--bz-accent);
+  --ag-range-selection-background-color: var(--bz-accent-soft);
+  --ag-input-focus-border-color: var(--bz-focus);
+  --ag-input-focus-box-shadow: 0 0 0 3px var(--bz-accent-soft);
+  --ag-border-color: var(--bz-divider);
+  --ag-row-border-color: var(--bz-divider);
+  --ag-secondary-border-color: var(--bz-divider);
+  --ag-header-column-separator-display: none;
+  --ag-header-column-resize-handle-color: var(--bz-border-strong);
+  --ag-wrapper-border-radius: 16px;
+  --ag-border-radius: 10px;
+  --ag-grid-size: 6px;
+  --ag-icon-size: 16px;
+  --ag-row-height: var(--bz-row-regular);
+  --ag-header-height: 40px;
+  --ag-cell-horizontal-padding: 14px;
+  --ag-card-shadow: var(--bz-shadow-1);
+  --ag-popup-shadow: var(--bz-shadow-3);
+  --ag-tooltip-background-color: var(--bz-text);
+  --ag-modal-overlay-background-color: var(--bz-scrim);
+  --ag-borders: solid 1px;
+  --ag-borders-critical: solid 1px;
+  border-color: var(--bz-glass-border);
+}
+.ag-theme-bizmo .ag-header-cell-text {
+  font-weight: 600;
+  font-size: 12px;
+}
+.ag-theme-bizmo .ag-cell.is-num,
+.ag-theme-bizmo .ag-right-aligned-cell {
+  font-variant-numeric: tabular-nums;
+}

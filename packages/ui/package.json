@@ -13,6 +13,7 @@
     "react-dom": ">=18"
   },
   "dependencies": {
+    "@bizmo/theme": "file:../../packages/theme",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "framer-motion": "^11.2.10",

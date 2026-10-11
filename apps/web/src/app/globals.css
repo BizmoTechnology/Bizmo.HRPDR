@@ -1,134 +1,25 @@
-@tailwind base;
+/*
+ * PotansiyelHaritası · Yönetim paneli — Bizmo Universal Theme (@bizmo/theme, DESIGN.md)
+ *
+ * Katman sırası: Tailwind preflight (tw-base) < Bizmo bileşenleri (@layer bizmo, bz-* sınıfları)
+ * < uygulamanın kendi stilleri ve Tailwind utility'leri. Böylece preflight bz-* sınıflarını ezmez,
+ * utility'ler ise her zaman bz-* sınıflarının üstüne çıkar (!important gerekmez).
+ */
+@import "./layers.css";
+@import "@bizmo/theme/tokens.css";
+@import "@bizmo/theme/components.css";
+
+@layer tw-base {
+  @tailwind base;
+}
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   :root {
-    /* Ana yüzey */
-    --background: 240 7% 97%;
-    --foreground: 0 0% 7%;
-
-    /* Kartlar & Popover */
-    --card: 0 0% 100%;
-    --card-foreground: 0 0% 7%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 7%;
-
-    /* Birincil — Zümrüt yeşili (PotansiyelHaritası marka rengi) */
-    --primary: 153 60% 43%;
-    --primary-foreground: 0 0% 100%;
-
-    /* İkincil & Muted */
-    --secondary: 240 5% 96%;
-    --secondary-foreground: 0 0% 7%;
-    --muted: 240 5% 96%;
-    --muted-foreground: 0 0% 44%;
-
-    /* Accent */
-    --accent: 240 5% 96%;
-    --accent-foreground: 0 0% 7%;
-
-    /* Tehlike */
-    --destructive: 4 84% 60%;
-    --destructive-foreground: 0 0% 100%;
-
-    /* Kenarlık & Input */
-    --border: 0 0% 91%;
-    --input: 0 0% 91%;
-    --ring: 153 60% 43%;
-
-    /* Radius */
-    --radius: 1rem;
-
-    /* Vurgu renkleri */
-    --accent-blue: 153 60% 43%;
-    --accent-green: 142 71% 49%;
-    --accent-red: 4 84% 60%;
-    --accent-orange: 36 100% 50%;
-    --accent-purple: 280 59% 60%;
-    --accent-teal: 199 89% 68%;
-
-    /* Surface */
-    --surface-primary: 240 7% 97%;
-    --surface-elevated: 0 0% 100%;
-    --separator: 0 0% 0% / 0.08;
-
-    /* Sidebar */
-    --sidebar-background: 0 0% 98%;
-    --sidebar-foreground: 240 5% 26%;
-    --sidebar-primary: 153 60% 43%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 5% 96%;
-    --sidebar-accent-foreground: 240 6% 10%;
-    --sidebar-border: 220 13% 91%;
-    --sidebar-ring: 153 60% 43%;
-
-    /* Glass */
-    --glass-bg: 0 0% 100% / 0.72;
-    --glass-border: 0 0% 100% / 0.48;
-    --glass-blur: 16px;
-    --glass-saturate: 1.8;
-    --glass-shadow: 0 2px 8px rgba(0, 0, 0, 0.06), 0 12px 40px rgba(0, 0, 0, 0.04);
-    --glass-shadow-hover: 0 4px 16px rgba(0, 0, 0, 0.08), 0 16px 48px rgba(0, 0, 0, 0.06);
-    --glass-inset: 0 0 0 0.5px rgba(255, 255, 255, 0.06) inset;
-    --glass-inset-hover: 0 0 0 0.5px rgba(255, 255, 255, 0.1) inset;
-  }
-
-  .dark {
-    --background: 200 13% 5%;
-    --foreground: 160 10% 93%;
-
-    --card: 200 10% 9%;
-    --card-foreground: 160 10% 93%;
-    --popover: 200 10% 9%;
-    --popover-foreground: 160 10% 93%;
-
-    --primary: 153 60% 53%;
-    --primary-foreground: 200 13% 5%;
-
-    --secondary: 200 8% 14%;
-    --secondary-foreground: 160 10% 88%;
-    --muted: 200 8% 14%;
-    --muted-foreground: 200 5% 55%;
-
-    --accent: 200 8% 14%;
-    --accent-foreground: 160 10% 93%;
-
-    --destructive: 4 62% 45%;
-    --destructive-foreground: 0 0% 95%;
-
-    --border: 200 6% 16%;
-    --input: 200 6% 16%;
-    --ring: 153 60% 53%;
-
-    --accent-blue: 211 100% 50%;
-    --accent-green: 153 60% 53%;
-    --accent-red: 4 84% 60%;
-    --accent-orange: 36 100% 50%;
-    --accent-purple: 263 70% 58%;
-    --accent-teal: 172 66% 50%;
-
-    --surface-primary: 200 10% 9%;
-    --surface-elevated: 200 8% 14%;
-    --separator: 153 30% 40% / 0.08;
-
-    --sidebar-background: 200 13% 7%;
-    --sidebar-foreground: 160 10% 88%;
-    --sidebar-primary: 153 60% 53%;
-    --sidebar-primary-foreground: 200 13% 5%;
-    --sidebar-accent: 200 8% 14%;
-    --sidebar-accent-foreground: 160 10% 88%;
-    --sidebar-border: 200 6% 14%;
-    --sidebar-ring: 153 60% 53%;
-
-    --glass-bg: 200 10% 9% / 0.75;
-    --glass-border: 153 30% 40% / 0.10;
-    --glass-blur: 16px;
-    --glass-saturate: 1.6;
-    --glass-shadow: 0 2px 8px rgba(0, 0, 0, 0.25), 0 12px 40px rgba(0, 0, 0, 0.18);
-    --glass-shadow-hover: 0 4px 16px rgba(0, 0, 0, 0.3), 0 16px 48px rgba(0, 0, 0, 0.22);
-    --glass-inset: 0 0 0 0.5px rgba(62, 207, 142, 0.04) inset;
-    --glass-inset-hover: 0 0 0 0.5px rgba(62, 207, 142, 0.08) inset;
+    /* next/font ile kendi sunucumuzdan servis edilen Inter ve Manrope (KVKK, DESIGN.md §0.2) */
+    --bz-font-sans: var(--font-inter, "Inter Variable"), "Inter Variable", Inter, "Segoe UI", Helvetica, Arial, system-ui, sans-serif;
+    --bz-font-display: var(--font-manrope, "Manrope Variable"), "Manrope Variable", Manrope, "Segoe UI Semibold", "Arial Bold", system-ui, sans-serif;
   }
 
   * {
@@ -139,45 +30,103 @@
     @apply bg-background text-foreground antialiased;
     font-feature-settings: "cv11", "ss01";
   }
+
+  /* Manrope yalnız başlık ve büyük sayı içindir (DESIGN.md §3) */
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--bz-font-display);
+    letter-spacing: -0.015em;
+  }
+
+  ::selection {
+    background: rgb(109 185 44 / 0.28);
+  }
 }
 
 @layer components {
-  .glass-surface {
-    background: hsl(var(--glass-bg));
-    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-    border: 0.5px solid hsl(var(--glass-border));
-    box-shadow: var(--glass-inset), var(--glass-shadow);
-    transition: box-shadow 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-    will-change: backdrop-filter;
-  }
-
-  .glass-surface:hover {
-    box-shadow: var(--glass-inset-hover), var(--glass-shadow-hover);
-  }
-
+  /* Cam yalnız yüzen öğe ve kabukta (DESIGN.md §4.4); içerik kartları opaktır (.bz-card) */
+  .glass-surface,
   .glass-surface-static {
-    background: hsl(var(--glass-bg));
-    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-    border: 0.5px solid hsl(var(--glass-border));
-    box-shadow: var(--glass-inset), var(--glass-shadow);
-    contain: layout style;
-    will-change: backdrop-filter;
+    background: var(--bz-glass-bg);
+    -webkit-backdrop-filter: blur(var(--bz-glass-blur)) saturate(var(--bz-glass-saturate));
+    backdrop-filter: blur(var(--bz-glass-blur)) saturate(var(--bz-glass-saturate));
+    border: 1px solid var(--bz-glass-border);
+    box-shadow: var(--bz-shadow-1);
   }
 
+  /* Giriş alanı: .bz-field ölçüleri (42px, köşe 12, alan zemini; odakta yüzey + odak kenarı + yumuşak yeşil halka) */
   .form-input-base {
-    @apply w-full h-11 rounded-xl bg-muted/50 text-sm
-      placeholder:text-muted-foreground/50
-      focus:outline-none focus:ring-2 focus:ring-primary/30
-      border border-border/50 transition-colors;
+    width: 100%;
+    height: var(--bz-field-h);
+    border-radius: 12px;
+    background: var(--bz-field);
+    border: 1px solid var(--bz-field-border);
+    font-size: 14px;
+    color: var(--bz-text);
+    outline: none;
+    transition: border-color var(--bz-duration-fast), box-shadow var(--bz-duration-fast), background-color var(--bz-duration-fast);
+  }
+  .form-input-base::placeholder {
+    color: var(--bz-text-3);
+  }
+  .form-input-base:hover {
+    border-color: var(--bz-border-strong);
+  }
+  .form-input-base:focus {
+    background: var(--bz-surface);
+    border-color: var(--bz-focus);
+    box-shadow: 0 0 0 3px var(--bz-accent-soft);
   }
 
-  /* react-day-picker (Calendar) — birincil renkle uyum */
-  .rdp-root {
-    --rdp-accent-color: hsl(var(--primary));
-    --rdp-accent-background-color: hsl(var(--muted));
+  /* Dar üst barda arama hapı gizlenir (bz-topbar kapsayıcı sorgusu); yerine simge düğmesi görünür */
+  .topbar-search-icon {
+    display: none;
   }
+  @container bz-topbar (max-width: 760px) {
+    .topbar-search-icon {
+      display: inline-flex;
+    }
+  }
+
+  /* react-day-picker (Calendar): seçili gün yeşil dolgu + lacivert yazı, bugün yeşil halka (DESIGN.md §19.2) */
+  .rdp-root {
+    --rdp-accent-color: var(--bz-accent);
+    --rdp-accent-background-color: var(--bz-accent-soft);
+  }
+
+  /* sonner bildirimleri: .bz-toast görünümü — cam yüzey, 16 köşe, durum tonu yüzeyle karışık (DESIGN.md §17) */
+  html [data-sonner-toaster][data-theme] {
+    --normal-bg: var(--bz-glass-strong);
+    --normal-border: var(--bz-glass-border);
+    --normal-text: var(--bz-text);
+    --success-bg: color-mix(in oklab, var(--bz-success-tone) 9%, var(--bz-surface));
+    --success-border: color-mix(in oklab, var(--bz-success-tone) 30%, var(--bz-surface));
+    --success-text: var(--bz-success-ink);
+    --info-bg: color-mix(in oklab, var(--bz-info-tone) 9%, var(--bz-surface));
+    --info-border: color-mix(in oklab, var(--bz-info-tone) 30%, var(--bz-surface));
+    --info-text: var(--bz-info-ink);
+    --warning-bg: color-mix(in oklab, var(--bz-warning-tone) 11%, var(--bz-surface));
+    --warning-border: color-mix(in oklab, var(--bz-warning-tone) 34%, var(--bz-surface));
+    --warning-text: var(--bz-warning-ink);
+    --error-bg: color-mix(in oklab, var(--bz-danger-tone) 9%, var(--bz-surface));
+    --error-border: color-mix(in oklab, var(--bz-danger-tone) 30%, var(--bz-surface));
+    --error-text: var(--bz-danger-ink);
+    --border-radius: 16px;
+    font-family: var(--bz-font-sans);
+  }
+  html [data-sonner-toaster] [data-sonner-toast] {
+    box-shadow: var(--bz-shadow-3);
+    -webkit-backdrop-filter: blur(var(--bz-glass-blur)) saturate(var(--bz-glass-saturate));
+    backdrop-filter: blur(var(--bz-glass-blur)) saturate(var(--bz-glass-saturate));
+  }
+}
+
+/* Vurgu (DESIGN.md §3.1): soluk metin içindeki strong / b birincil metin rengine çıkar */
+:where(.text-fg2, .text-fg3, .text-muted-foreground) > :where(strong, b),
+:where(.text-fg2, .text-fg3, .text-muted-foreground) > :where(p, span, li) > :where(strong, b) {
+  color: var(--bz-text);
 }
 
 @layer utilities {

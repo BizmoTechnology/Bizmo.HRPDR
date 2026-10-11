@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "bizmo-theme-preview",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["scripts/serve.mjs", "4390"],
+      "port": 4390
+    }
+  ]
+}

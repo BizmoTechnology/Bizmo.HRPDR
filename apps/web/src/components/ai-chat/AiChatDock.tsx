@@ -6,9 +6,6 @@ import { X } from "lucide-react";
 import { AiChatButton } from "./AiChatButton";
 import { AiChatWorkArea } from "./AiChatWorkArea";
 
-/** Admin üst çubuğu (h-14 / sm:h-16) + güvenli alan — panel bunun altından başlar */
-const PANEL_TOP_CLASS = "top-14 sm:top-16";
-
 export function AiChatDock() {
   const [open, setOpen] = useState(false);
 
@@ -45,42 +42,35 @@ export function AiChatDock() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="fixed inset-0 z-[58] bg-black/50 backdrop-blur-sm md:bg-black/35"
+              transition={{ duration: 0.18 }}
+              className="bz-scrim cursor-default"
               onClick={() => setOpen(false)}
             />
 
+            {/* Bizmo çekmecesi (DESIGN.md §16): kenarlardan 8px, köşe 26, cam yüzey; sayfa bağlamı görünür kalır */}
             <motion.div
               role="dialog"
               aria-modal="true"
               aria-labelledby="ai-chat-panel-title"
-              initial={{ x: "105%", opacity: 0.96 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: "105%", opacity: 0.96 }}
-              transition={{ type: "spring", damping: 30, stiffness: 320 }}
-              className={`pointer-events-none fixed ${PANEL_TOP_CLASS} bottom-0 right-0 z-[59] flex max-h-[calc(100dvh-3.5rem)] justify-end overflow-visible pb-2 pt-3 sm:right-3 sm:bottom-3 sm:max-h-[calc(100dvh-5.5rem)] sm:pb-3 sm:pr-3 sm:pt-4`}
+              initial={{ x: "104%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "104%" }}
+              transition={{ duration: 0.24, ease: [0.32, 0.72, 0, 1] }}
+              className="fixed bottom-2 right-2 top-2 z-modal flex w-[min(560px,calc(100vw-16px))] flex-col overflow-hidden rounded-3xl border border-glass-border bg-popover shadow-3 backdrop-blur-xl"
             >
-              {/* Kart genişliği tekrar tam viewport / 560px — Kapat küçük ekranda kart köşesinde, sm+ solda */}
-              <div className="relative pointer-events-auto flex h-full w-full max-w-[min(100vw,560px)] min-w-0 flex-col">
-                <button
-                  type="button"
-                  onClick={() => setOpen(false)}
-                  aria-label="Kapat"
-                  className="pointer-events-auto fixed right-3 top-16 z-[60] flex h-11 w-11 items-center justify-center rounded-full border border-border/50 bg-background/95 text-muted-foreground shadow-lg shadow-black/10 backdrop-blur-xl transition hover:border-border hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:border-white/15 dark:bg-background/90 dark:shadow-black/40 sm:absolute sm:inset-auto sm:right-full sm:top-1 sm:z-10 sm:mr-3 sm:mt-0.5"
-                >
-                  <X className="h-5 w-5" strokeWidth={2} />
-                </button>
-
-                <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border/40 bg-background/80 shadow-2xl shadow-black/15 backdrop-blur-xl dark:bg-background/75 dark:shadow-black/40">
-                  <span id="ai-chat-panel-title" className="sr-only">
-                    İK AI Asistanı sohbet paneli
-                  </span>
-                  <AiChatWorkArea
-                    embedded
-                    className="min-h-0 flex-1 border-0 bg-transparent pt-1"
-                  />
-                </div>
-              </div>
+              <span id="ai-chat-panel-title" className="sr-only">
+                İK AI Asistanı sohbet paneli
+              </span>
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                aria-label="Kapat"
+                title="Kapat (Esc)"
+                className="bz-icon-btn absolute right-3 top-3 z-10"
+              >
+                <X />
+              </button>
+              <AiChatWorkArea embedded className="min-h-0 flex-1 border-0 bg-transparent" />
             </motion.div>
           </>
         ) : null}

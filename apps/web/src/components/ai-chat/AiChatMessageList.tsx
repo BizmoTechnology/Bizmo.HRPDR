@@ -33,7 +33,7 @@ const assistantMarkdownComponents: Components = {
     </p>
   ),
   ul: ({ children }) => (
-    <ul className="my-2 space-y-1.5 pl-4 [list-style-type:disc] marker:text-primary">
+    <ul className="my-2 space-y-1.5 pl-4 [list-style-type:disc] marker:text-brand-ink">
       {children}
     </ul>
   ),
@@ -113,7 +113,7 @@ const assistantMarkdownComponents: Components = {
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="font-medium text-primary underline-offset-2 hover:underline"
+      className="font-medium text-brand-ink underline-offset-2 hover:underline"
     >
       {children}
     </a>
@@ -133,10 +133,11 @@ export function AiChatMessageList({
         <div
           key={m.id}
           className={cn(
-            "w-full min-w-0 max-w-[min(100%,36rem)] rounded-2xl px-3.5 py-3 text-sm leading-relaxed shadow-sm sm:px-4 sm:py-3.5",
+            // Bizmo ileti balonu (DESIGN.md §22): gelen yüzey + cam kenar, giden yeşil yumuşak; gönderen tarafında 6px "kuyruk"
+            "w-fit min-w-0 max-w-[min(85%,36rem)] rounded-2xl px-3.5 py-3 text-sm leading-relaxed sm:px-4 sm:py-3.5",
             m.role === "user"
-              ? "ml-auto bg-primary/90 text-primary-foreground"
-              : "mr-auto border border-border/50 bg-gradient-to-b from-card/90 to-card/70 text-foreground shadow-md backdrop-blur-sm dark:border-white/10 dark:from-white/[0.07] dark:to-white/[0.03]",
+              ? "ml-auto rounded-br-sm bg-brand-soft text-foreground"
+              : "mr-auto w-full rounded-bl-sm border border-glass-border bg-card text-foreground shadow-1",
           )}
         >
           {m.role === "assistant" ? (

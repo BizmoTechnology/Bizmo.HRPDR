@@ -4,7 +4,8 @@
   "private": true,
   "workspaces": [
     "apps/*",
-    "packages/*",
+    "packages/shared",
+    "packages/ui",
     "server"
   ],
   "scripts": {
@@ -19,7 +20,8 @@
     "db:seed": "npm run prisma:seed -w server",
     "db:studio": "npm run prisma:studio -w server",
     "docker:dev": "docker compose up -d postgres redis",
-    "docker:down": "docker compose down"
+    "docker:down": "docker compose down",
+    "theme:sync": "node scripts/theme-sync.mjs"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",

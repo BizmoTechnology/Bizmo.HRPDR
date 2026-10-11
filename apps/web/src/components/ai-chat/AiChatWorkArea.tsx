@@ -113,12 +113,13 @@ export function AiChatWorkArea({
     >
       <div
         className={cn(
-          "flex shrink-0 items-start justify-between gap-2 border-b border-border/50 px-3 pb-2 pt-4 sm:px-4 sm:pb-3 sm:pt-5",
-          embedded ? "" : "rounded-t-2xl",
+          "flex shrink-0 items-start justify-between gap-2 border-b border-divider px-3 pb-2 pt-4 sm:px-4 sm:pb-3 sm:pt-5",
+          // Çekmecede sağ üst köşe Kapat düğmesine ayrılır
+          embedded ? "pr-16 sm:pr-16 pl-5 sm:pl-6" : "rounded-t-2xl",
         )}
       >
-        <div className="min-w-0 flex-1 pr-10">
-          <h2 className="text-base font-semibold leading-tight tracking-tight text-foreground">
+        <div className="min-w-0 flex-1">
+          <h2 className="text-base font-bold leading-tight text-foreground">
             İK AI Asistanı
           </h2>
           <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-muted-foreground sm:text-xs">
@@ -129,20 +130,22 @@ export function AiChatWorkArea({
           <button
             type="button"
             onClick={newChat}
-            className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="bz-icon-btn"
             title="Yeni sohbet"
+            aria-label="Yeni sohbet"
           >
-            <MessageSquarePlus className="h-5 w-5" />
+            <MessageSquarePlus />
           </button>
           {conversationId ? (
             <button
               type="button"
               onClick={() => void removeChat()}
               disabled={busy}
-              className="rounded-lg p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+              className="bz-icon-btn hover:bg-danger-soft hover:text-danger-ink"
               title="Sohbeti sil"
+              aria-label="Sohbeti sil"
             >
-              <Trash2 className="h-5 w-5" />
+              <Trash2 />
             </button>
           ) : null}
         </div>
@@ -216,7 +219,7 @@ export function AiChatWorkArea({
           {conversationListOpen ? (
             <>
               <div className="flex shrink-0 items-center justify-between gap-1 border-b border-border/35 px-2 py-2">
-                <span className="min-w-0 flex-1 truncate text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                <span className="bz-kicker min-w-0 flex-1 truncate">
                   Sohbetler
                 </span>
                 <button

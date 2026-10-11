@@ -10,6 +10,7 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
+    "@bizmo/theme": "file:../../packages/theme",
     "@hookform/resolvers": "^3.9.0",
     "@ph/shared": "*",
     "@ph/ui": "*",

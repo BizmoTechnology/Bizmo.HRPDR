@@ -44,26 +44,9 @@ export const ScoreGauge = ({
 
   const arcPath = `M ${startX} ${startY} A ${radius} ${radius} 0 1 1 ${endX} ${endY}`;
 
+  // Durum tonu yalnız işarette (yay); değer metin renginde (DESIGN.md §28.2)
   const scoreClass =
-    ratio >= 0.7
-      ? "stroke-emerald-500"
-      : ratio >= 0.4
-        ? "stroke-amber-500"
-        : "stroke-destructive";
-
-  const scoreTextClass =
-    ratio >= 0.7
-      ? "fill-emerald-500"
-      : ratio >= 0.4
-        ? "fill-amber-500"
-        : "fill-destructive";
-
-  const glowClass =
-    ratio >= 0.7
-      ? "drop-shadow-[0_0_6px_rgba(16,185,129,0.4)]"
-      : ratio >= 0.4
-        ? "drop-shadow-[0_0_6px_rgba(245,158,11,0.4)]"
-        : "drop-shadow-[0_0_6px_rgba(239,68,68,0.4)]";
+    ratio >= 0.7 ? "stroke-success" : ratio >= 0.4 ? "stroke-warning" : "stroke-danger";
 
   return (
     <div className={cn("flex flex-col items-center gap-1", className)}>
@@ -74,7 +57,7 @@ export const ScoreGauge = ({
           fill="none"
           strokeWidth={stroke}
           strokeLinecap="round"
-          className="stroke-muted/40"
+          className="stroke-surface-3"
         />
         {/* Score arc */}
         <path
@@ -83,7 +66,7 @@ export const ScoreGauge = ({
           strokeWidth={stroke}
           strokeLinecap="round"
           strokeDasharray={`${filled} ${arcLength}`}
-          className={cn(scoreClass, glowClass, "transition-all duration-700 ease-out")}
+          className={cn(scoreClass, "transition-[stroke-dasharray] duration-500 ease-bizmo")}
         />
         {/* Score text */}
         <text
@@ -91,14 +74,14 @@ export const ScoreGauge = ({
           y={center}
           textAnchor="middle"
           dominantBaseline="central"
-          className={cn(fontSize, "font-bold tabular-nums", scoreTextClass)}
+          className={cn(fontSize, "fill-foreground font-display font-extrabold tabular-nums")}
           style={{ fontSize: size === "lg" ? 18 : size === "md" ? 14 : 11 }}
         >
           {score.toFixed(1)}
         </text>
       </svg>
       {label && (
-        <span className="text-[10px] text-muted-foreground font-medium text-center leading-tight">
+        <span className="text-[11px] text-muted-foreground font-medium text-center leading-tight">
           {label}
         </span>
       )}

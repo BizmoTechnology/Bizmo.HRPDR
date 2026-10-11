@@ -1,0 +1,105 @@
+/*
+ * Bizmo Universal Theme · shadcn/ui (Tailwind v4)
+ *
+ *   @import "tailwindcss";
+ *   @import "@bizmo/theme/tokens.css";
+ *   @import "@bizmo/theme/shadcn.css";
+ *
+ * shadcn bileşenleri değiştirilmeden Bizmo görünümüne geçer. Ad eşlemesi:
+ *   primary = Bizmo yeşili (yazı lacivert) · accent = hover zemini (shadcn anlamı) · destructive = tehlike
+ *   Bizmo'ya özgü renkler için ek adlar: brand, data, success, warning, info, chart-1..6
+ */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *, .dark, .dark *));
+
+@theme inline {
+  --font-sans: var(--bz-font-sans);
+  --font-display: var(--bz-font-display);
+  --font-mono: var(--bz-font-mono);
+
+  --color-background: var(--bz-bg);
+  --color-foreground: var(--bz-text);
+  --color-card: var(--bz-surface);
+  --color-card-foreground: var(--bz-text);
+  --color-popover: var(--bz-glass-strong);
+  --color-popover-foreground: var(--bz-text);
+  --color-primary: var(--bz-accent);
+  --color-primary-foreground: var(--bz-accent-contrast);
+  --color-secondary: var(--bz-field);
+  --color-secondary-foreground: var(--bz-text);
+  --color-muted: var(--bz-field);
+  --color-muted-foreground: var(--bz-text-3);
+  --color-accent: var(--bz-hover);
+  --color-accent-foreground: var(--bz-text);
+  --color-destructive: var(--bz-danger-solid);
+  --color-destructive-foreground: #ffffff;
+  --color-border: var(--bz-border);
+  --color-input: var(--bz-field-border);
+  --color-ring: var(--bz-accent);
+  --color-sidebar: var(--bz-sidebar-bg);
+  --color-sidebar-foreground: var(--bz-text-2);
+  --color-sidebar-primary: var(--bz-accent);
+  --color-sidebar-primary-foreground: var(--bz-accent-contrast);
+  --color-sidebar-accent: var(--bz-accent-soft);
+  --color-sidebar-accent-foreground: var(--bz-text);
+  --color-sidebar-border: var(--bz-glass-border);
+  --color-sidebar-ring: var(--bz-accent);
+  --color-chart-1: var(--bz-series-1);
+  --color-chart-2: var(--bz-series-2);
+  --color-chart-3: var(--bz-series-3);
+  --color-chart-4: var(--bz-series-4);
+  --color-chart-5: var(--bz-series-5);
+  --color-chart-6: var(--bz-series-6);
+
+  --color-brand: var(--bz-accent);
+  --color-brand-ink: var(--bz-accent-ink);
+  --color-brand-soft: var(--bz-accent-soft);
+  --color-data: var(--bz-data);
+  --color-data-ink: var(--bz-data-ink);
+  --color-data-solid: var(--bz-data-solid);
+  --color-on-data: var(--bz-data-contrast);
+  --color-success: var(--bz-success);
+  --color-success-ink: var(--bz-success-ink);
+  --color-warning: var(--bz-warning);
+  --color-warning-ink: var(--bz-warning-ink);
+  --color-info: var(--bz-info);
+
+  --radius-sm: var(--bz-radius-sm);
+  --radius-md: var(--bz-radius-md);
+  --radius-lg: var(--bz-radius-lg);
+  --radius-xl: var(--bz-radius-lg);
+}
+
+/* shadcn/ui'nin doğrudan okuduğu değişkenler */
+:root {
+  --background: var(--bz-bg);
+  --foreground: var(--bz-text);
+  --card: var(--bz-surface);
+  --card-foreground: var(--bz-text);
+  --popover: var(--bz-glass-strong);
+  --popover-foreground: var(--bz-text);
+  --primary: var(--bz-accent);
+  --primary-foreground: var(--bz-accent-contrast);
+  --secondary: var(--bz-field);
+  --secondary-foreground: var(--bz-text);
+  --muted: var(--bz-field);
+  --muted-foreground: var(--bz-text-3);
+  --accent: var(--bz-hover);
+  --accent-foreground: var(--bz-text);
+  --destructive: var(--bz-danger-solid);
+  --border: var(--bz-border);
+  --input: var(--bz-field-border);
+  --ring: var(--bz-accent);
+  --radius: var(--bz-radius-md);
+  --chart-1: var(--bz-series-1);
+  --chart-2: var(--bz-series-2);
+  --chart-3: var(--bz-series-3);
+  --chart-4: var(--bz-series-4);
+  --chart-5: var(--bz-series-5);
+}
+
+/* Vurgu (DESIGN.md §3.1): soluk metin içindeki strong / b birincil renge çıkar */
+:where(.text-muted-foreground) > :where(strong, b),
+:where(.text-muted-foreground) > :where(p, span, li) > :where(strong, b) {
+  color: var(--bz-text);
+}
+

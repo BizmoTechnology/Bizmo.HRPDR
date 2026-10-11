@@ -1,5 +1,4 @@
 import type { Prisma } from "@prisma/client";
-import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { decrypt } from "../lib/crypto.js";
 import { HttpError } from "../lib/http-error.js";
@@ -319,17 +318,21 @@ Değerlendirme: ${session.assessment.title}`;
     Object.assign(data, deriveFieldsFromHrPdr(session, parsed));
   }
 
-  await prisma.assessmentSession.update({ where: { id: sessionId }, data });
+  await prisma.$transaction(async (tx) => {
+    // İnceleme kararıyla aynı kilidi alır; analiz ve onay/ret birbirini ezmez
+    await lockSession(tx, sessionId);
+    await tx.assessmentSession.update({ where: { id: sessionId }, data });
 
-  if (analysisType === "HR_PDR_ANALYSIS") {
-    // Yeni AI önerisi önceki onayı geçersiz kılar: skorlar tekrar deterministik
-    // skala skorlarına döner, yeni öneri İK onayını bekler.
-    const reset = await prisma.analysisReview.updateMany({
-      where: { sessionId, status: "APPROVED" },
-      data: { status: "PENDING", decidedAt: null },
-    });
-    if (reset.count > 0) await applyReviewToDimensionScores(sessionId, "PENDING");
-  }
+    if (analysisType === "HR_PDR_ANALYSIS") {
+      // Yeni AI önerisi önceki onayı geçersiz kılar: skorlar tekrar deterministik
+      // skala skorlarına döner, yeni öneri İK onayını bekler.
+      const reset = await tx.analysisReview.updateMany({
+        where: { sessionId, status: "APPROVED" },
+        data: { status: "PENDING", decidedAt: null },
+      });
+      if (reset.count > 0) await applyReviewToDimensionScores(tx, sessionId, "PENDING");
+    }
+  });
 
   return parsed;
 }
@@ -342,10 +345,11 @@ Değerlendirme: ${session.assessment.title}`;
  *   çalışsa bile onaysız AI skoru panolara/raporlara yansımaz.
  */
 export async function applyReviewToDimensionScores(
+  tx: Prisma.TransactionClient,
   sessionId: string,
   status: "PENDING" | "APPROVED" | "REJECTED",
 ): Promise<void> {
-  const session = await prisma.assessmentSession.findUnique({
+  const session = await tx.assessmentSession.findUnique({
     where: { id: sessionId },
     select: {
       status: true,
@@ -374,39 +378,47 @@ export async function applyReviewToDimensionScores(
     next = scaleScores;
   }
 
-  await prisma.assessmentSession.update({
+  await tx.assessmentSession.update({
     where: { id: sessionId },
     data: { dimensionScores: next as Prisma.InputJsonValue },
   });
 }
 
-const narrativeText = z.string().trim().min(1).max(500);
-const narrativeList = z.array(narrativeText).max(20);
+/**
+ * Oturum satırını işlem sonuna kadar kilitler. İnceleme kararı (onay/ret) ile
+ * analiz sonucunun yazımı bu kilitle sıralanır; böylece inceleme durumu ve
+ * dimensionScores her zaman birbiriyle tutarlı kalır.
+ */
+export async function lockSession(tx: Prisma.TransactionClient, sessionId: string): Promise<void> {
+  await tx.$queryRaw`SELECT id FROM "AssessmentSession" WHERE id = ${sessionId} FOR UPDATE`;
+}
 
-/** AI'dan gelen anlatı alanları; şemaya uymayan çıktı oturum alanlarına yazılmaz. */
-const hrPdrNarrativeSchema = z.object({
-  performanceSummary: z.string().trim().min(1).max(4000).optional(),
-  strengths: narrativeList.optional(),
-  developmentAreas: z
-    .array(z.object({ area: narrativeText, recommendation: z.string().max(1000).optional() }))
-    .max(20)
-    .optional(),
-  trainingNeeds: narrativeList.optional(),
-  goals: z
-    .object({
-      shortTerm: narrativeList.optional(),
-      midTerm: narrativeList.optional(),
-      longTerm: narrativeList.optional(),
-    })
-    .optional(),
-});
+const MAX_NARRATIVE_ITEMS = 20;
+const MAX_NARRATIVE_ITEM_LENGTH = 500;
+const MAX_SUMMARY_LENGTH = 4000;
+
+/** Metin değilse veya boşsa null; uzunsa kırpılır. */
+function narrativeText(value: unknown, maxLength = MAX_NARRATIVE_ITEM_LENGTH): string | null {
+  if (typeof value !== "string") return null;
+  const text = value.trim();
+  return text ? text.slice(0, maxLength) : null;
+}
+
+/** Yalnızca geçerli metin öğeleri tutulur; hatalı/null öğe tüm listeyi düşürmez. */
+function narrativeList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => narrativeText(item))
+    .filter((item): item is string => item !== null)
+    .slice(0, MAX_NARRATIVE_ITEMS);
+}
 
 /**
  * HR PDR çıktısından SWOT, kariyer yolu ve özet üretir (boyut skorları değil;
  * bkz. applyReviewToDimensionScores). Mevcut (ör. İK tarafından girilmiş)
  * SWOT/kariyer/özet alanları ezilmez.
  */
-function deriveFieldsFromHrPdr(
+export function deriveFieldsFromHrPdr(
   session: {
     swotAnalysis: Prisma.JsonValue;
     careerPaths: Prisma.JsonValue;
@@ -416,29 +428,37 @@ function deriveFieldsFromHrPdr(
 ): Prisma.AssessmentSessionUpdateInput {
   const out: Prisma.AssessmentSessionUpdateInput = {};
 
-  const result = hrPdrNarrativeSchema.safeParse(analysis);
-  if (!result.success) return out;
-  const narrative = result.data;
+  // Her alan ayrı doğrulanır: bir alandaki null/hatalı değer diğerlerini düşürmez.
+  const strengths = narrativeList(analysis["strengths"]);
+  const weaknesses = Array.isArray(analysis["developmentAreas"])
+    ? narrativeList(
+        (analysis["developmentAreas"] as unknown[]).map((d) =>
+          d && typeof d === "object" ? (d as Record<string, unknown>)["area"] : null,
+        ),
+      )
+    : [];
+  const opportunities = narrativeList(analysis["trainingNeeds"]);
 
-  if (!session.swotAnalysis && (narrative.strengths || narrative.developmentAreas || narrative.trainingNeeds)) {
-    out.swotAnalysis = {
-      strengths: narrative.strengths ?? [],
-      weaknesses: (narrative.developmentAreas ?? []).map((d) => d.area),
-      opportunities: narrative.trainingNeeds ?? [],
-      threats: [],
-    };
+  if (!session.swotAnalysis && strengths.length + weaknesses.length + opportunities.length > 0) {
+    out.swotAnalysis = { strengths, weaknesses, opportunities, threats: [] };
   }
 
-  if (!session.careerPaths && narrative.goals) {
-    out.careerPaths = {
-      shortTerm: (narrative.goals.shortTerm ?? []).join(" "),
-      midTerm: (narrative.goals.midTerm ?? []).join(" "),
-      longTerm: (narrative.goals.longTerm ?? []).join(" "),
+  const goals = analysis["goals"];
+  if (!session.careerPaths && goals && typeof goals === "object" && !Array.isArray(goals)) {
+    const g = goals as Record<string, unknown>;
+    const careerPaths = {
+      shortTerm: narrativeList(g["shortTerm"]).join(" "),
+      midTerm: narrativeList(g["midTerm"]).join(" "),
+      longTerm: narrativeList(g["longTerm"]).join(" "),
     };
+    if (careerPaths.shortTerm || careerPaths.midTerm || careerPaths.longTerm) {
+      out.careerPaths = careerPaths;
+    }
   }
 
-  if (!session.keyInsights && narrative.performanceSummary) {
-    out.keyInsights = narrative.performanceSummary;
+  const summary = narrativeText(analysis["performanceSummary"], MAX_SUMMARY_LENGTH);
+  if (!session.keyInsights && summary) {
+    out.keyInsights = summary;
   }
 
   return out;

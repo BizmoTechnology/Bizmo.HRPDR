@@ -6,6 +6,7 @@ import {
   applyReviewToDimensionScores,
   getActiveAiConfig,
   hasAiConsent,
+  lockSession,
   queueSessionAnalysis,
   runSessionAnalysis,
 } from "../../services/session-analysis.service.js";
@@ -239,26 +240,31 @@ export const sessionAdminRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       const decidedAt = status !== "PENDING" ? new Date() : null;
-      const review = await prisma.analysisReview.upsert({
-        where: { sessionId: session.id },
-        create: {
-          sessionId: session.id,
-          reviewerId: request.user.sub,
-          status,
-          comment: comment ?? null,
-          decidedAt,
-        },
-        update: {
-          reviewerId: request.user.sub,
-          status,
-          comment: comment ?? null,
-          decidedAt,
-        },
+      // İnceleme durumu ve skorlar aynı kilitli işlemde yazılır; eşzamanlı onay/ret
+      // veya yeni bir analiz ikisini birbirinden ayıramaz.
+      const review = await prisma.$transaction(async (tx) => {
+        await lockSession(tx, session.id);
+        const saved = await tx.analysisReview.upsert({
+          where: { sessionId: session.id },
+          create: {
+            sessionId: session.id,
+            reviewerId: request.user.sub,
+            status,
+            comment: comment ?? null,
+            decidedAt,
+          },
+          update: {
+            reviewerId: request.user.sub,
+            status,
+            comment: comment ?? null,
+            decidedAt,
+          },
+        });
+        // AI'ın önerdiği boyut skorları yalnızca onayla uygulanır; onay geri alınırsa
+        // skala skorlarına dönülür.
+        await applyReviewToDimensionScores(tx, session.id, status);
+        return saved;
       });
-
-      // AI'ın önerdiği boyut skorları yalnızca onayla uygulanır; onay geri alınırsa
-      // skala skorlarına dönülür.
-      await applyReviewToDimensionScores(session.id, status);
 
       return reply.send({ data: review });
     } catch (err) {

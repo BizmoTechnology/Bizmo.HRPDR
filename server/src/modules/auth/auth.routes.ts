@@ -15,6 +15,7 @@ import {
   validateAndConsumeResetToken,
   refreshSecret,
   PORTAL_ACCESS_TTL,
+  addRefreshTokenHash,
   hasRefreshTokenHash,
   removeRefreshTokenHash,
   updatePersonnelRefreshTokens,
@@ -139,9 +140,25 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
         });
       }
 
+      // Şifre değişince diğer cihazlardaki oturumlar kapanır: yalnızca bu isteğin
+      // (geçerli) refresh token'ı korunur. Şifreyle aynı güncellemede yazılır ki eski
+      // liste eşzamanlı bir istekle geri gelmesin.
+      const currentToken = request.cookies?.["refreshToken"];
+      let keptTokens: string | null = null;
+      if (currentToken && hasRefreshTokenHash(user.refreshToken, currentToken)) {
+        try {
+          const payload = jwt.verify(currentToken, refreshSecret()) as { sub?: string; type?: string };
+          if (payload.type === "refresh" && payload.sub === user.id) {
+            keptTokens = addRefreshTokenHash(null, currentToken);
+          }
+        } catch {
+          // Süresi dolmuş/geçersiz: hiçbir oturum korunmaz
+        }
+      }
+
       await prisma.user.update({
         where: { id: user.id },
-        data: { password: await hashPassword(newPassword) },
+        data: { password: await hashPassword(newPassword), refreshToken: keptTokens },
       });
 
       return reply.send({ data: { message: "Şifreniz güncellendi" } });

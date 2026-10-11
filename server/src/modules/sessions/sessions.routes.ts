@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../../lib/prisma.js";
 import {
+  applyReviewToDimensionScores,
   getActiveAiConfig,
   hasAiConsent,
   queueSessionAnalysis,
@@ -254,6 +255,10 @@ export const sessionAdminRoutes: FastifyPluginAsync = async (fastify) => {
           decidedAt,
         },
       });
+
+      // AI'ın önerdiği boyut skorları yalnızca onayla uygulanır; onay geri alınırsa
+      // skala skorlarına dönülür.
+      await applyReviewToDimensionScores(session.id, status);
 
       return reply.send({ data: review });
     } catch (err) {

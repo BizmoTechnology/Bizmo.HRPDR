@@ -133,7 +133,7 @@ npm run dev
 1. **Personel** oluştururken "Portal Şifresi" belirleyin (veya personel detayında *Portal Şifresi Belirle*). Şifresi olmayan personel portala giremez.
 2. **Değerlendirme** oluşturun, *Aktifleştir* ve personele *ata*. Portal yalnızca **aktif** ve tarih aralığındaki değerlendirmeleri gösterir.
 3. Personel portalda KVKK onayıyla testi başlatır; cevaplar her soruda sunucuya kaydedilir, yarıda kalan test kaldığı yerden devam eder.
-4. Test tamamlanınca skala sorularından boyut skorları hesaplanır; aktif bir AI yapılandırması ve personelin AI rızası varsa HR PDR analizi arka planda çalışır ve boyut skorları güncellenir.
+4. Test tamamlanınca skala sorularından boyut skorları hesaplanır; aktif bir AI yapılandırması ve personelin AI rızası varsa HR PDR analizi arka planda çalışır. AI'ın önerdiği boyut skorları **yalnızca İK analizi onayladığında** skorlara yansır (reddedilirse veya analiz yeniden çalıştırılırsa skala skorlarına dönülür).
 5. Oturum detayında İK analizi **onaylar**, ardından **Rapor oluştur** ile rapor üretilir (Raporlar sayfasından yazdırma/PDF ve Excel indirme).
 
 ## Roller

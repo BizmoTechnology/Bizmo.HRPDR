@@ -330,7 +330,16 @@ export function useGenerateAiQuestions() {
 /* ─── Sessions ─── */
 
 export function useSession(id: string) {
-  return useQuery({ queryKey: ["sessions", id], queryFn: () => get<SessionDetail>(`/api/sessions/${id}`), enabled: !!id });
+  return useQuery({
+    queryKey: ["sessions", id],
+    queryFn: () => get<SessionDetail>(`/api/sessions/${id}`),
+    enabled: !!id,
+    // İK onayıyla başlayan AI analizi arka planda sürerken durum yenilenir
+    refetchInterval: (query) => {
+      const pipeline = query.state.data?.analysisPipeline;
+      return pipeline === "QUEUED" || pipeline === "RUNNING" ? 3000 : false;
+    },
+  });
 }
 export function useSessionEvents(id: string) {
   return useQuery({ queryKey: ["sessions", id, "events"], queryFn: () => get<SessionEvent[]>(`/api/sessions/${id}/events`), enabled: !!id });
@@ -339,7 +348,9 @@ export function useSubmitReview() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: { status: "PENDING" | "APPROVED" | "REJECTED"; comment?: string } }) =>
-      api.post(`/api/sessions/${id}/review`, data).then((r) => r.data.data),
+      api
+        .post<{ data: { status: string; analysisQueued: boolean } }>(`/api/sessions/${id}/review`, data)
+        .then((r) => r.data.data),
     onSuccess: (_, { id }) => {
       void qc.invalidateQueries({ queryKey: ["sessions", id] });
     },

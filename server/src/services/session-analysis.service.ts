@@ -2,7 +2,13 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { decrypt } from "../lib/crypto.js";
 import { HttpError, isHttpError } from "../lib/http-error.js";
-import { AI_NOT_CONNECTED_REASON, requireActiveAiConfig } from "../lib/ai-connection.js";
+import {
+  AI_NOT_CONNECTED_REASON,
+  ANALYSIS_AWAITS_REVIEW_REASON,
+  NO_AI_CONSENT_REASON,
+  isApprovedForAi,
+  requireActiveAiConfig,
+} from "../lib/ai-connection.js";
 import { completeChat } from "../lib/llm.js";
 import { normalizeQuestionOptions } from "../lib/question-options.js";
 import {
@@ -182,10 +188,20 @@ export async function runSessionAnalysis(params: {
         },
       },
       assessment: { select: { title: true } },
+      analysisReview: { select: { status: true } },
     },
   });
 
   if (!session) throw new HttpError("Oturum bulunamadı", 404, "NOT_FOUND");
+
+  // AI analizi İK onayından sonra oluşturulur: İK önce cevapları inceler.
+  if (!isApprovedForAi(session.requiresHrReview, session.analysisReview?.status)) {
+    throw new HttpError(
+      "AI analizi İK onayından sonra oluşturulur. Önce cevapları inceleyip onaylayın.",
+      409,
+      "REVIEW_REQUIRED",
+    );
+  }
 
   let answersFormatted = formatAnswersForAi(session.answers);
   if (!answersFormatted.trim()) {
@@ -306,13 +322,15 @@ Değerlendirme: ${session.assessment.title}`;
     await tx.assessmentSession.update({ where: { id: sessionId }, data });
 
     if (analysisType === "HR_PDR_ANALYSIS") {
-      // Yeni AI önerisi önceki onayı geçersiz kılar: skorlar tekrar deterministik
-      // skala skorlarına döner, yeni öneri İK onayını bekler.
-      const reset = await tx.analysisReview.updateMany({
-        where: { sessionId, status: "APPROVED" },
-        data: { status: "PENDING", decidedAt: null },
+      // Analiz İK onayından sonra çalıştığı için önerilen skorlar uygulanır. Onay bu
+      // arada geri alındıysa skorlar skala skorlarında kalır; İK sonradan da reddedebilir.
+      const review = await tx.analysisReview.findUnique({
+        where: { sessionId },
+        select: { status: true },
       });
-      if (reset.count > 0) await applyReviewToDimensionScores(tx, sessionId, "PENDING");
+      if (isApprovedForAi(session.requiresHrReview, review?.status)) {
+        await applyReviewToDimensionScores(tx, sessionId, "APPROVED");
+      }
     }
   });
 
@@ -539,10 +557,19 @@ export function queueSessionAnalysis(
           }),
         ]);
       } catch (err) {
-        if (isHttpError(err) && err.code === "AI_NOT_CONNECTED") {
+        // Bekleme sırasında koşul değiştiyse (entegrasyon kaldırıldı, onay geri alındı)
+        // analiz başarısız sayılmaz; nedeniyle birlikte "yapılmadı" durumuna döner.
+        const notQueuedReason =
+          isHttpError(err) &&
+          ({
+            AI_NOT_CONNECTED: AI_NOT_CONNECTED_REASON,
+            REVIEW_REQUIRED: ANALYSIS_AWAITS_REVIEW_REASON,
+            AI_CONSENT_MISSING: NO_AI_CONSENT_REASON,
+          } as Record<string, string>)[err.code ?? ""];
+        if (notQueuedReason) {
           await prisma.assessmentSession.update({
             where: { id: sessionId },
-            data: { analysisPipeline: "NOT_QUEUED", analysisError: AI_NOT_CONNECTED_REASON },
+            data: { analysisPipeline: "NOT_QUEUED", analysisError: notQueuedReason },
           });
           return;
         }

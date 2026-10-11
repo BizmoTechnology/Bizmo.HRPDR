@@ -19,6 +19,7 @@ import {
   XCircle,
   FileDown,
   AlertTriangle,
+  ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -64,6 +65,11 @@ export function SessionDetailPanel({
   const { data: aiStatus } = useAiStatus();
   // Durum bilinmiyorsa düğme açık kalır; sunucu yine "bağlı değil" döner
   const aiConnected = aiStatus?.connected !== false;
+  // AI analizi İK onayından sonra oluşturulur
+  const aiApproved =
+    session?.requiresHrReview === false || session?.analysisReview?.status === "APPROVED";
+  const analysisBusy =
+    session?.analysisPipeline === "QUEUED" || session?.analysisPipeline === "RUNNING";
   const [activeTab, setActiveTab] = useState<AnalysisTab>("answers");
   const [expandedAnswers, setExpandedAnswers] = useState<Set<string>>(new Set());
 
@@ -317,6 +323,8 @@ export function SessionDetailPanel({
                     session={session}
                     onRun={() => handleRunAnalysis("HR_PDR_ANALYSIS")}
                     aiConnected={aiConnected}
+                    aiApproved={aiApproved}
+                    analysisBusy={analysisBusy}
                     isRunning={
                       runAnalysis.isPending &&
                       runAnalysis.variables?.analysisType ===
@@ -337,6 +345,7 @@ export function SessionDetailPanel({
                     session={session}
                     onRun={() => handleRunAnalysis("PSYCHOLOGICAL_ANALYSIS")}
                     aiConnected={aiConnected}
+                    aiApproved={aiApproved}
                     isRunning={
                       runAnalysis.isPending &&
                       runAnalysis.variables?.analysisType ===
@@ -383,7 +392,9 @@ function ReviewAndReportBar({
 
   const reviewStatus = session.analysisReview?.status ?? "PENDING";
   const needsReview = session.requiresHrReview !== false;
-  const canGenerate = !needsReview || reviewStatus === "APPROVED";
+  const analysisBusy =
+    session.analysisPipeline === "QUEUED" || session.analysisPipeline === "RUNNING";
+  const canGenerate = (!needsReview || reviewStatus === "APPROVED") && !analysisBusy;
   const pipeline = PIPELINE_LABELS[session.analysisPipeline] ?? {
     label: session.analysisPipeline,
     className: "bg-muted text-muted-foreground",
@@ -394,8 +405,14 @@ function ReviewAndReportBar({
     submitReview.mutate(
       { id: sessionId, data: { status, comment: comment.trim() || undefined } },
       {
-        onSuccess: () =>
-          toast.success(status === "APPROVED" ? "Analiz onaylandı" : "Analiz reddedildi"),
+        onSuccess: (res) =>
+          toast.success(
+            status === "APPROVED"
+              ? res.analysisQueued
+                ? "Onaylandı — AI analizi oluşturuluyor"
+                : "Onaylandı"
+              : "Reddedildi",
+          ),
         onError: (err) => toast.error(apiErrorMessage(err, "İnceleme kaydedilemedi")),
       },
     );
@@ -444,7 +461,13 @@ function ReviewAndReportBar({
               type="button"
               onClick={handleGenerate}
               disabled={!canGenerate || generateReport.isPending}
-              title={canGenerate ? undefined : "Rapor için önce İK onayı gerekli"}
+              title={
+                canGenerate
+                  ? undefined
+                  : analysisBusy
+                    ? "AI analizi bitince rapor oluşturabilirsiniz"
+                    : "Rapor için önce İK onayı gerekli"
+              }
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               {generateReport.isPending ? (
@@ -472,6 +495,7 @@ function ReviewAndReportBar({
               type="button"
               onClick={() => decide("APPROVED")}
               disabled={submitReview.isPending}
+              title="Onaylayınca AI analizi oluşturulur"
               className="inline-flex items-center gap-1 px-3 h-8 rounded-lg text-xs font-medium bg-accent-green/10 text-accent-green hover:bg-accent-green/20 disabled:opacity-50 transition-colors"
             >
               <CheckCircle2 className="h-3.5 w-3.5" />
@@ -493,16 +517,40 @@ function ReviewAndReportBar({
   );
 }
 
+/** AI analizi İK onayından sonra oluşturulur; onaydan önce analiz alanında gösterilir */
+function AwaitingReviewNotice() {
+  return (
+    <div
+      role="status"
+      className="flex max-w-sm items-start gap-3 rounded-xl border border-border/50 bg-muted/30 px-4 py-3 text-left"
+    >
+      <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+      <div className="min-w-0 space-y-1">
+        <p className="text-sm font-semibold text-foreground">Önce İK onayı</p>
+        <p className="text-xs text-muted-foreground">
+          AI analizi, cevaplar İK tarafından onaylandıktan sonra oluşturulur. Cevapları
+          inceleyip yukarıdan onaylayın.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function HrPdrAnalysisView({
   session,
   onRun,
   isRunning,
   aiConnected,
+  aiApproved,
+  analysisBusy,
 }: {
   session: SessionDetail;
   onRun: () => void;
   isRunning: boolean;
   aiConnected: boolean;
+  aiApproved: boolean;
+  /** Onayla başlayan arka plan analizi sürüyor */
+  analysisBusy: boolean;
 }) {
   const analysis = session.hrPdrAnalysis as Record<string, unknown> | null;
 
@@ -520,7 +568,14 @@ function HrPdrAnalysisView({
           AI analizi başlatarak cevaplar üzerinden kapsamlı bir PDR raporu
           oluşturun.
         </p>
-        {aiConnected ? (
+        {analysisBusy ? (
+          <p className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            AI analizi oluşturuluyor…
+          </p>
+        ) : !aiApproved ? (
+          <AwaitingReviewNotice />
+        ) : aiConnected ? (
           <>
             <motion.button
               type="button"
@@ -559,8 +614,14 @@ function HrPdrAnalysisView({
         <button
           type="button"
           onClick={onRun}
-          disabled={isRunning || !aiConnected}
-          title={aiConnected ? undefined : "AI entegrasyonu bağlı değil"}
+          disabled={isRunning || !aiConnected || !aiApproved}
+          title={
+            !aiApproved
+              ? "AI analizi İK onayından sonra oluşturulur"
+              : aiConnected
+                ? undefined
+                : "AI entegrasyonu bağlı değil"
+          }
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-primary hover:bg-primary/10 transition-colors disabled:opacity-50"
         >
           {isRunning ? (
@@ -786,11 +847,13 @@ function PsychologicalAnalysisView({
   onRun,
   isRunning,
   aiConnected,
+  aiApproved,
 }: {
   session: SessionDetail;
   onRun: () => void;
   isRunning: boolean;
   aiConnected: boolean;
+  aiApproved: boolean;
 }) {
   const analysis = session.psychologicalAnalysis as Record<string, unknown> | null;
 
@@ -807,7 +870,9 @@ function PsychologicalAnalysisView({
           Bu oturum için henüz psikolojik analiz yapılmadı. AI analizi başlatarak
           Big Five kişilik profili, duygusal zeka ve daha fazlasını keşfedin.
         </p>
-        {aiConnected ? (
+        {!aiApproved ? (
+          <AwaitingReviewNotice />
+        ) : aiConnected ? (
           <>
             <motion.button
               type="button"
@@ -849,8 +914,14 @@ function PsychologicalAnalysisView({
         <button
           type="button"
           onClick={onRun}
-          disabled={isRunning || !aiConnected}
-          title={aiConnected ? undefined : "AI entegrasyonu bağlı değil"}
+          disabled={isRunning || !aiConnected || !aiApproved}
+          title={
+            !aiApproved
+              ? "AI analizi İK onayından sonra oluşturulur"
+              : aiConnected
+                ? undefined
+                : "AI entegrasyonu bağlı değil"
+          }
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-purple-500 hover:bg-purple-500/10 transition-colors disabled:opacity-50"
         >
           {isRunning ? (

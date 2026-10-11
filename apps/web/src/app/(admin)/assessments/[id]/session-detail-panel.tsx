@@ -25,12 +25,14 @@ import { cn } from "@/lib/utils";
 import { apiErrorMessage } from "@/lib/api";
 import { usePermissions } from "@/lib/roles";
 import { dimensionColor } from "@/lib/dimension-colors";
+import { AiNotConnectedNotice } from "@/components/ai/AiNotConnectedNotice";
 import {
   useSession,
   useRunSessionAiAnalysis,
   useSubmitReview,
   useGenerateReport,
   useSessionReport,
+  useAiStatus,
   type SessionDetail,
   type AnswerRow,
 } from "@/hooks/use-api";
@@ -119,6 +121,7 @@ function AnalysisEmpty({
   onRun,
   isRunning,
   hasAnswers,
+  aiConnected,
 }: {
   icon: ReactNode;
   title: string;
@@ -126,23 +129,30 @@ function AnalysisEmpty({
   onRun: () => void;
   isRunning: boolean;
   hasAnswers: boolean;
+  aiConnected: boolean;
 }) {
   return (
     <div className="bz-empty">
       <span className="bz-icon-box">{icon}</span>
       <p className="bz-empty__title">{title}</p>
       <p className="bz-empty__text">{text}</p>
-      <button
-        type="button"
-        onClick={onRun}
-        disabled={isRunning || !hasAnswers}
-        className="bz-btn bz-btn--data mt-2"
-      >
-        {isRunning ? <Loader2 className="animate-spin" /> : <Sparkles />}
-        {isRunning ? "Analiz yapılıyor" : "AI analizini başlat"}
-      </button>
-      {!hasAnswers && (
-        <p className="bz-hint">Analiz için önce cevaplar gereklidir</p>
+      {aiConnected ? (
+        <>
+          <button
+            type="button"
+            onClick={onRun}
+            disabled={isRunning || !hasAnswers}
+            className="bz-btn bz-btn--data mt-2"
+          >
+            {isRunning ? <Loader2 className="animate-spin" /> : <Sparkles />}
+            {isRunning ? "Analiz yapılıyor" : "AI analizini başlat"}
+          </button>
+          {!hasAnswers && (
+            <p className="bz-hint">Analiz için önce cevaplar gereklidir</p>
+          )}
+        </>
+      ) : (
+        <AiNotConnectedNotice feature="AI analizi" className="mt-2 max-w-sm" />
       )}
     </div>
   );
@@ -151,16 +161,19 @@ function AnalysisEmpty({
 function RerunButton({
   onRun,
   isRunning,
+  aiConnected,
 }: {
   onRun: () => void;
   isRunning: boolean;
+  aiConnected: boolean;
 }) {
   return (
     <div className="flex justify-end">
       <button
         type="button"
         onClick={onRun}
-        disabled={isRunning}
+        disabled={isRunning || !aiConnected}
+        title={aiConnected ? undefined : "AI entegrasyonu bağlı değil"}
         className="bz-btn bz-btn--subtle bz-btn--sm"
       >
         {isRunning ? <Loader2 className="animate-spin" /> : <Sparkles />}
@@ -179,6 +192,9 @@ export function SessionDetailPanel({
 }) {
   const { data: session, isLoading } = useSession(sessionId);
   const runAnalysis = useRunSessionAiAnalysis();
+  const { data: aiStatus } = useAiStatus();
+  // Durum bilinmiyorsa düğme açık kalır; sunucu yine "bağlı değil" döner
+  const aiConnected = aiStatus?.connected !== false;
   const [activeTab, setActiveTab] = useState<AnalysisTab>("answers");
   const [expandedAnswers, setExpandedAnswers] = useState<Set<string>>(new Set());
 
@@ -439,6 +455,7 @@ export function SessionDetailPanel({
                   <HrPdrAnalysisView
                     session={session}
                     onRun={() => handleRunAnalysis("HR_PDR_ANALYSIS")}
+                    aiConnected={aiConnected}
                     isRunning={
                       runAnalysis.isPending &&
                       runAnalysis.variables?.analysisType ===
@@ -458,6 +475,7 @@ export function SessionDetailPanel({
                   <PsychologicalAnalysisView
                     session={session}
                     onRun={() => handleRunAnalysis("PSYCHOLOGICAL_ANALYSIS")}
+                    aiConnected={aiConnected}
                     isRunning={
                       runAnalysis.isPending &&
                       runAnalysis.variables?.analysisType ===
@@ -479,7 +497,7 @@ const PIPELINE_CHIP: Record<
   string,
   { label: string; tone?: "success" | "warning" | "danger" | "info" }
 > = {
-  NOT_QUEUED: { label: "Analiz bekliyor" },
+  NOT_QUEUED: { label: "Analiz yapılmadı" },
   QUEUED: { label: "Analiz sırada", tone: "warning" },
   RUNNING: { label: "Analiz sürüyor", tone: "info" },
   COMPLETED: { label: "Analiz tamam", tone: "success" },
@@ -638,10 +656,12 @@ function HrPdrAnalysisView({
   session,
   onRun,
   isRunning,
+  aiConnected,
 }: {
   session: SessionDetail;
   onRun: () => void;
   isRunning: boolean;
+  aiConnected: boolean;
 }) {
   const analysis = session.hrPdrAnalysis as Record<string, unknown> | null;
 
@@ -654,6 +674,7 @@ function HrPdrAnalysisView({
         onRun={onRun}
         isRunning={isRunning}
         hasAnswers={session.answers.length > 0}
+        aiConnected={aiConnected}
       />
     );
   }
@@ -669,7 +690,7 @@ function HrPdrAnalysisView({
 
   return (
     <div className="space-y-4">
-      <RerunButton onRun={onRun} isRunning={isRunning} />
+      <RerunButton onRun={onRun} isRunning={isRunning} aiConnected={aiConnected} />
 
       {perfScore != null && (
         <section className="bz-card bz-card--flat p-4">
@@ -847,10 +868,12 @@ function PsychologicalAnalysisView({
   session,
   onRun,
   isRunning,
+  aiConnected,
 }: {
   session: SessionDetail;
   onRun: () => void;
   isRunning: boolean;
+  aiConnected: boolean;
 }) {
   const analysis = session.psychologicalAnalysis as Record<string, unknown> | null;
 
@@ -863,6 +886,7 @@ function PsychologicalAnalysisView({
         onRun={onRun}
         isRunning={isRunning}
         hasAnswers={session.answers.length > 0}
+        aiConnected={aiConnected}
       />
     );
   }
@@ -883,7 +907,7 @@ function PsychologicalAnalysisView({
 
   return (
     <div className="space-y-4">
-      <RerunButton onRun={onRun} isRunning={isRunning} />
+      <RerunButton onRun={onRun} isRunning={isRunning} aiConnected={aiConnected} />
 
       {bigFive && (
         <Section title="Big Five kişilik profili">

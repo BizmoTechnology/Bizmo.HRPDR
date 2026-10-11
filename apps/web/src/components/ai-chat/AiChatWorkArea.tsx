@@ -16,7 +16,9 @@ import {
   useCreateAiChatConversation,
   useDeleteAiChatConversation,
   useSendAiChatMessage,
+  useAiStatus,
 } from "@/hooks/use-api";
+import { AiNotConnectedNotice } from "@/components/ai/AiNotConnectedNotice";
 import { AiChatMessageList } from "./AiChatMessageList";
 import { AiChatInput } from "./AiChatInput";
 import { cn } from "@/lib/utils";
@@ -56,6 +58,8 @@ export function AiChatWorkArea({
   const createConv = useCreateAiChatConversation();
   const sendMsg = useSendAiChatMessage();
   const deleteConv = useDeleteAiChatConversation();
+  const { data: aiStatus } = useAiStatus();
+  const aiConnected = aiStatus?.connected !== false;
 
   const messages = useMemo(
     () =>
@@ -303,6 +307,9 @@ export function AiChatWorkArea({
             ) : (
               <>
                 <div className="scrollbar-thin min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain pr-0.5 [-webkit-overflow-scrolling:touch]">
+                  {!aiConnected && (
+                    <AiNotConnectedNotice feature="AI asistan" className="mb-3" />
+                  )}
                   {!conversationId && messages.length === 0 ? (
                     <div className="rounded-xl border border-dashed border-border/60 bg-muted/30 p-4 text-center">
                       <p className="mb-2 text-sm font-medium text-foreground">
@@ -331,8 +338,8 @@ export function AiChatWorkArea({
                 <div className="shrink-0 border-t border-border/30 pt-2">
                   <AiChatInput
                     onSend={handleSend}
-                    disabled={busy}
-                    placeholder="Sorunuzu yazın…"
+                    disabled={busy || !aiConnected}
+                    placeholder={aiConnected ? "Sorunuzu yazın…" : "AI entegrasyonu bağlı değil"}
                   />
                 </div>
               </>

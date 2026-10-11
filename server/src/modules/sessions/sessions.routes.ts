@@ -18,6 +18,7 @@ import {
   type SnapshotQuestion,
 } from "../../services/session-questions.service.js";
 import { isHttpError } from "../../lib/http-error.js";
+import { AI_NOT_CONNECTED_REASON } from "../../lib/ai-connection.js";
 import { requireRole, ROLE_GROUPS } from "../../middleware/authenticate.js";
 
 const DEFAULT_PAGE_SIZE = 20;
@@ -682,7 +683,7 @@ export const sessionPortalRoutes: FastifyPluginAsync = async (fastify) => {
               ? null
               : !aiConsent
                 ? "Personel AI analizine rıza vermedi"
-                : "Aktif AI yapılandırması yok",
+                : AI_NOT_CONNECTED_REASON,
           },
         });
         if (res.count === 0) return false;

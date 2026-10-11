@@ -419,16 +419,37 @@ export function useDeleteReport() {
 
 /* ─── AI Config ─── */
 
+export interface AiStatus {
+  connected: boolean;
+  provider: string | null;
+  modelName: string | null;
+}
+
+/** GET /api/ai-status — aktif AI entegrasyonu var mı (tüm panel kullanıcıları) */
+export function useAiStatus() {
+  return useQuery({
+    queryKey: ["ai-status"],
+    queryFn: () => get<AiStatus>("/api/ai-status"),
+    staleTime: 60_000,
+  });
+}
+
+/** Yapılandırma değişince liste ve bağlantı durumu birlikte yenilenir */
+function invalidateAiConfig(qc: ReturnType<typeof useQueryClient>) {
+  void qc.invalidateQueries({ queryKey: ["ai-config"] });
+  void qc.invalidateQueries({ queryKey: ["ai-status"] });
+}
+
 export function useAiConfigList() {
   return useQuery({ queryKey: ["ai-config"], queryFn: () => get<AiConfigRow[]>("/api/ai-config") });
 }
 export function useCreateAiConfig() {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: (data: Record<string, unknown>) => api.post("/api/ai-config", data).then(r => r.data.data), onSuccess: () => qc.invalidateQueries({ queryKey: ["ai-config"] }) });
+  return useMutation({ mutationFn: (data: Record<string, unknown>) => api.post("/api/ai-config", data).then(r => r.data.data), onSuccess: () => invalidateAiConfig(qc) });
 }
 export function useUpdateAiConfig() {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) => api.put(`/api/ai-config/${id}`, data).then(r => r.data.data), onSuccess: () => qc.invalidateQueries({ queryKey: ["ai-config"] }) });
+  return useMutation({ mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) => api.put(`/api/ai-config/${id}`, data).then(r => r.data.data), onSuccess: () => invalidateAiConfig(qc) });
 }
 export function useTestAiConfig() {
   return useMutation({
@@ -440,11 +461,11 @@ export function useTestAiConfig() {
 }
 export function useDeleteAiConfig() {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: (id: string) => api.delete(`/api/ai-config/${id}`).then(r => r.data), onSuccess: () => qc.invalidateQueries({ queryKey: ["ai-config"] }) });
+  return useMutation({ mutationFn: (id: string) => api.delete(`/api/ai-config/${id}`).then(r => r.data), onSuccess: () => invalidateAiConfig(qc) });
 }
 export function useSetDefaultAiConfig() {
   const qc = useQueryClient();
-  return useMutation({ mutationFn: (id: string) => api.post(`/api/ai-config/${id}/set-default`).then(r => r.data.data), onSuccess: () => qc.invalidateQueries({ queryKey: ["ai-config"] }) });
+  return useMutation({ mutationFn: (id: string) => api.post(`/api/ai-config/${id}/set-default`).then(r => r.data.data), onSuccess: () => invalidateAiConfig(qc) });
 }
 export function useAiUsageStats(params: Record<string, unknown> = {}) {
   return useQuery({ queryKey: ["ai-usage", params], queryFn: () => get<AiUsageData>("/api/ai-config/usage?" + toQS(params)) });

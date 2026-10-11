@@ -4,6 +4,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { z } from "zod";
 import { prisma } from "../lib/prisma.js";
 import { decrypt } from "../lib/crypto.js";
+import { requireActiveAiConfig } from "../lib/ai-connection.js";
 
 const aiOutputSchema = z.object({
   name: z.string().min(1).max(300),
@@ -110,7 +111,7 @@ async function completeChat(params: {
   }
 
   throw new Error(
-    `Desteklenmeyen sağlayıcı: ${provider}. OPENAI, CLAUDE, GEMINI, ABACUS veya MOCK kullanın.`,
+    `Desteklenmeyen sağlayıcı: ${provider}. OPENAI, CLAUDE, GEMINI veya ABACUS kullanın.`,
   );
 }
 
@@ -140,27 +141,7 @@ export async function suggestQuestionSetFromAi(params: {
     );
   }
 
-  const aiConfig = await prisma.aiConfig.findFirst({
-    where: { organizationId, isActive: true },
-    orderBy: [{ isDefault: "desc" }, { updatedAt: "desc" }],
-  });
-
-  if (!aiConfig) {
-    throw new Error(
-      "Aktif AI yapılandırması yok. Ayarlar → AI Yapılandırmasından bir sağlayıcı ekleyin.",
-    );
-  }
-
-  if (aiConfig.provider === "MOCK") {
-    const n = Math.min(maxQuestions, 12, questions.length);
-    const questionIds = questions.slice(0, n).map((q) => q.id);
-    return fillDefaultWeights({
-      name: brief.slice(0, 80) || "MOCK soru seti",
-      description:
-        "MOCK sağlayıcı: gerçek AI önerisi için OPENAI, CLAUDE veya GEMINI yapılandırması ekleyin. Şimdilik havuzdan örnek sorular seçildi.",
-      questionIds,
-    });
-  }
+  const aiConfig = await requireActiveAiConfig(organizationId);
 
   const apiKey = decrypt(aiConfig.encryptedApiKey);
 

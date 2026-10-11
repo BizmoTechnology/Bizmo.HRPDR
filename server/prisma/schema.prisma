@@ -574,7 +574,6 @@ enum AiProvider {
   OPENAI
   GEMINI
   ABACUS
-  MOCK
 }
 
 model AiConfig {

@@ -24,7 +24,7 @@ import sessionAdminRoutes, {
 } from "./modules/sessions/sessions.routes.js";
 import analyticsRoutes from "./modules/analytics/analytics.routes.js";
 import reportsRoutes from "./modules/reports/reports.routes.js";
-import aiConfigRoutes from "./modules/ai-config/ai-config.routes.js";
+import aiConfigRoutes, { aiStatusRoutes } from "./modules/ai-config/ai-config.routes.js";
 import notificationsRoutes from "./modules/notifications/notifications.routes.js";
 import aiChatRoutes from "./modules/ai-chat/ai-chat.routes.js";
 import { requeueStaleAnalyses } from "./services/session-analysis.service.js";
@@ -137,6 +137,7 @@ await app.register(sessionAdminRoutes, { prefix: "/api/sessions" });
 await app.register(analyticsRoutes, { prefix: "/api/analytics" });
 await app.register(reportsRoutes, { prefix: "/api/reports" });
 await app.register(aiConfigRoutes, { prefix: "/api/ai-config" });
+await app.register(aiStatusRoutes, { prefix: "/api/ai-status" });
 await app.register(notificationsRoutes, { prefix: "/api/notifications" });
 await app.register(aiChatRoutes, { prefix: "/api/ai-chat" });
 

@@ -5,9 +5,10 @@ import { requireRole, ROLE_GROUPS } from "../../middleware/authenticate.js";
 import { encrypt, decrypt } from "../../lib/crypto.js";
 import { completeChat } from "../../lib/llm.js";
 import { fetchAbacusRouteLLMModels } from "../../services/abacus-route-llm.service.js";
+import { getActiveAiConfig } from "../../lib/ai-connection.js";
 import { DEFAULT_HR_PDR_PROMPT, DEFAULT_PSYCHOLOGICAL_PROMPT } from "../../services/session-analysis.service.js";
 
-const AiProviderEnum = z.enum(["CLAUDE", "OPENAI", "GEMINI", "ABACUS", "MOCK"]);
+const AiProviderEnum = z.enum(["CLAUDE", "OPENAI", "GEMINI", "ABACUS"]);
 
 const DEFAULT_PURPOSE = "general";
 
@@ -15,8 +16,7 @@ const createSchema = z
   .object({
     provider: AiProviderEnum,
     modelName: z.string().trim().min(1).max(200),
-    /** MOCK sağlayıcı için gerekmez */
-    apiKey: z.string().trim().optional(),
+    apiKey: z.string().trim().min(1, "API anahtarı zorunlu"),
     purpose: z
       .string()
       .trim()
@@ -26,10 +26,6 @@ const createSchema = z
     isDefault: z.boolean().optional().default(false),
     isActive: z.boolean().optional().default(true),
     config: z.record(z.unknown()).optional(),
-  })
-  .refine((v) => v.provider === "MOCK" || (v.apiKey?.length ?? 0) > 0, {
-    message: "API anahtarı zorunlu",
-    path: ["apiKey"],
   });
 
 const updateSchema = z.object({
@@ -115,7 +111,7 @@ const aiConfigRoutes: FastifyPluginAsync = async (fastify) => {
     try {
       const body = createSchema.parse(request.body);
 
-      const encryptedApiKey = encrypt(body.apiKey ?? "");
+      const encryptedApiKey = encrypt(body.apiKey);
 
       if (body.isDefault) {
         await prisma.aiConfig.updateMany({
@@ -316,7 +312,7 @@ const aiConfigRoutes: FastifyPluginAsync = async (fastify) => {
     try {
       const text = await completeChat({
         provider: cfg.provider,
-        apiKey: cfg.provider === "MOCK" ? "" : decrypt(cfg.encryptedApiKey),
+        apiKey: decrypt(cfg.encryptedApiKey),
         modelName: cfg.modelName,
         system: "Bağlantı testi. Yalnızca 'OK' yaz.",
         user: "ping",
@@ -620,3 +616,22 @@ const aiConfigRoutes: FastifyPluginAsync = async (fastify) => {
 };
 
 export default aiConfigRoutes;
+
+/**
+ * GET /api/ai-status — panelin "AI entegrasyonu bağlı değil" uyarısı için.
+ * Yapılandırma sayfası yalnız yöneticilere açık; bağlantı durumu ise tüm panel kullanıcılarına.
+ */
+export const aiStatusRoutes: FastifyPluginAsync = async (fastify) => {
+  fastify.addHook("onRequest", fastify.authenticate);
+
+  fastify.get("/", async (request, reply) => {
+    const cfg = await getActiveAiConfig(request.user.orgId!);
+    return reply.send({
+      data: {
+        connected: !!cfg,
+        provider: cfg?.provider ?? null,
+        modelName: cfg?.modelName ?? null,
+      },
+    });
+  });
+};

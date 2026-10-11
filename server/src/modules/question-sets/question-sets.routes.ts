@@ -208,6 +208,13 @@ const questionSetRoutes: FastifyPluginAsync = async (fastify) => {
           traceId: request.traceId,
         });
       }
+      if (isHttpError(err)) {
+        return reply.status(err.statusCode).send({
+          code: err.code ?? "REQUEST_ERROR",
+          message: err.message,
+          traceId: request.traceId,
+        });
+      }
       const message =
         err instanceof Error ? err.message : "AI önerisi alınamadı";
       request.log.warn({ err }, "questionSets.aiSuggest failed");

@@ -11,8 +11,10 @@ import { GlassCard, StatCard } from "@ph/ui";
 import { cn } from "@/lib/utils";
 import { apiErrorMessage } from "@/lib/api";
 import { usePermissions } from "@/lib/roles";
+import { AiNotConnectedNotice } from "@/components/ai/AiNotConnectedNotice";
 import {
   useAiConfigList,
+  useAiStatus,
   useCreateAiConfig,
   useUpdateAiConfig,
   useDeleteAiConfig,
@@ -30,7 +32,7 @@ import {
 } from "@/hooks/use-api";
 import { toast } from "sonner";
 
-type Provider = "CLAUDE" | "OPENAI" | "GEMINI" | "ABACUS" | "MOCK";
+type Provider = "CLAUDE" | "OPENAI" | "GEMINI" | "ABACUS";
 
 // Sağlayıcılar kategori olarak renklendirilmez; ad metin renginde, simge nötr kutuda (DESIGN §2.4, §28).
 const PROVIDER_META: Record<Provider, { label: string }> = {
@@ -38,7 +40,6 @@ const PROVIDER_META: Record<Provider, { label: string }> = {
   OPENAI: { label: "OpenAI GPT" },
   GEMINI: { label: "Google Gemini" },
   ABACUS: { label: "Abacus.AI" },
-  MOCK: { label: "Mock (Test)" },
 };
 
 const usd = new Intl.NumberFormat("tr-TR", {
@@ -78,9 +79,6 @@ const PROVIDER_MODELS: Record<Provider, ModelOption[]> = {
     { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash", description: "Önceki nesil hızlı" },
   ],
   ABACUS: [] as ModelOption[],
-  MOCK: [
-    { id: "mock-default", label: "Mock Default", description: "Test amaçlı — gerçek çağrı yapmaz" },
-  ],
 };
 
 interface AiConfig {
@@ -292,8 +290,7 @@ function ConfigFormDialog({
         },
       );
     } else {
-      // MOCK sağlayıcı gerçek çağrı yapmadığı için anahtar gerektirmez
-      if (!form.apiKey && form.provider !== "MOCK") {
+      if (!form.apiKey) {
         toast.error("API anahtarı zorunludur");
         return;
       }
@@ -502,6 +499,7 @@ function AiConfigContent() {
   const [editConfig, setEditConfig] = useState<AiConfig | null>(null);
 
   const { data: configData, isLoading: configLoading } = useAiConfigList();
+  const { data: aiStatus } = useAiStatus();
   const { data: usageData, isLoading: usageLoading } = useAiUsageStats();
   const deleteConfig = useDeleteAiConfig();
   const setDefault = useSetDefaultAiConfig();
@@ -562,6 +560,24 @@ function AiConfigContent() {
         </div>
       </motion.div>
 
+      {aiStatus && !aiStatus.connected ? (
+        <AiNotConnectedNotice
+          feature="AI analizi, AI asistan ve AI ile soru üretimi"
+          hint="Aşağıdan bir sağlayıcı ekleyip etkinleştirin."
+        />
+      ) : aiStatus?.connected ? (
+        <p className="flex flex-wrap items-center gap-2 text-sm text-fg2">
+          <span className="bz-chip bz-chip--success">
+            <span className="bz-dot" aria-hidden="true" />
+            Bağlı
+          </span>
+          <span className="font-medium text-foreground">
+            {PROVIDER_META[aiStatus.provider as Provider]?.label ?? aiStatus.provider}
+          </span>
+          <span className="font-mono text-xs text-fg3">{aiStatus.modelName}</span>
+        </p>
+      ) : null}
+
       {/* AI Providers Section */}
       <section aria-labelledby="ai-providers-title">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
@@ -608,7 +624,10 @@ function AiConfigContent() {
             animate="show"
           >
             {configs.map((cfg) => {
-              const providerMeta = PROVIDER_META[cfg.provider] ?? PROVIDER_META.MOCK;
+              const providerMeta = PROVIDER_META[cfg.provider] ?? {
+                label: cfg.provider,
+                color: "text-muted-foreground",
+              };
               return (
                 <motion.div key={cfg.id} variants={item} className="h-full">
                   <GlassCard hover={false} className="flex h-full flex-col">
@@ -642,7 +661,7 @@ function AiConfigContent() {
                       <Shield className="h-3.5 w-3.5" aria-hidden="true" />
                       <span className="sr-only">API anahtarı:</span>
                       <span className="font-mono text-xs">
-                        {cfg.provider === "MOCK" ? "anahtar gerekmez" : formatMaskedKey(cfg.maskedApiKey)}
+                        {formatMaskedKey(cfg.maskedApiKey)}
                       </span>
                     </div>
 

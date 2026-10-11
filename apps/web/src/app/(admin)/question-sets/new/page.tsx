@@ -14,9 +14,11 @@ import { dimensionColor } from "@/lib/dimension-colors";
 import {
   useCreateQuestionSet,
   useSuggestQuestionSetAi,
+  useAiStatus,
   type QuestionSetDetail,
 } from "@/hooks/use-api";
 import { DIMENSION_SHORT_LABELS } from "@ph/shared";
+import { AiNotConnectedNotice } from "@/components/ai/AiNotConnectedNotice";
 
 const WEIGHT_FIELDS = [
   { key: "LOGICAL_ALGORITHMIC", field: "weightLogical" as const },
@@ -44,6 +46,8 @@ export default function NewQuestionSetPage() {
   const router = useRouter();
   const createMutation = useCreateQuestionSet();
   const suggestMutation = useSuggestQuestionSetAi();
+  const { data: aiStatus } = useAiStatus();
+  const aiConnected = aiStatus?.connected !== false;
 
   const [aiBrief, setAiBrief] = useState("");
   const [aiMax, setAiMax] = useState(20);
@@ -168,8 +172,11 @@ export default function NewQuestionSetPage() {
         <p className="mb-4 text-[13px] text-fg2">
           Hedef rol, sektör veya değerlendirme odağını en az 20 karakter ile
           yazın. Kuruluşunuzun soru havuzundan uygun sorular seçilir (aktif AI
-          yapılandırması gerekir; MOCK ile test edebilirsiniz).
+          entegrasyonu gerekir).
         </p>
+        {!aiConnected && (
+          <AiNotConnectedNotice feature="AI destekli taslak" className="mb-4" />
+        )}
         <div className="bz-form-row">
           <label htmlFor="qs-ai-brief" className="bz-label">
             Hedef ve bağlam
@@ -204,7 +211,7 @@ export default function NewQuestionSetPage() {
           <button
             type="button"
             onClick={() => void runAiSuggest()}
-            disabled={suggestMutation.isPending}
+            disabled={suggestMutation.isPending || !aiConnected}
             className="bz-btn bz-btn--soft"
           >
             {suggestMutation.isPending ? (

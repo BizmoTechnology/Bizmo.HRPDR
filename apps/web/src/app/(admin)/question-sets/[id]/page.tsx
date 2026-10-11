@@ -26,12 +26,14 @@ import { GlassCard, PortalModal } from "@ph/ui";
 import { cn } from "@/lib/utils";
 import { apiErrorMessage } from "@/lib/api";
 import { dimensionColor } from "@/lib/dimension-colors";
+import { AiNotConnectedNotice } from "@/components/ai/AiNotConnectedNotice";
 import {
   useQuestionSet,
   useDeleteQuestionSet,
   useUpdateQuestionSet,
   useQuestionList,
   useGenerateAiQuestions,
+  useAiStatus,
   type QuestionSetItemRow,
   type QuestionSetDetail,
   type QuestionRow,
@@ -653,6 +655,8 @@ function AddQuestionDialog({
 
   const generateMutation = useGenerateAiQuestions();
   const updateQsMutation = useUpdateQuestionSet();
+  const { data: aiStatus } = useAiStatus();
+  const aiConnected = aiStatus?.connected !== false;
 
   const handleGenerate = () => {
     setGeneratedQuestions([]);
@@ -830,6 +834,7 @@ function AddQuestionDialog({
           ) : (
             /* ── AI ile Oluştur ── */
             <div className="px-6 py-4 space-y-5">
+              {!aiConnected && <AiNotConnectedNotice feature="AI ile soru üretimi" />}
               {/* Boyut Seçimi */}
               <fieldset className="bz-fieldset gap-2">
                 <legend className="bz-label mb-2">
@@ -923,7 +928,7 @@ function AddQuestionDialog({
               <button
                 type="button"
                 onClick={handleGenerate}
-                disabled={generateMutation.isPending}
+                disabled={generateMutation.isPending || !aiConnected}
                 className="bz-btn bz-btn--data bz-btn--block"
               >
                 {generateMutation.isPending ? (

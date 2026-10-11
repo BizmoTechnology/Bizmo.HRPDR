@@ -1,6 +1,8 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { prisma } from "../../lib/prisma.js";
+import { isHttpError } from "../../lib/http-error.js";
+import { requireActiveAiConfig } from "../../lib/ai-connection.js";
 import { generateHrAssistantReply } from "../../services/ai-chat.service.js";
 
 const createConversationSchema = z.object({
@@ -194,6 +196,9 @@ const aiChatRoutes: FastifyPluginAsync = async (fastify) => {
           });
         }
 
+        // Entegrasyon yoksa mesaj kaydedilmeden "bağlı değil" döner
+        await requireActiveAiConfig(orgId);
+
         const priorUserCount = await prisma.aiChatMessage.count({
           where: { conversationId, role: "user" },
         });
@@ -274,6 +279,13 @@ const aiChatRoutes: FastifyPluginAsync = async (fastify) => {
           return reply.status(400).send({
             code: "VALIDATION_ERROR",
             message: err.errors.map((e) => e.message).join(", "),
+            traceId: request.traceId,
+          });
+        }
+        if (isHttpError(err)) {
+          return reply.status(err.statusCode).send({
+            code: err.code ?? "REQUEST_ERROR",
+            message: err.message,
             traceId: request.traceId,
           });
         }

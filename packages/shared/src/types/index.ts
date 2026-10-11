@@ -61,8 +61,7 @@ export type AiProvider =
   | "CLAUDE"
   | "OPENAI"
   | "GEMINI"
-  | "ABACUS"
-  | "MOCK";
+  | "ABACUS";
 
 export type AnalysisReviewStatus = "PENDING" | "APPROVED" | "REJECTED";
 

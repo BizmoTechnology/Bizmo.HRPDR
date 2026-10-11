@@ -24,12 +24,14 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { apiErrorMessage } from "@/lib/api";
 import { usePermissions } from "@/lib/roles";
+import { AiNotConnectedNotice } from "@/components/ai/AiNotConnectedNotice";
 import {
   useSession,
   useRunSessionAiAnalysis,
   useSubmitReview,
   useGenerateReport,
   useSessionReport,
+  useAiStatus,
   type SessionDetail,
   type AnswerRow,
 } from "@/hooks/use-api";
@@ -59,6 +61,9 @@ export function SessionDetailPanel({
 }) {
   const { data: session, isLoading } = useSession(sessionId);
   const runAnalysis = useRunSessionAiAnalysis();
+  const { data: aiStatus } = useAiStatus();
+  // Durum bilinmiyorsa düğme açık kalır; sunucu yine "bağlı değil" döner
+  const aiConnected = aiStatus?.connected !== false;
   const [activeTab, setActiveTab] = useState<AnalysisTab>("answers");
   const [expandedAnswers, setExpandedAnswers] = useState<Set<string>>(new Set());
 
@@ -311,6 +316,7 @@ export function SessionDetailPanel({
                   <HrPdrAnalysisView
                     session={session}
                     onRun={() => handleRunAnalysis("HR_PDR_ANALYSIS")}
+                    aiConnected={aiConnected}
                     isRunning={
                       runAnalysis.isPending &&
                       runAnalysis.variables?.analysisType ===
@@ -330,6 +336,7 @@ export function SessionDetailPanel({
                   <PsychologicalAnalysisView
                     session={session}
                     onRun={() => handleRunAnalysis("PSYCHOLOGICAL_ANALYSIS")}
+                    aiConnected={aiConnected}
                     isRunning={
                       runAnalysis.isPending &&
                       runAnalysis.variables?.analysisType ===
@@ -347,7 +354,7 @@ export function SessionDetailPanel({
 }
 
 const PIPELINE_LABELS: Record<string, { label: string; className: string }> = {
-  NOT_QUEUED: { label: "Analiz bekliyor", className: "bg-muted text-muted-foreground" },
+  NOT_QUEUED: { label: "Analiz yapılmadı", className: "bg-muted text-muted-foreground" },
   QUEUED: { label: "Analiz sırada", className: "bg-amber-500/10 text-amber-600" },
   RUNNING: { label: "Analiz sürüyor", className: "bg-amber-500/10 text-amber-600" },
   COMPLETED: { label: "Analiz tamam", className: "bg-accent-green/10 text-accent-green" },
@@ -490,10 +497,12 @@ function HrPdrAnalysisView({
   session,
   onRun,
   isRunning,
+  aiConnected,
 }: {
   session: SessionDetail;
   onRun: () => void;
   isRunning: boolean;
+  aiConnected: boolean;
 }) {
   const analysis = session.hrPdrAnalysis as Record<string, unknown> | null;
 
@@ -511,25 +520,31 @@ function HrPdrAnalysisView({
           AI analizi başlatarak cevaplar üzerinden kapsamlı bir PDR raporu
           oluşturun.
         </p>
-        <motion.button
-          type="button"
-          onClick={onRun}
-          disabled={isRunning || session.answers.length === 0}
-          className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-        >
-          {isRunning ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Sparkles className="h-4 w-4" />
-          )}
-          {isRunning ? "Analiz Yapılıyor..." : "AI Analizi Başlat"}
-        </motion.button>
-        {session.answers.length === 0 && (
-          <p className="text-xs text-muted-foreground/60 mt-2">
-            Analiz için önce cevaplar gereklidir
-          </p>
+        {aiConnected ? (
+          <>
+            <motion.button
+              type="button"
+              onClick={onRun}
+              disabled={isRunning || session.answers.length === 0}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+            >
+              {isRunning ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Sparkles className="h-4 w-4" />
+              )}
+              {isRunning ? "Analiz Yapılıyor..." : "AI Analizi Başlat"}
+            </motion.button>
+            {session.answers.length === 0 && (
+              <p className="text-xs text-muted-foreground/60 mt-2">
+                Analiz için önce cevaplar gereklidir
+              </p>
+            )}
+          </>
+        ) : (
+          <AiNotConnectedNotice feature="AI analizi" className="max-w-sm" />
         )}
       </div>
     );
@@ -544,7 +559,8 @@ function HrPdrAnalysisView({
         <button
           type="button"
           onClick={onRun}
-          disabled={isRunning}
+          disabled={isRunning || !aiConnected}
+          title={aiConnected ? undefined : "AI entegrasyonu bağlı değil"}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-primary hover:bg-primary/10 transition-colors disabled:opacity-50"
         >
           {isRunning ? (
@@ -769,10 +785,12 @@ function PsychologicalAnalysisView({
   session,
   onRun,
   isRunning,
+  aiConnected,
 }: {
   session: SessionDetail;
   onRun: () => void;
   isRunning: boolean;
+  aiConnected: boolean;
 }) {
   const analysis = session.psychologicalAnalysis as Record<string, unknown> | null;
 
@@ -789,25 +807,31 @@ function PsychologicalAnalysisView({
           Bu oturum için henüz psikolojik analiz yapılmadı. AI analizi başlatarak
           Big Five kişilik profili, duygusal zeka ve daha fazlasını keşfedin.
         </p>
-        <motion.button
-          type="button"
-          onClick={onRun}
-          disabled={isRunning || session.answers.length === 0}
-          className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-purple-500 text-white text-sm font-semibold hover:bg-purple-500/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-        >
-          {isRunning ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Sparkles className="h-4 w-4" />
-          )}
-          {isRunning ? "Analiz Yapılıyor..." : "AI Analizi Başlat"}
-        </motion.button>
-        {session.answers.length === 0 && (
-          <p className="text-xs text-muted-foreground/60 mt-2">
-            Analiz için önce cevaplar gereklidir
-          </p>
+        {aiConnected ? (
+          <>
+            <motion.button
+              type="button"
+              onClick={onRun}
+              disabled={isRunning || session.answers.length === 0}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-purple-500 text-white text-sm font-semibold hover:bg-purple-500/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+            >
+              {isRunning ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Sparkles className="h-4 w-4" />
+              )}
+              {isRunning ? "Analiz Yapılıyor..." : "AI Analizi Başlat"}
+            </motion.button>
+            {session.answers.length === 0 && (
+              <p className="text-xs text-muted-foreground/60 mt-2">
+                Analiz için önce cevaplar gereklidir
+              </p>
+            )}
+          </>
+        ) : (
+          <AiNotConnectedNotice feature="AI analizi" className="max-w-sm" />
         )}
       </div>
     );
@@ -825,7 +849,8 @@ function PsychologicalAnalysisView({
         <button
           type="button"
           onClick={onRun}
-          disabled={isRunning}
+          disabled={isRunning || !aiConnected}
+          title={aiConnected ? undefined : "AI entegrasyonu bağlı değil"}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-purple-500 hover:bg-purple-500/10 transition-colors disabled:opacity-50"
         >
           {isRunning ? (

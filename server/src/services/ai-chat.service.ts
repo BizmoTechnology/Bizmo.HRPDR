@@ -1,6 +1,7 @@
 import { Prisma, type AiProvider } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { decrypt } from "../lib/crypto.js";
+import { requireActiveAiConfig } from "../lib/ai-connection.js";
 import { completeChatMulti, type LlmMessage } from "../lib/llm.js";
 
 const MAX_PERSONNEL_IN_CONTEXT = 72;
@@ -345,16 +346,7 @@ export async function generateHrAssistantReply(params: {
     throw new Error("Sohbet sonu kullanıcı mesajı olmalıdır");
   }
 
-  const aiConfig = await prisma.aiConfig.findFirst({
-    where: { organizationId, isActive: true },
-    orderBy: [{ isDefault: "desc" }, { updatedAt: "desc" }],
-  });
-
-  if (!aiConfig) {
-    throw new Error(
-      "Aktif AI yapılandırması yok. AI Yapılandırması sayfasından bir sağlayıcı ekleyin.",
-    );
-  }
+  const aiConfig = await requireActiveAiConfig(organizationId);
 
   const { contextText, metadata: ctxMeta } = await buildHrContext(
     organizationId,
@@ -371,8 +363,7 @@ export async function generateHrAssistantReply(params: {
     })),
   ];
 
-  const apiKey =
-    aiConfig.provider === "MOCK" ? "" : decrypt(aiConfig.encryptedApiKey);
+  const apiKey = decrypt(aiConfig.encryptedApiKey);
 
   const reply = await completeChatMulti({
     provider: aiConfig.provider,

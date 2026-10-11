@@ -1,7 +1,8 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { decrypt } from "../lib/crypto.js";
-import { HttpError } from "../lib/http-error.js";
+import { HttpError, isHttpError } from "../lib/http-error.js";
+import { AI_NOT_CONNECTED_REASON, requireActiveAiConfig } from "../lib/ai-connection.js";
 import { completeChat } from "../lib/llm.js";
 import { normalizeQuestionOptions } from "../lib/question-options.js";
 import {
@@ -150,12 +151,7 @@ export async function hasAiConsent(sessionId: string): Promise<boolean> {
   );
 }
 
-export function getActiveAiConfig(organizationId: string) {
-  return prisma.aiConfig.findFirst({
-    where: { organizationId, isActive: true },
-    orderBy: [{ isDefault: "desc" }, { updatedAt: "desc" }],
-  });
-}
+export { getActiveAiConfig } from "../lib/ai-connection.js";
 
 export async function runSessionAnalysis(params: {
   sessionId: string;
@@ -222,15 +218,7 @@ export async function runSessionAnalysis(params: {
     );
   }
 
-  const aiConfig = await getActiveAiConfig(organizationId);
-
-  if (!aiConfig) {
-    throw new HttpError(
-      "Aktif AI yapılandırması yok. AI Yapılandırması sayfasından bir sağlayıcı ekleyin.",
-      400,
-      "NO_AI_CONFIG",
-    );
-  }
+  const aiConfig = await requireActiveAiConfig(organizationId);
 
   const promptTemplate = await prisma.aiPromptTemplate.findFirst({
     where: { organizationId, type: analysisType, isActive: true },
@@ -242,7 +230,7 @@ export async function runSessionAnalysis(params: {
       (analysisType === "HR_PDR_ANALYSIS" ? DEFAULT_HR_PDR_PROMPT : DEFAULT_PSYCHOLOGICAL_PROMPT)) +
     UNTRUSTED_DATA_GUARD;
 
-  const apiKey = aiConfig.provider === "MOCK" ? "" : decrypt(aiConfig.encryptedApiKey);
+  const apiKey = decrypt(aiConfig.encryptedApiKey);
 
   const personnelInfo = `Personel: ${session.personnel.firstName} ${session.personnel.lastName}
 Pozisyon: ${session.personnel.position}
@@ -254,60 +242,54 @@ Değerlendirme: ${session.assessment.title}`;
   const field = analysisType === "HR_PDR_ANALYSIS" ? "hrPdrAnalysis" : "psychologicalAnalysis";
   let parsed: Record<string, unknown>;
 
-  if (aiConfig.provider === "MOCK") {
-    parsed = analysisType === "HR_PDR_ANALYSIS"
-      ? generateMockHrPdr(session.personnel)
-      : generateMockPsychological(session.personnel);
-  } else {
-    const startedAt = Date.now();
-    let raw: string;
-    try {
-      raw = await completeChat({
-        provider: aiConfig.provider,
-        apiKey,
-        modelName: aiConfig.modelName,
-        system: systemPrompt,
-        user: userMessage,
-      });
-    } catch (err) {
-      await logUsage({
-        aiConfig,
-        organizationId,
-        sessionId,
-        purpose: analysisType,
-        status: "FAILED",
-        latencyMs: Date.now() - startedAt,
-        errorCode: err instanceof Error ? err.name : "UNKNOWN",
-      });
-      throw err;
-    }
-
-    try {
-      const json: unknown = JSON.parse(extractJson(raw));
-      if (!json || typeof json !== "object" || Array.isArray(json)) throw new Error("not an object");
-      parsed = json as Record<string, unknown>;
-    } catch {
-      await logUsage({
-        aiConfig,
-        organizationId,
-        sessionId,
-        purpose: analysisType,
-        status: "FAILED",
-        latencyMs: Date.now() - startedAt,
-        errorCode: "AI_INVALID_JSON",
-      });
-      throw new HttpError("AI yanıtı geçerli JSON değil", 502, "AI_INVALID_JSON");
-    }
-
+  const startedAt = Date.now();
+  let raw: string;
+  try {
+    raw = await completeChat({
+      provider: aiConfig.provider,
+      apiKey,
+      modelName: aiConfig.modelName,
+      system: systemPrompt,
+      user: userMessage,
+    });
+  } catch (err) {
     await logUsage({
       aiConfig,
       organizationId,
       sessionId,
       purpose: analysisType,
-      status: "SUCCESS",
+      status: "FAILED",
       latencyMs: Date.now() - startedAt,
+      errorCode: err instanceof Error ? err.name : "UNKNOWN",
     });
+    throw err;
   }
+
+  try {
+    const json: unknown = JSON.parse(extractJson(raw));
+    if (!json || typeof json !== "object" || Array.isArray(json)) throw new Error("not an object");
+    parsed = json as Record<string, unknown>;
+  } catch {
+    await logUsage({
+      aiConfig,
+      organizationId,
+      sessionId,
+      purpose: analysisType,
+      status: "FAILED",
+      latencyMs: Date.now() - startedAt,
+      errorCode: "AI_INVALID_JSON",
+    });
+    throw new HttpError("AI yanıtı geçerli JSON değil", 502, "AI_INVALID_JSON");
+  }
+
+  await logUsage({
+    aiConfig,
+    organizationId,
+    sessionId,
+    purpose: analysisType,
+    status: "SUCCESS",
+    latencyMs: Date.now() - startedAt,
+  });
 
   const data: Prisma.AssessmentSessionUpdateInput = {
     [field]: parsed as Prisma.InputJsonValue,
@@ -557,6 +539,13 @@ export function queueSessionAnalysis(
           }),
         ]);
       } catch (err) {
+        if (isHttpError(err) && err.code === "AI_NOT_CONNECTED") {
+          await prisma.assessmentSession.update({
+            where: { id: sessionId },
+            data: { analysisPipeline: "NOT_QUEUED", analysisError: AI_NOT_CONNECTED_REASON },
+          });
+          return;
+        }
         const message = err instanceof Error ? err.message : "AI analizi başarısız";
         log.error({ err, sessionId }, "background session analysis failed");
         await prisma.$transaction([
@@ -571,53 +560,6 @@ export function queueSessionAnalysis(
       }
     })().catch((err) => log.error({ err, sessionId }, "analysis pipeline update failed"));
   });
-}
-
-function generateMockHrPdr(personnel: { firstName: string; lastName: string }) {
-  return {
-    performanceScore: 7.5,
-    performanceSummary: `${personnel.firstName} ${personnel.lastName} genel olarak iyi bir performans göstermektedir. (MOCK analiz)`,
-    competencyAnalysis: [
-      { dimension: "LOGICAL_ALGORITHMIC", score: 7, strengths: ["Analitik düşünme"], improvements: ["Karmaşık problem çözme"] },
-      { dimension: "LEADERSHIP", score: 8, strengths: ["Takım motivasyonu"], improvements: ["Stratejik planlama"] },
-    ],
-    strengths: ["İletişim becerileri", "Takım çalışması", "Öğrenme istekliliği"],
-    developmentAreas: [
-      { area: "Teknik beceriler", recommendation: "İleri düzey eğitimler önerilir" },
-      { area: "Zaman yönetimi", recommendation: "Önceliklendirme teknikleri geliştirilmeli" },
-    ],
-    goals: {
-      shortTerm: ["Mevcut projeleri zamanında tamamlama"],
-      midTerm: ["Liderlik eğitimi programına katılma"],
-      longTerm: ["Kıdemli pozisyona hazırlanma"],
-    },
-    overallRecommendation: "Gelişim potansiyeli yüksek, eğitim desteklenmeli. (MOCK — gerçek analiz için AI sağlayıcısı yapılandırın)",
-    promotionReadiness: "DEVELOPING",
-    trainingNeeds: ["Liderlik geliştirme", "Stratejik düşünme"],
-  };
-}
-
-function generateMockPsychological(personnel: { firstName: string; lastName: string }) {
-  return {
-    personalityProfile: {
-      openness: { score: 7, description: "Yeni deneyimlere açık" },
-      conscientiousness: { score: 8, description: "Düzenli ve sorumluluk sahibi" },
-      extraversion: { score: 6, description: "Dengeli sosyal etkileşim" },
-      agreeableness: { score: 7, description: "İşbirlikçi yaklaşım" },
-      neuroticism: { score: 4, description: "Duygusal olarak kararlı" },
-    },
-    emotionalIntelligence: {
-      selfAwareness: 7, selfRegulation: 7, motivation: 8, empathy: 7, socialSkills: 7,
-      summary: `${personnel.firstName} ${personnel.lastName} ortalama üstü duygusal zekaya sahiptir. (MOCK)`,
-    },
-    stressManagement: { level: "MODERATE", copingStrategies: ["Problem odaklı başa çıkma"], recommendations: ["Mindfulness pratikleri"] },
-    motivationProfile: { intrinsic: ["Öğrenme", "Başarı"], extrinsic: ["Kariyer gelişimi"], summary: "İçsel motivasyon baskın" },
-    teamDynamics: { role: "Koordinatör", collaborationStyle: "Katılımcı", strengths: ["İletişim"], challenges: ["Delegasyon"] },
-    communicationStyle: { primary: "Diplomatik", effectiveness: 7, suggestions: ["Daha doğrudan geri bildirim"] },
-    decisionMaking: { style: "Analitik", riskTolerance: "MODERATE", description: "Veri odaklı karar verme" },
-    resilience: { score: 7, description: "İyi psikolojik dayanıklılık", recommendations: ["Stres yönetimi eğitimi"] },
-    overallPsychologicalProfile: "Dengeli kişilik profili, gelişim potansiyeli mevcut. (MOCK — gerçek analiz için AI sağlayıcısı yapılandırın)",
-  };
 }
 
 export { DEFAULT_HR_PDR_PROMPT, DEFAULT_PSYCHOLOGICAL_PROMPT };

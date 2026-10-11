@@ -5,6 +5,7 @@ import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { decrypt } from "../lib/crypto.js";
+import { requireActiveAiConfig } from "../lib/ai-connection.js";
 import { normalizeQuestionOptions } from "../lib/question-options.js";
 
 const generatedQuestionSchema = z.object({
@@ -137,33 +138,7 @@ export async function generateAiQuestions(params: {
   const dimInfo = DIMENSION_INFO[dimension];
   if (!dimInfo) throw new Error(`Geçersiz boyut: ${dimension}`);
 
-  const aiConfig = await prisma.aiConfig.findFirst({
-    where: { organizationId, isActive: true },
-    orderBy: [{ isDefault: "desc" }, { updatedAt: "desc" }],
-  });
-
-  if (!aiConfig) {
-    throw new Error("Aktif AI yapılandırması yok. AI Yapılandırması sayfasından bir sağlayıcı ekleyin.");
-  }
-
-  if (aiConfig.provider === "MOCK") {
-    // Mock sorular da havuza kaydedilir; aksi halde soru setine eklenemezler.
-    const mock = generateMockQuestions(dimension, count);
-    const saved: Array<Record<string, unknown>> = [];
-    for (const q of mock) {
-      const { id: _id, _mock, dimension: _dim, ...rest } = q;
-      const question = await prisma.question.create({
-        data: {
-          ...(rest as Omit<Prisma.QuestionUncheckedCreateInput, "organizationId" | "dimension">),
-          dimension: dimension as Prisma.QuestionUncheckedCreateInput["dimension"],
-          options: Prisma.DbNull,
-          organizationId,
-        },
-      });
-      saved.push(question as unknown as Record<string, unknown>);
-    }
-    return saved;
-  }
+  const aiConfig = await requireActiveAiConfig(organizationId);
 
   const apiKey = decrypt(aiConfig.encryptedApiKey);
 
@@ -262,74 +237,3 @@ Kurallar:
   return savedQuestions;
 }
 
-function generateMockQuestions(dimension: string, count: number): Array<Record<string, unknown>> {
-  const dimInfo = DIMENSION_INFO[dimension];
-  const mockQuestions: Array<Record<string, unknown>> = [];
-
-  const templates: Record<string, string[]> = {
-    LOGICAL_ALGORITHMIC: [
-      "Karmaşık bir teknik problemi çözerken izlediğiniz adımları anlatır mısınız?",
-      "Bir üretim sürecinde hata tespit ettiğinizde nasıl bir analiz yaklaşımı izlersiniz?",
-      "Birden fazla çözüm yolu olan bir durumda en uygun olanı nasıl seçersiniz?",
-      "Veri analizi yaparken hangi sistematik yöntemleri kullanırsınız?",
-      "Bir projenin planlama aşamasında riskleri nasıl değerlendirirsiniz?",
-    ],
-    LEADERSHIP: [
-      "Ekibinizde motivasyon düşüklüğü yaşandığında nasıl bir yaklaşım sergilersiniz?",
-      "Zor bir karar almanız gereken bir durumu ve sürecini anlatır mısınız?",
-      "Ekip içi çatışmaları nasıl yönetirsiniz?",
-      "Bir değişiklik sürecinde ekibinizi nasıl yönlendirirsiniz?",
-      "Yeni bir ekip üyesinin adaptasyonunu nasıl desteklersiniz?",
-    ],
-    SOCIAL_INTELLIGENCE: [
-      "İş yerinde güven ilişkisi kurmak için neler yaparsınız?",
-      "Farklı bakış açılarına sahip kişilerle nasıl ortak zemin bulursunuz?",
-      "Bir arkadaşınızın zor bir dönemden geçtiğini fark ettiğinizde nasıl davranırsınız?",
-      "Ekip içinde iletişim kopukluğu yaşandığında nasıl müdahale edersiniz?",
-      "Yapıcı geri bildirim verirken nelere dikkat edersiniz?",
-    ],
-    GROWTH_POTENTIAL: [
-      "Son bir yılda kendinizi geliştirmek için neler yaptınız?",
-      "Aldığınız en zor geri bildirimi ve bunu nasıl değerlendirdiğinizi anlatır mısınız?",
-      "Yeni bir beceri öğrenme sürecinizi nasıl yönetirsiniz?",
-      "Başarısızlıktan ne öğrendiğinize dair bir örnek verir misiniz?",
-      "Kariyer hedeflerinize ulaşmak için nasıl bir plan izliyorsunuz?",
-    ],
-    DOMAIN_ALIGNMENT: [
-      "Bu pozisyonu neden tercih ettiniz?",
-      "Sektörünüzdeki son gelişmeleri nasıl takip ediyorsunuz?",
-      "Mevcut rolünüzde en çok hangi görevlerden keyif alıyorsunuz?",
-      "İş ortamınızdaki zorlukları nasıl yönetiyorsunuz?",
-      "Uzun vadede bu alanda nasıl bir kariyer hayal ediyorsunuz?",
-    ],
-  };
-
-  const dimTemplates: string[] =
-    templates[dimension] ?? templates.LOGICAL_ALGORITHMIC ?? [];
-  const phases: Array<"ICEBREAKER" | "CORE" | "CLOSING"> = ["ICEBREAKER", "CORE", "CORE", "CORE", "CLOSING"];
-  const types: Array<"OPEN_ENDED" | "SITUATIONAL" | "BEHAVIORAL"> = ["OPEN_ENDED", "SITUATIONAL", "BEHAVIORAL"];
-
-  for (let i = 0; i < Math.min(count, dimTemplates.length); i++) {
-    mockQuestions.push({
-      id: `mock-${Date.now()}-${i}`,
-      text: dimTemplates[i],
-      subText: null,
-      dimension,
-      type: types[i % types.length],
-      phase: phases[i % phases.length],
-      weight: 1.0,
-      followUpPrompt: null,
-      options: null,
-      minScale: null,
-      maxScale: null,
-      isActive: true,
-      isAiGenerated: true,
-      aiModel: "mock-default",
-      tags: ["mock", dimInfo?.tr.toLowerCase() ?? dimension.toLowerCase()],
-      language: "tr",
-      _mock: true,
-    });
-  }
-
-  return mockQuestions;
-}

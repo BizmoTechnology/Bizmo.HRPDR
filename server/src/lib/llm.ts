@@ -125,19 +125,6 @@ export async function completeChatMulti(params: {
     return txt;
   }
 
-  if (provider === "MOCK") {
-    if (responseFormat === "json_object") {
-      return JSON.stringify({
-        mock: true,
-        message: "Mock analiz — gerçek AI sağlayıcısı yapılandırın",
-      });
-    }
-    return (
-      "Bu bir MOCK yanıttır. Gerçek AI önerileri için **AI Yapılandırması** sayfasından aktif bir sağlayıcı ekleyin.\n\n" +
-      "Örnek: Üretim bölümünde liderlik ve iletişim skorları yüksek, terfi hazırlığı READY olan personeller önceliklidir."
-    );
-  }
-
   throw new Error(`Desteklenmeyen sağlayıcı: ${provider}`);
 }
 

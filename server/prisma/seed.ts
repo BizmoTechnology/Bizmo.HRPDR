@@ -1,8 +1,8 @@
 // server/.env (ve kök .env) yüklensin: `npm run db:seed` tsx ile doğrudan çalışır
 import "../src/env.js";
-import { PrismaClient, Prisma } from "@prisma/client";
+import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
-import { encrypt } from "../src/lib/crypto.js";
+import { seedRespondents } from "./seed-respondents.js";
 
 const prisma = new PrismaClient();
 
@@ -225,7 +225,7 @@ async function main() {
     console.log(`✅ QuestionSet: ${qSet.name} (${questionDefs.length} soru)`);
   }
 
-  // ── Örnek değerlendirme, oturumlar, rapor, AI, bildirimler ──
+  // ── Örnek değerlendirme, oturumlar, bildirimler ──
   const questionSet = await prisma.questionSet.findFirst({
     where: { organizationId: org.id, deletedAt: null },
     orderBy: { createdAt: "asc" },
@@ -266,230 +266,36 @@ async function main() {
     });
     const byEmp = Object.fromEntries(personnelRows.map((p) => [p.employeeId, p]));
 
-    const dimScoresA = {
-      LOGICAL_ALGORITHMIC: 7.4,
-      LEADERSHIP: 6.9,
-      SOCIAL_INTELLIGENCE: 7.8,
-      GROWTH_POTENTIAL: 7.1,
-      DOMAIN_ALIGNMENT: 8.0,
-    };
-    const dimScoresB = {
-      LOGICAL_ALGORITHMIC: 6.8,
-      LEADERSHIP: 7.5,
-      SOCIAL_INTELLIGENCE: 8.2,
-      GROWTH_POTENTIAL: 7.4,
-      DOMAIN_ALIGNMENT: 7.0,
-    };
-
-    const swotA = {
-      strengths: ["Problem çözmede sistematik yaklaşım", "Vardiya iletişimi"],
-      weaknesses: ["Yoğun günlerde detay kaybı riski"],
-      opportunities: ["İleri CNC / kalite eğitimleri"],
-      threats: ["Tekrarlayan uzun mesai"],
-    };
-    const pathsA = {
-      shortTerm: "Hat içi kalite görevlisi",
-      midTerm: "Üretim hattı takım lideri",
-      longTerm: "Üretim mühendisliği uzmanlığı",
-    };
-
-    const p001 = byEmp["P001"];
-    if (p001) {
+    // P001–P003: atanmış, henüz başlamamış oturumlar
+    for (const empId of ["P001", "P002", "P003"]) {
+      const p = byEmp[empId];
+      if (!p) continue;
       await prisma.assessmentSession.upsert({
-        where: {
-          assessmentId_personnelId: {
-            assessmentId: ASSESSMENT_ID,
-            personnelId: p001.id,
-          },
-        },
+        where: { assessmentId_personnelId: { assessmentId: ASSESSMENT_ID, personnelId: p.id } },
         create: {
           assessmentId: ASSESSMENT_ID,
-          personnelId: p001.id,
+          personnelId: p.id,
           status: "NOT_STARTED",
           analysisPipeline: "NOT_QUEUED",
           requiresHrReview: true,
         },
-        update: {
-          status: "NOT_STARTED",
-        },
-      });
-      console.log("✅ Oturum (bekleyen): P001 → NOT_STARTED");
-    }
-
-    async function upsertCompleted(
-      empIdKey: string,
-      dimensionScores: Record<string, number>,
-      summary: string,
-      swot: typeof swotA,
-      paths: typeof pathsA,
-    ) {
-      const p = byEmp[empIdKey];
-      if (!p) return null;
-      const completedAt = new Date(now.getTime() - (empIdKey === "P002" ? 3 : 5) * 86400000);
-      const sess = await prisma.assessmentSession.upsert({
-        where: {
-          assessmentId_personnelId: {
-            assessmentId: ASSESSMENT_ID,
-            personnelId: p.id,
-          },
-        },
-        create: {
-          assessmentId: ASSESSMENT_ID,
-          personnelId: p.id,
-          status: "COMPLETED",
-          startedAt: new Date(completedAt.getTime() - 3600 * 1000),
-          completedAt,
-          durationSec: 3240,
-          dimensionScores,
-          analysisPipeline: "COMPLETED",
-          requiresHrReview: false,
-          keyInsights: summary,
-          swotAnalysis: swot,
-          careerPaths: paths,
-          rawAnalysis: { source: "SEED", version: 1 },
-        },
-        update: {
-          status: "COMPLETED",
-          dimensionScores,
-          analysisPipeline: "COMPLETED",
-          completedAt,
-          swotAnalysis: swot,
-          careerPaths: paths,
-          keyInsights: summary,
-        },
-      });
-
-      await prisma.report.upsert({
-        where: { sessionId: sess.id },
-        create: {
-          sessionId: sess.id,
-          personnelId: p.id,
-          generatedById: admin.id,
-          status: "READY",
-          executiveSummary:
-            `${p.firstName} ${p.lastName} için özet (seed): Güçlü teknik uyum ve ekip iletişimi.`,
-          generatedAt: completedAt,
-          fullReportJson: {
-            dimensionScores,
-            swotAnalysis: swot,
-            careerPaths: paths,
-          },
-        },
-        update: {
-          status: "READY",
-          executiveSummary:
-            `${p.firstName} ${p.lastName} — seed raporu güncellendi.`,
-        },
-      });
-
-      await prisma.analysisReview.upsert({
-        where: { sessionId: sess.id },
-        create: {
-          sessionId: sess.id,
-          reviewerId: hrManager.id,
-          status: "APPROVED",
-          comment: "Örnek İK onayı (seed)",
-          decidedAt: completedAt,
-        },
         update: {},
       });
-
-      console.log(`✅ Oturum + rapor (tamamlanan): ${empIdKey}`);
-      return sess.id;
     }
+    console.log("✅ Oturum (bekleyen): P001–P003 → NOT_STARTED");
 
-    const swotB = {
-      strengths: ["İletişim ve uyum"],
-      weaknesses: ["Raporlama sürelerinde gecikme"],
-      opportunities: ["Kalite sistemleri eğitimi"],
-      threats: ["İş yükü dalgalanması"],
-    };
-    const pathsB = {
-      shortTerm: "Ölçüm süreçlerinde uzmanlık",
-      midTerm: "Kalite denetçisi",
-      longTerm: "Kalite mühendisliği",
-    };
-
-    await upsertCompleted(
-      "P002",
-      dimScoresA,
-      "Yüksek operasyonel uyum; liderlik için ek mentorluk önerilir.",
-      swotA,
-      pathsA,
-    );
-    const sessionIdP003 = await upsertCompleted(
-      "P003",
-      dimScoresB,
-      "Sosyal zeka ve kalite odaklı güçlü profil.",
-      swotB,
-      pathsB,
-    );
-
-    if (
-      sessionIdP003 &&
-      !(await prisma.aiUsageLog.findFirst({
-        where: { sessionId: sessionIdP003 },
-      }))
-    ) {
-      await prisma.aiUsageLog.createMany({
-        data: [
-          {
-            provider: "MOCK",
-            modelName: "mock-analysis-v1",
-            purpose: "SESSION_ANALYSIS",
-            inputTokens: 2100,
-            outputTokens: 950,
-            costUsd: new Prisma.Decimal("0.024"),
-            latencyMs: 1420,
-            requestType: "FULL_ANALYSIS",
-            status: "OK",
-            organizationId: org.id,
-            sessionId: sessionIdP003,
-          },
-          {
-            provider: "MOCK",
-            modelName: "mock-analysis-v1",
-            purpose: "SESSION_ANALYSIS",
-            inputTokens: 1800,
-            outputTokens: 820,
-            costUsd: new Prisma.Decimal("0.019"),
-            latencyMs: 1180,
-            requestType: "FULL_ANALYSIS",
-            status: "OK",
-            organizationId: org.id,
-          },
-        ],
-      });
-      console.log("✅ AiUsageLog (örnek kayıtlar)");
-    }
-
-    try {
-      const mockKey = encrypt("mock-api-key-unused");
-      await prisma.aiConfig.upsert({
-        where: { id: "seed-ai-config-mock" },
-        create: {
-          id: "seed-ai-config-mock",
-          organizationId: org.id,
-          provider: "MOCK",
-          modelName: "mock-analysis-v1",
-          encryptedApiKey: mockKey,
-          purpose: "SESSION_ANALYSIS",
-          isActive: true,
-          isDefault: true,
-          config: { note: "Seed — gerçek anahtar girin" },
-        },
-        update: {
-          isDefault: true,
-          isActive: true,
-        },
-      });
-      console.log("✅ AiConfig MOCK (varsayılan analiz)");
-    } catch (e) {
-      console.warn(
-        "⚠️ AiConfig seed atlandı — ENCRYPTION_KEY (.env) 64 hex olmalı:",
-        e,
-      );
-    }
+    // P006–P008: soruların tamamını cevaplamış örnek personel. AI analizi ve AI
+    // yapılandırması seed edilmez; entegrasyon bağlanana kadar panel "bağlı değil" der.
+    await seedRespondents({
+      prisma,
+      organizationId: org.id,
+      assessmentId: ASSESSMENT_ID,
+      questionSetId: questionSet.id,
+      departments,
+      teams,
+      portalPasswordHash: portalPassword,
+      now,
+    });
 
     await prisma.notification.upsert({
       where: { id: "seed-notification-admin-1" },
@@ -498,7 +304,7 @@ async function main() {
         userId: admin.id,
         type: "INFO",
         title: "Örnek bildirim",
-        body: "Seed: P002 ve P003 için örnek raporlar oluşturuldu.",
+        body: "Seed: P006–P008 değerlendirmeyi tamamladı. AI analizi için önce AI entegrasyonunu bağlayın.",
       },
       update: {},
     });
@@ -509,7 +315,7 @@ async function main() {
         userId: hrManager.id,
         type: "ASSESSMENT",
         title: "Yeni değerlendirme özeti",
-        body: "2026 Q1 Potansiyel Haritası aktif; P001 için bekleyen oturum var.",
+        body: "2026 Q1 Potansiyel Haritası aktif; P001–P003 için bekleyen oturum var.",
       },
       update: {},
     });
@@ -520,7 +326,7 @@ async function main() {
   console.log("─────────────────────────────────────────");
   console.log("Admin:    admin@example.com / Admin1234!");
   console.log("HR Mgr:   hr@example.com   / Hr1234567!");
-  console.log("Portal:   P001–P005        / Portal123!");
+  console.log("Portal:   P001–P008        / Portal123!");
   console.log("─────────────────────────────────────────");
 }
 

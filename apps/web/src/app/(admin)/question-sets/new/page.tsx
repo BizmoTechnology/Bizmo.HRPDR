@@ -13,9 +13,11 @@ import { cn } from "@/lib/utils";
 import {
   useCreateQuestionSet,
   useSuggestQuestionSetAi,
+  useAiStatus,
   type QuestionSetDetail,
 } from "@/hooks/use-api";
 import { DIMENSION_SHORT_LABELS } from "@ph/shared";
+import { AiNotConnectedNotice } from "@/components/ai/AiNotConnectedNotice";
 
 const WEIGHT_FIELDS = [
   { key: "LOGICAL_ALGORITHMIC", field: "weightLogical" as const },
@@ -43,6 +45,8 @@ export default function NewQuestionSetPage() {
   const router = useRouter();
   const createMutation = useCreateQuestionSet();
   const suggestMutation = useSuggestQuestionSetAi();
+  const { data: aiStatus } = useAiStatus();
+  const aiConnected = aiStatus?.connected !== false;
 
   const [aiBrief, setAiBrief] = useState("");
   const [aiMax, setAiMax] = useState(20);
@@ -164,8 +168,11 @@ export default function NewQuestionSetPage() {
         <p className="mb-3 text-sm text-muted-foreground">
           Hedef rol, sektör veya değerlendirme odağını en az 20 karakter ile
           yazın. Kuruluşunuzun soru havuzundan uygun sorular seçilir (aktif AI
-          yapılandırması gerekir; MOCK ile test edebilirsiniz).
+          entegrasyonu gerekir).
         </p>
+        {!aiConnected && (
+          <AiNotConnectedNotice feature="AI destekli taslak" className="mb-3" />
+        )}
         <textarea
           value={aiBrief}
           onChange={(e) => setAiBrief(e.target.value)}
@@ -192,7 +199,7 @@ export default function NewQuestionSetPage() {
           <button
             type="button"
             onClick={() => void runAiSuggest()}
-            disabled={suggestMutation.isPending}
+            disabled={suggestMutation.isPending || !aiConnected}
             className="inline-flex items-center gap-2 rounded-xl bg-primary/15 px-4 py-2.5 text-sm font-semibold text-primary transition-colors hover:bg-primary/25 disabled:opacity-50"
           >
             {suggestMutation.isPending ? (

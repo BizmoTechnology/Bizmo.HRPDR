@@ -228,7 +228,6 @@ const aiProviderEnum = z.enum([
   "OPENAI",
   "GEMINI",
   "ABACUS",
-  "MOCK",
 ]);
 
 export const createAiConfigSchema = z.object({

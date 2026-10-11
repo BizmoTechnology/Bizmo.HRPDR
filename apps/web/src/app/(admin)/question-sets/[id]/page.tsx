@@ -25,12 +25,14 @@ import { toast } from "sonner";
 import { GlassCard, PortalModal } from "@ph/ui";
 import { cn } from "@/lib/utils";
 import { apiErrorMessage } from "@/lib/api";
+import { AiNotConnectedNotice } from "@/components/ai/AiNotConnectedNotice";
 import {
   useQuestionSet,
   useDeleteQuestionSet,
   useUpdateQuestionSet,
   useQuestionList,
   useGenerateAiQuestions,
+  useAiStatus,
   type QuestionSetItemRow,
   type QuestionSetDetail,
   type QuestionRow,
@@ -635,6 +637,8 @@ function AddQuestionDialog({
 
   const generateMutation = useGenerateAiQuestions();
   const updateQsMutation = useUpdateQuestionSet();
+  const { data: aiStatus } = useAiStatus();
+  const aiConnected = aiStatus?.connected !== false;
 
   const handleGenerate = () => {
     setGeneratedQuestions([]);
@@ -804,6 +808,7 @@ function AddQuestionDialog({
           ) : (
             /* ── AI ile Oluştur ── */
             <div className="px-5 py-4 space-y-4">
+              {!aiConnected && <AiNotConnectedNotice feature="AI ile soru üretimi" />}
               {/* Boyut Seçimi */}
               <div>
                 <label className="block text-sm font-medium text-foreground mb-2">
@@ -913,7 +918,7 @@ function AddQuestionDialog({
               {/* Üret Butonu */}
               <motion.button
                 onClick={handleGenerate}
-                disabled={generateMutation.isPending}
+                disabled={generateMutation.isPending || !aiConnected}
                 className="w-full flex items-center justify-center gap-2 h-11 rounded-xl bg-gradient-to-r from-purple-500 to-primary text-white text-sm font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 whileHover={{ scale: 1.01 }}
                 whileTap={{ scale: 0.98 }}

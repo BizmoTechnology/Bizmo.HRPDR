@@ -5,10 +5,12 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   ClipboardList, Clock, MessageCircle, ArrowRight,
-  Shield, Loader2, AlertCircle,
+  Shield, Loader2, CalendarX2,
 } from "lucide-react";
 import { GlassCard } from "@ph/ui";
 import axios from "axios";
+import { AppMark } from "@/components/AppMark";
+import { cn } from "@/lib/utils";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
@@ -95,84 +97,72 @@ export default function WelcomePage() {
   };
 
   return (
-    <div
-      className="min-h-screen flex items-center justify-center p-4"
-      style={{
-        background:
-          "linear-gradient(135deg, hsl(200 13% 5%) 0%, hsl(153 40% 10%) 60%, hsl(200 10% 8%) 100%)",
-      }}
-    >
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/3 left-1/3 w-96 h-96 rounded-full bg-primary/5 blur-3xl" />
-      </div>
-
+    <main className="bz-aurora flex min-h-dvh w-full justify-center px-4 py-8 sm:items-center sm:py-12">
       <motion.div
-        className="relative w-full max-w-md"
-        initial={{ opacity: 0, y: 24 }}
+        className="w-full max-w-[480px]"
+        initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: [0.25, 0.46, 0.45, 0.94] }}
+        transition={{ duration: 0.35, ease: [0.25, 0.46, 0.45, 0.94] }}
       >
-        {/* Logo */}
-        <div className="flex justify-center mb-6">
-          <div className="h-14 w-14 rounded-2xl bg-primary flex items-center justify-center shadow-lg shadow-primary/20">
-            <span className="text-white font-bold text-xl select-none">PH</span>
-          </div>
+        {/* Marka */}
+        <div className="mb-5 flex items-center justify-center gap-2.5">
+          <AppMark size="sm" />
+          <span className="font-display text-[15px] font-extrabold tracking-[-0.01em] text-foreground">
+            PotansiyelHaritası
+          </span>
         </div>
 
-        <GlassCard className="rounded-2xl">
+        <GlassCard className="rounded-3xl p-5 shadow-2 sm:p-8">
           {loading ? (
-            <div className="flex flex-col items-center py-12">
-              <Loader2 className="h-8 w-8 animate-spin text-primary mb-3" />
-              <p className="text-sm text-muted-foreground">Yükleniyor...</p>
+            <div role="status" className="flex flex-col items-center gap-3 py-12 text-fg3">
+              <Loader2 className="h-6 w-6 animate-spin" />
+              <p className="text-sm">Yükleniyor…</p>
             </div>
           ) : noSession ? (
-            <div className="flex flex-col items-center py-8">
-              <div className="h-14 w-14 rounded-xl bg-muted/50 flex items-center justify-center mb-4">
-                <AlertCircle className="h-7 w-7 text-muted-foreground" />
-              </div>
-              <h2 className="text-lg font-semibold text-foreground mb-2 text-center">
-                Aktif Değerlendirme Yok
-              </h2>
-              <p className="text-sm text-muted-foreground text-center leading-relaxed max-w-xs">
+            <div className="bz-empty px-2 py-8">
+              <span className="bz-icon-box">
+                <CalendarX2 />
+              </span>
+              <p className="bz-empty__title">Aktif değerlendirme yok</p>
+              <p className="bz-empty__text">
                 Şu anda atanmış bir değerlendirmeniz bulunmuyor. Lütfen İK
                 yöneticinizle iletişime geçin.
               </p>
             </div>
           ) : (
             <>
-              {/* Greeting */}
-              <div className="text-center mb-6">
-                <h1 className="text-2xl font-bold text-foreground mb-2">
-                  Merhaba,{" "}
-                  <span className="text-primary">{personnel?.firstName ?? ""}!</span>
+              {/* Karşılama */}
+              <div className="text-center">
+                <h1 className="font-display text-[26px] font-extrabold leading-tight tracking-[-0.02em] text-foreground">
+                  Merhaba, {personnel?.firstName ?? ""}!
                 </h1>
-                <p className="text-muted-foreground text-sm leading-relaxed">
-                  Seninle birlikte potansiyelini keşfetmek için
-                  <br />
-                  kısa bir konuşma yapacağız.
+                <p className="mx-auto mt-2 max-w-[36ch] text-[15px] leading-relaxed text-fg2">
+                  Seninle birlikte potansiyelini keşfetmek için kısa bir konuşma
+                  yapacağız.
                 </p>
               </div>
 
-              {/* Assessment Title */}
+              {/* Değerlendirme */}
               {session?.assessment?.title && (
-                <div className="rounded-xl bg-primary/5 border border-primary/10 p-3 mb-4 text-center">
-                  <p className="text-sm font-semibold text-primary">
+                <div className="mt-6 rounded-2xl border border-divider bg-surface-2 px-4 py-3.5">
+                  <p className="bz-kicker">Değerlendirme</p>
+                  <p className="mt-1 text-[15px] font-semibold leading-snug text-foreground">
                     {session.assessment.title}
                   </p>
                   {session.assessment.description && (
-                    <p className="text-xs text-muted-foreground mt-1">
+                    <p className="mt-0.5 text-[13px] text-fg3">
                       {session.assessment.description}
                     </p>
                   )}
                 </div>
               )}
 
-              {/* Info Cards */}
-              <div className="grid grid-cols-3 gap-3 mb-6">
+              {/* Özet */}
+              <div className="mt-3 grid grid-cols-3 gap-2">
                 {[
                   {
                     icon: ClipboardList,
-                    label: `~${questionCount} Soru`,
+                    label: `~${questionCount} soru`,
                     sub: "toplam",
                   },
                   {
@@ -183,117 +173,107 @@ export default function WelcomePage() {
                   { icon: MessageCircle, label: "Sohbet", sub: "tarzında" },
                 ].map((info) => (
                   <div
-                    key={info.label}
-                    className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-muted/40"
+                    key={info.sub}
+                    className="flex flex-col items-center gap-1 rounded-2xl border border-divider bg-surface-2 px-2 py-3 text-center"
                   >
-                    <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center">
-                      <info.icon className="h-4 w-4 text-primary" />
-                    </div>
-                    <p className="text-sm font-bold text-foreground">{info.label}</p>
-                    <p className="text-[10px] text-muted-foreground">{info.sub}</p>
+                    <info.icon className="h-[18px] w-[18px] text-fg3" aria-hidden="true" />
+                    <p className="font-display text-base font-extrabold tabular-nums text-foreground">
+                      {info.label}
+                    </p>
+                    <p className="text-xs text-fg3">{info.sub}</p>
                   </div>
                 ))}
               </div>
 
-              {/* Motivation */}
-              <div className="rounded-xl bg-primary/5 border border-primary/10 p-4 mb-6">
-                <p className="text-sm text-center text-muted-foreground italic leading-relaxed">
-                  &ldquo;Bu, seni değerlendiren değil,{" "}
-                  <span className="text-primary font-medium">
-                    seninle birlikte keşfeden
-                  </span>{" "}
-                  bir konuşma.&rdquo;
-                </p>
-              </div>
+              {/* Yaklaşım */}
+              <p className="mx-auto mt-5 max-w-[40ch] text-center text-sm leading-relaxed text-fg2">
+                &ldquo;Bu, seni değerlendiren değil,{" "}
+                <strong className="font-semibold text-foreground">
+                  seninle birlikte keşfeden
+                </strong>{" "}
+                bir konuşma.&rdquo;
+              </p>
 
-              {/* KVKK Consent */}
-              <div className="space-y-3 mb-6">
-                <div className="flex items-start gap-3 p-3 rounded-xl bg-muted/30">
+              {/* KVKK ve açık rıza */}
+              <fieldset className="mt-6 space-y-2.5">
+                <legend className="bz-kicker mb-2.5">Başlamadan önce</legend>
+                <label htmlFor="consent-data" className="bz-choice-card">
                   <input
                     type="checkbox"
                     id="consent-data"
                     checked={consentChecked}
                     onChange={(e) => setConsentChecked(e.target.checked)}
-                    className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary/30 flex-shrink-0 cursor-pointer"
                   />
-                  <label
-                    htmlFor="consent-data"
-                    className="text-xs text-muted-foreground cursor-pointer leading-relaxed"
-                  >
-                    <span className="font-semibold text-foreground">
-                      Kişisel Verilerin İşlenmesi:
-                    </span>{" "}
+                  <span className="text-[13px] leading-relaxed text-fg2">
+                    <strong className="font-semibold text-foreground">
+                      Kişisel verilerin işlenmesi:
+                    </strong>{" "}
                     6698 sayılı KVKK kapsamında kişisel verilerimin işlenmesine
                     ilişkin{" "}
-                    <button className="text-primary underline underline-offset-2">
+                    <button type="button" className="bz-link underline">
                       aydınlatma metnini
                     </button>{" "}
                     okudum ve onaylıyorum.
-                  </label>
-                </div>
+                  </span>
+                </label>
 
-                <div className="flex items-start gap-3 p-3 rounded-xl bg-muted/30">
+                <label htmlFor="consent-ai" className="bz-choice-card">
                   <input
                     type="checkbox"
                     id="consent-ai"
                     checked={aiConsentChecked}
                     onChange={(e) => setAiConsentChecked(e.target.checked)}
-                    className="mt-0.5 h-4 w-4 rounded border-border text-primary focus:ring-primary/30 flex-shrink-0 cursor-pointer"
                   />
-                  <label
-                    htmlFor="consent-ai"
-                    className="text-xs text-muted-foreground cursor-pointer leading-relaxed"
-                  >
-                    <span className="font-semibold text-foreground">
-                      AI Destekli Değerlendirme:
-                    </span>{" "}
-                    Cevaplarımın yapay zeka ile analiz edilmesine ve kariyer
+                  <span className="text-[13px] leading-relaxed text-fg2">
+                    <strong className="font-semibold text-foreground">
+                      AI destekli değerlendirme:
+                    </strong>{" "}
+                    Cevaplarımın yapay zekâ ile analiz edilmesine ve kariyer
                     raporumun oluşturulmasına açık rıza veriyorum.
-                  </label>
-                </div>
-              </div>
+                  </span>
+                </label>
+              </fieldset>
 
-              {/* Privacy note */}
-              <div className="flex items-center gap-2 text-xs text-muted-foreground mb-6">
-                <Shield className="h-3.5 w-3.5 text-primary flex-shrink-0" />
+              {/* Gizlilik notu */}
+              <p className="mt-4 flex items-start gap-2 text-xs leading-relaxed text-fg3">
+                <Shield className="mt-0.5 h-3.5 w-3.5 flex-none" aria-hidden="true" />
                 <span>
                   Cevapların yalnızca İK ve yetkili yöneticilerinle paylaşılır.
                   Doğru ya da yanlış cevap yoktur.
                 </span>
-              </div>
+              </p>
 
-              {/* Start Button */}
-              <motion.button
+              {/* Ekrandaki tek birincil eylem */}
+              <button
+                type="button"
                 onClick={handleStart}
                 disabled={!canStart || starting}
-                className="w-full h-12 rounded-xl bg-primary text-primary-foreground font-semibold text-base
-                  hover:bg-primary/90 active:scale-[0.98] transition-all disabled:opacity-40 disabled:cursor-not-allowed
-                  flex items-center justify-center gap-2"
-                whileHover={canStart ? { scale: 1.01 } : {}}
-                whileTap={canStart ? { scale: 0.98 } : {}}
+                aria-busy={starting || undefined}
+                aria-describedby={!canStart && !starting ? "start-hint" : undefined}
+                className={cn(
+                  "bz-btn bz-btn--primary bz-btn--lg bz-btn--block mt-6",
+                  starting && "is-loading",
+                )}
               >
                 {starting ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Başlatılıyor...
-                  </>
+                  "Başlatılıyor…"
                 ) : (
                   <>
                     Başlayalım
-                    <ArrowRight className="h-4 w-4" />
+                    <ArrowRight />
                   </>
                 )}
-              </motion.button>
+              </button>
 
               {!canStart && !starting && (
-                <p className="text-[11px] text-muted-foreground text-center mt-3">
-                  Başlamak için lütfen iki onay kutucuğunu işaretleyin
+                <p id="start-hint" className="bz-hint mt-2.5 text-center">
+                  Başlamak için iki onay kutusunu da işaretleyin.
                 </p>
               )}
             </>
           )}
         </GlassCard>
       </motion.div>
-    </div>
+    </main>
   );
 }

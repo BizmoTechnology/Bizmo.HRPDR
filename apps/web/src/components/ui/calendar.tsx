@@ -35,7 +35,7 @@ function Calendar({
       locale={locale}
       showOutsideDays={showOutsideDays}
       captionLayout={captionLayout}
-      className={cn("w-fit rounded-xl bg-popover p-3 [--cell-size:2rem]", className)}
+      className={cn("w-fit rounded-xl p-3 [--cell-size:2.25rem]", className)}
       classNames={{
         root: cn("w-fit", defaultClassNames.root),
         months: cn(
@@ -49,12 +49,12 @@ function Calendar({
         ),
         button_previous: cn(
           buttonVariants({ variant: buttonVariant }),
-          "h-[--cell-size] w-[--cell-size] shrink-0 select-none rounded-lg p-0 aria-disabled:opacity-40",
+          "h-7 w-7 shrink-0 select-none rounded-lg border border-input p-0 aria-disabled:opacity-40",
           defaultClassNames.button_previous,
         ),
         button_next: cn(
           buttonVariants({ variant: buttonVariant }),
-          "h-[--cell-size] w-[--cell-size] shrink-0 select-none rounded-lg p-0 aria-disabled:opacity-40",
+          "h-7 w-7 shrink-0 select-none rounded-lg border border-input p-0 aria-disabled:opacity-40",
           defaultClassNames.button_next,
         ),
         month_caption: cn(
@@ -74,30 +74,31 @@ function Calendar({
           defaultClassNames.dropdown,
         ),
         caption_label: cn(
-          "select-none text-sm font-medium text-foreground",
+          "select-none font-display text-sm font-bold capitalize text-foreground",
           defaultClassNames.caption_label,
         ),
         month_grid: cn("w-full border-collapse", defaultClassNames.month_grid),
         weekdays: cn("flex gap-1", defaultClassNames.weekdays),
         weekday: cn(
-          "flex-1 select-none rounded-md text-[0.75rem] font-normal text-muted-foreground",
+          "flex-1 select-none rounded-md text-[0.75rem] font-semibold text-muted-foreground",
           defaultClassNames.weekday,
         ),
         week: cn("mt-2 flex w-full gap-1", defaultClassNames.week),
         day: cn(
-          "group/day relative flex aspect-square h-full w-full items-center justify-center p-0 text-center text-sm [&:first-child[data-selected]_button]:rounded-lg [&:last-child[data-selected]_button]:rounded-lg",
+          "group/day relative flex aspect-square h-full w-full items-center justify-center p-0 text-center text-sm tabular-nums [&:first-child[data-selected]_button]:rounded-md [&:last-child[data-selected]_button]:rounded-md",
           defaultClassNames.day,
         ),
         day_button: cn(
-          "inline-flex size-[--cell-size] items-center justify-center rounded-lg p-0 font-normal hover:bg-accent hover:text-accent-foreground",
+          "inline-flex size-[--cell-size] items-center justify-center rounded-md p-0 font-normal hover:bg-accent hover:text-accent-foreground",
           defaultClassNames.day_button,
         ),
         selected: cn(
-          "rounded-lg [&_button]:bg-primary [&_button]:text-primary-foreground [&_button]:hover:bg-primary [&_button]:hover:text-primary-foreground",
+          "rounded-md [&_button]:bg-primary [&_button]:font-semibold [&_button]:text-primary-foreground [&_button]:hover:bg-primary [&_button]:hover:text-primary-foreground",
           defaultClassNames.selected,
         ),
         today: cn(
-          "rounded-lg bg-accent/70 text-accent-foreground data-[selected=true]:bg-transparent data-[selected=true]:text-primary-foreground",
+          // Bugün: yeşil halka (DESIGN.md §19.2)
+          "rounded-md font-semibold [&_button]:shadow-[inset_0_0_0_1.5px_var(--bz-accent)] data-[selected=true]:text-primary-foreground",
           defaultClassNames.today,
         ),
         outside: cn(

@@ -21,10 +21,10 @@ interface DataTableProps<T extends Record<string, unknown>> {
 
 function SkeletonRow({ cols }: { cols: number }) {
   return (
-    <tr className="border-b border-border/30">
+    <tr>
       {Array.from({ length: cols }).map((_, i) => (
-        <td key={i} className="px-4 py-3">
-          <div className="h-4 w-3/4 animate-pulse rounded-md bg-muted/60" />
+        <td key={i}>
+          <div className="bz-skeleton h-4 w-3/4" />
         </td>
       ))}
     </tr>
@@ -39,70 +39,52 @@ export function DataTable<T extends Record<string, unknown>>({
   onRowClick,
   className,
 }: DataTableProps<T>) {
+  // Bizmo veri tablosu (DESIGN.md §26): yapışkan 40px başlık, 40px satır, yalnız satır çizgisi
   return (
-    <div
-      className={cn(
-        "overflow-hidden rounded-xl border border-border/40 bg-card/60 backdrop-blur-md",
-        className,
-      )}
-    >
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-border/40 bg-muted/30">
-              {columns.map((col) => (
-                <th
-                  key={col.key}
-                  className={cn(
-                    "px-4 py-3 text-left text-xs font-medium uppercase text-muted-foreground",
-                    col.className,
-                  )}
-                >
-                  {col.label}
-                </th>
-              ))}
+    <div className={cn("bz-table-wrap", className)}>
+      <table className="bz-table">
+        <thead>
+          <tr>
+            {columns.map((col) => (
+              <th key={col.key} className={col.className}>
+                {col.label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+
+        <tbody>
+          {isLoading &&
+            Array.from({ length: 5 }).map((_, i) => (
+              <SkeletonRow key={i} cols={columns.length} />
+            ))}
+
+          {!isLoading && data.length === 0 && (
+            <tr>
+              <td colSpan={columns.length} className="py-12 text-center text-muted-foreground">
+                {emptyMessage}
+              </td>
             </tr>
-          </thead>
+          )}
 
-          <tbody>
-            {isLoading &&
-              Array.from({ length: 5 }).map((_, i) => (
-                <SkeletonRow key={i} cols={columns.length} />
-              ))}
-
-            {!isLoading && data.length === 0 && (
-              <tr>
-                <td
-                  colSpan={columns.length}
-                  className="px-4 py-12 text-center text-muted-foreground"
-                >
-                  {emptyMessage}
-                </td>
+          {!isLoading &&
+            data.map((row, idx) => (
+              <tr
+                key={(row["id"] as string) ?? idx}
+                onClick={() => onRowClick?.(row)}
+                className={cn(onRowClick && "cursor-pointer")}
+              >
+                {columns.map((col) => (
+                  <td key={col.key} className={col.className}>
+                    {col.render
+                      ? col.render(row[col.key], row)
+                      : (row[col.key] as ReactNode) ?? "—"}
+                  </td>
+                ))}
               </tr>
-            )}
-
-            {!isLoading &&
-              data.map((row, idx) => (
-                <tr
-                  key={(row["id"] as string) ?? idx}
-                  onClick={() => onRowClick?.(row)}
-                  className={cn(
-                    "border-b border-border/30 transition-colors hover:bg-muted/50",
-                    onRowClick && "cursor-pointer",
-                  )}
-                >
-                  {columns.map((col) => (
-                    <td key={col.key} className={cn("px-4 py-3", col.className)}>
-                      {col.render
-                        ? col.render(row[col.key], row)
-                        : (row[col.key] as ReactNode) ?? "—"}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-          </tbody>
-        </table>
-      </div>
+            ))}
+        </tbody>
+      </table>
     </div>
   );
 }

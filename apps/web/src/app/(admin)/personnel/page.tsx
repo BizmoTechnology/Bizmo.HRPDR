@@ -4,35 +4,19 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import { motion } from "framer-motion";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import {
-  Users,
-  Plus,
-  Search,
-  ChevronLeft,
-  ChevronRight,
-  UserX,
-} from "lucide-react";
-import { GlassCard } from "@ph/ui";
-import { cn } from "@/lib/utils";
+import { Plus, Search, UserX, SearchX } from "lucide-react";
+import { Pagination } from "@/components/ui/Pagination";
 import {
   usePersonnelList,
   useDepartmentList,
   type PersonnelListParams,
 } from "@/hooks/use-api";
 
-const STATUS_LABELS: Record<string, { label: string; class: string }> = {
-  ACTIVE: {
-    label: "Aktif",
-    class: "text-accent-green bg-accent-green/10",
-  },
-  INACTIVE: {
-    label: "Pasif",
-    class: "text-accent-red bg-accent-red/10",
-  },
-  ON_LEAVE: {
-    label: "İzinli",
-    class: "text-accent-orange bg-accent-orange/10",
-  },
+/** Personel durumu → Bizmo çipi (DESIGN.md §13). Pasif bir hata değildir: nötr çip. */
+const STATUS_LABELS: Record<string, { label: string; tone: string }> = {
+  ACTIVE: { label: "Aktif", tone: "bz-chip--success" },
+  INACTIVE: { label: "Pasif", tone: "" },
+  ON_LEAVE: { label: "İzinli", tone: "bz-chip--warning" },
 };
 
 const container = {
@@ -41,7 +25,7 @@ const container = {
 };
 
 const item = {
-  hidden: { opacity: 0, y: 12 },
+  hidden: { opacity: 0, y: 8 },
   show: {
     opacity: 1,
     y: 0,
@@ -49,22 +33,21 @@ const item = {
   },
 };
 
-function SkeletonBlock({ className }: { className?: string }) {
-  return (
-    <div className={cn("animate-pulse rounded-lg bg-muted/40", className)} />
-  );
-}
-
 function TableRowSkeleton() {
   return (
     <tr>
-      <td className="py-3 pr-4"><SkeletonBlock className="h-4 w-16" /></td>
-      <td className="py-3 pr-4"><SkeletonBlock className="h-4 w-32" /></td>
-      <td className="py-3 pr-4"><SkeletonBlock className="h-4 w-40" /></td>
-      <td className="py-3 pr-4"><SkeletonBlock className="h-4 w-24" /></td>
-      <td className="py-3 pr-4"><SkeletonBlock className="h-4 w-20" /></td>
-      <td className="py-3 pr-4"><SkeletonBlock className="h-5 w-14 rounded-full" /></td>
-      <td className="py-3"><SkeletonBlock className="h-4 w-8" /></td>
+      <td><div className="bz-skeleton h-3.5 w-20" /></td>
+      <td>
+        <div className="bz-cell-user">
+          <div className="bz-skeleton h-6 w-6 rounded-md" />
+          <div className="bz-skeleton h-3.5 w-32" />
+        </div>
+      </td>
+      <td><div className="bz-skeleton h-3.5 w-44" /></td>
+      <td><div className="bz-skeleton h-3.5 w-28" /></td>
+      <td><div className="bz-skeleton h-3.5 w-24" /></td>
+      <td><div className="bz-skeleton h-[22px] w-14 rounded-full" /></td>
+      <td className="is-num"><div className="bz-skeleton ml-auto h-3.5 w-10" /></td>
     </tr>
   );
 }
@@ -96,250 +79,276 @@ export default function PersonnelPage() {
 
   const updateFilter = useCallback(
     (key: string, value: string) => {
-      const sp = new URLSearchParams(searchParams.toString());
+      // Gecikmeli arama çağrısı eski bir render'dan gelebilir; güncel URL'den okunur
+      // (aksi halde arada değiştirilen departman/durum filtresi geri alınır)
+      const sp = new URLSearchParams(window.location.search);
       if (value) {
         sp.set(key, value);
       } else {
         sp.delete(key);
       }
       if (key !== "page") sp.delete("page");
-      router.push(`/personnel?${sp.toString()}`);
+      router.replace(`/personnel?${sp.toString()}`);
     },
-    [router, searchParams]
+    [router]
   );
 
   const totalPages = data ? Math.ceil(data.total / data.pageSize) : 0;
   const currentPage = data?.page ?? 1;
+  const hasFilters = !!(params.search || params.status || params.departmentId);
+  const isEmpty = !isLoading && !data?.items?.length;
 
   return (
-    <div className="space-y-6 w-full">
-      {/* Header */}
+    <div className="w-full space-y-4">
+      {/* Başlık */}
       <motion.div
-        className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4"
+        className="bz-page-header mb-2"
         initial={{ opacity: 0, y: -8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}
       >
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">
-            Personel Yönetimi
-          </h1>
-          <p className="text-sm text-muted-foreground mt-0.5">
+        <div className="bz-page-header__text">
+          <h1 className="bz-page-header__title">Personel yönetimi</h1>
+          <p className="bz-page-header__sub tabular-nums">
             {data ? `${data.total} personel kayıtlı` : "Yükleniyor..."}
           </p>
         </div>
-        <Link
-          href="/personnel/new"
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
+        <div className="bz-page-header__actions">
+          <Link href="/personnel/new" className="bz-btn bz-btn--primary">
+            <Plus />
+            Yeni personel
+          </Link>
+        </div>
+      </motion.div>
+
+      <motion.div
+        className="space-y-4"
+        variants={container}
+        initial="hidden"
+        animate="show"
+      >
+        {/* Araç çubuğu: arama + süzgeçler (DESIGN.md §26.3) */}
+        <motion.div
+          variants={item}
+          className="bz-toolbar grid grid-cols-2 md:flex"
+          role="search"
         >
-          <Plus className="h-4 w-4" />
-          Yeni Personel
-        </Link>
-      </motion.div>
+          <div className="bz-input-group col-span-2 md:max-w-[380px] md:flex-1">
+            <span className="bz-input-prefix">
+              <Search className="h-4 w-4" />
+            </span>
+            <input
+              type="text"
+              aria-label="Personel ara"
+              placeholder="Ad, soyad veya sicil no ile ara"
+              defaultValue={params.search ?? ""}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (searchDebounceRef.current) {
+                  clearTimeout(searchDebounceRef.current);
+                }
+                searchDebounceRef.current = setTimeout(() => {
+                  updateFilter("search", v);
+                  searchDebounceRef.current = null;
+                }, 400);
+              }}
+              className="bz-field bz-field--sm"
+            />
+          </div>
 
-      {/* Filters */}
-      <motion.div variants={container} initial="hidden" animate="show">
-        <motion.div variants={item}>
-          <GlassCard className="flex flex-col md:flex-row gap-3">
-            {/* Search */}
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <input
-                type="text"
-                placeholder="Ad, soyad veya sicil no ile ara..."
-                defaultValue={params.search ?? ""}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  if (searchDebounceRef.current) {
-                    clearTimeout(searchDebounceRef.current);
-                  }
-                  searchDebounceRef.current = setTimeout(() => {
-                    updateFilter("search", v);
-                    searchDebounceRef.current = null;
-                  }, 400);
-                }}
-                className="w-full h-10 pl-9 pr-4 rounded-xl bg-muted/40 border border-border/30 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-              />
-            </div>
+          <select
+            aria-label="Departman"
+            value={params.departmentId ?? ""}
+            onChange={(e) => updateFilter("departmentId", e.target.value)}
+            className="bz-field bz-field--sm min-w-0 md:w-[200px]"
+          >
+            <option value="">Tüm departmanlar</option>
+            {departments?.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}
+              </option>
+            ))}
+          </select>
 
-            {/* Department filter */}
-            <select
-              value={params.departmentId ?? ""}
-              onChange={(e) => updateFilter("departmentId", e.target.value)}
-              className="h-10 px-3 rounded-xl bg-muted/40 border border-border/30 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 min-w-[180px]"
-            >
-              <option value="">Tüm Departmanlar</option>
-              {departments?.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                </option>
-              ))}
-            </select>
-
-            {/* Status filter */}
-            <select
-              value={params.status ?? ""}
-              onChange={(e) => updateFilter("status", e.target.value)}
-              className="h-10 px-3 rounded-xl bg-muted/40 border border-border/30 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 min-w-[140px]"
-            >
-              <option value="">Tüm Durumlar</option>
-              <option value="ACTIVE">Aktif</option>
-              <option value="INACTIVE">Pasif</option>
-              <option value="ON_LEAVE">İzinli</option>
-            </select>
-          </GlassCard>
+          <select
+            aria-label="Durum"
+            value={params.status ?? ""}
+            onChange={(e) => updateFilter("status", e.target.value)}
+            className="bz-field bz-field--sm min-w-0 md:w-[160px]"
+          >
+            <option value="">Tüm durumlar</option>
+            <option value="ACTIVE">Aktif</option>
+            <option value="INACTIVE">Pasif</option>
+            <option value="ON_LEAVE">İzinli</option>
+          </select>
         </motion.div>
-      </motion.div>
 
-      {/* Table */}
-      <motion.div variants={container} initial="hidden" animate="show">
+        {/* Liste */}
         <motion.div variants={item}>
-          <GlassCard hover={false} className="overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-border/30">
-                    <th className="text-left text-xs font-medium text-muted-foreground uppercase pb-3 pr-4">
-                      Sicil No
-                    </th>
-                    <th className="text-left text-xs font-medium text-muted-foreground uppercase pb-3 pr-4">
-                      Ad Soyad
-                    </th>
-                    <th className="text-left text-xs font-medium text-muted-foreground uppercase pb-3 pr-4">
-                      E-posta
-                    </th>
-                    <th className="text-left text-xs font-medium text-muted-foreground uppercase pb-3 pr-4">
-                      Pozisyon
-                    </th>
-                    <th className="text-left text-xs font-medium text-muted-foreground uppercase pb-3 pr-4">
-                      Departman
-                    </th>
-                    <th className="text-left text-xs font-medium text-muted-foreground uppercase pb-3 pr-4">
-                      Durum
-                    </th>
-                    <th className="text-left text-xs font-medium text-muted-foreground uppercase pb-3">
-                      Deneyim
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/20">
-                  {isLoading ? (
-                    Array.from({ length: 8 }).map((_, i) => (
-                      <TableRowSkeleton key={i} />
-                    ))
-                  ) : !data?.items?.length ? (
-                    <tr>
-                      <td colSpan={7} className="py-16">
-                        <div className="flex flex-col items-center justify-center text-muted-foreground">
-                          <UserX className="h-10 w-10 mb-3 opacity-40" />
-                          <p className="text-sm font-medium">
-                            Henüz personel eklenmemiş
-                          </p>
-                          <p className="text-xs mt-1">
-                            Yeni personel eklemek için yukarıdaki butonu
-                            kullanın
-                          </p>
-                        </div>
-                      </td>
-                    </tr>
-                  ) : (
-                    data.items.map((p) => {
-                      const statusInfo = STATUS_LABELS[p.status] ?? {
-                        label: p.status,
-                        class: "text-muted-foreground bg-muted",
-                      };
-                      return (
-                        <tr
-                          key={p.id}
-                          onClick={() => router.push(`/personnel/${p.id}`)}
-                          className="hover:bg-muted/30 transition-colors cursor-pointer"
-                        >
-                          <td className="py-3 pr-4">
-                            <span className="text-sm font-mono text-muted-foreground">
-                              {p.employeeId}
-                            </span>
-                          </td>
-                          <td className="py-3 pr-4">
-                            <div className="flex items-center gap-2.5">
-                              <div className="h-7 w-7 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                                <span className="text-[10px] font-bold text-primary">
-                                  {p.firstName[0]}
-                                  {p.lastName[0]}
-                                </span>
-                              </div>
-                              <span className="text-sm font-medium text-foreground">
-                                {p.firstName} {p.lastName}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="py-3 pr-4">
-                            <span className="text-sm text-muted-foreground">
-                              {p.email}
-                            </span>
-                          </td>
-                          <td className="py-3 pr-4">
-                            <span className="text-sm text-muted-foreground">
-                              {p.position}
-                            </span>
-                          </td>
-                          <td className="py-3 pr-4">
-                            <span className="text-sm text-muted-foreground">
-                              {p.department?.name ?? "—"}
-                            </span>
-                          </td>
-                          <td className="py-3 pr-4">
-                            <span
-                              className={cn(
-                                "text-xs font-semibold px-2 py-1 rounded-full",
-                                statusInfo.class
-                              )}
-                            >
-                              {statusInfo.label}
-                            </span>
-                          </td>
-                          <td className="py-3">
-                            <span className="text-sm tabular-nums text-muted-foreground">
-                              {p.experienceYear} yıl
-                            </span>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Pagination */}
-            {totalPages > 1 && (
-              <div className="flex items-center justify-between pt-4 mt-4 border-t border-border/20">
-                <p className="text-xs text-muted-foreground">
-                  Sayfa {currentPage} / {totalPages} — Toplam {data?.total}{" "}
-                  kayıt
-                </p>
-                <div className="flex items-center gap-2">
+          {isEmpty ? (
+            <div className="bz-card">
+              {hasFilters ? (
+                <div className="bz-empty">
+                  <SearchX className="h-8 w-8 text-fg3" aria-hidden="true" />
+                  <p className="bz-empty__title">Eşleşen personel yok</p>
+                  <p className="bz-empty__text">
+                    Arama veya süzgeçlerle eşleşen bir kayıt bulunamadı.
+                    Süzgeçleri temizleyip tekrar deneyin.
+                  </p>
                   <button
-                    disabled={currentPage <= 1}
-                    onClick={() =>
-                      updateFilter("page", String(currentPage - 1))
-                    }
-                    className="h-8 w-8 rounded-lg bg-muted/40 flex items-center justify-center text-muted-foreground hover:bg-muted/60 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                    type="button"
+                    className="bz-btn bz-btn--soft"
+                    onClick={() => router.push("/personnel")}
                   >
-                    <ChevronLeft className="h-4 w-4" />
-                  </button>
-                  <button
-                    disabled={currentPage >= totalPages}
-                    onClick={() =>
-                      updateFilter("page", String(currentPage + 1))
-                    }
-                    className="h-8 w-8 rounded-lg bg-muted/40 flex items-center justify-center text-muted-foreground hover:bg-muted/60 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                  >
-                    <ChevronRight className="h-4 w-4" />
+                    Süzgeçleri temizle
                   </button>
                 </div>
+              ) : (
+                <div className="bz-empty">
+                  <UserX className="h-8 w-8 text-fg3" aria-hidden="true" />
+                  <p className="bz-empty__title">Henüz personel eklenmemiş</p>
+                  <p className="bz-empty__text">
+                    Eklediğiniz personel burada listelenir.
+                  </p>
+                  <Link href="/personnel/new" className="bz-btn bz-btn--soft">
+                    <Plus />
+                    Personel ekle
+                  </Link>
+                </div>
+              )}
+            </div>
+          ) : (
+            <>
+              {/* Telefon: kart üzerinde liste satırları (DESIGN.md §26.1) */}
+              <ul className="bz-card bz-list p-1.5 md:hidden" aria-busy={isLoading || undefined}>
+                {isLoading || !data
+                  ? Array.from({ length: 6 }).map((_, i) => (
+                      <li key={i} className="bz-list-item border-b-0 px-2.5">
+                        <div className="bz-skeleton h-8 w-8 rounded-[10px]" />
+                        <div className="flex-1 space-y-1.5">
+                          <div className="bz-skeleton h-3.5 w-32" />
+                          <div className="bz-skeleton h-3 w-44" />
+                        </div>
+                      </li>
+                    ))
+                  : data.items.map((p) => {
+                      const statusInfo = STATUS_LABELS[p.status] ?? {
+                        label: p.status,
+                        tone: "",
+                      };
+                      return (
+                        <li key={p.id}>
+                          <Link
+                            href={`/personnel/${p.id}`}
+                            className="bz-list-item bz-list-item--interactive"
+                          >
+                            <span className="bz-avatar" aria-hidden="true">
+                              {p.firstName[0]}
+                              {p.lastName[0]}
+                            </span>
+                            <span className="bz-list-item__main">
+                              <span className="bz-list-item__title block text-foreground">
+                                {p.firstName} {p.lastName}
+                              </span>
+                              <span className="bz-list-item__sub block">
+                                {p.position} · {p.department?.name ?? "—"}
+                              </span>
+                            </span>
+                            <span className="bz-list-item__end">
+                              <span className={`bz-chip ${statusInfo.tone}`}>
+                                {statusInfo.label}
+                              </span>
+                            </span>
+                          </Link>
+                        </li>
+                      );
+                    })}
+              </ul>
+
+              {/* Masaüstü: tablo */}
+              <div className="bz-table-wrap hidden md:block">
+                <table className="bz-table">
+                  <thead>
+                    <tr>
+                      <th>Sicil no</th>
+                      <th>Ad soyad</th>
+                      <th>E-posta</th>
+                      <th>Pozisyon</th>
+                      <th>Departman</th>
+                      <th>Durum</th>
+                      <th className="is-num">Deneyim</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {isLoading || !data
+                      ? Array.from({ length: 8 }).map((_, i) => (
+                          <TableRowSkeleton key={i} />
+                        ))
+                      : data.items.map((p) => {
+                          const statusInfo = STATUS_LABELS[p.status] ?? {
+                            label: p.status,
+                            tone: "",
+                          };
+                          return (
+                            <tr
+                              key={p.id}
+                              onClick={() => router.push(`/personnel/${p.id}`)}
+                              className="cursor-pointer"
+                            >
+                              <td className="font-mono text-[12.5px] text-fg2 tabular-nums">
+                                {p.employeeId}
+                              </td>
+                              <td>
+                                <div className="bz-cell-user">
+                                  <span
+                                    className="bz-avatar bz-avatar--sm"
+                                    aria-hidden="true"
+                                  >
+                                    {p.firstName[0]}
+                                    {p.lastName[0]}
+                                  </span>
+                                  <Link
+                                    href={`/personnel/${p.id}`}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="truncate font-semibold text-foreground hover:underline focus-visible:underline"
+                                  >
+                                    {p.firstName} {p.lastName}
+                                  </Link>
+                                </div>
+                              </td>
+                              <td className="text-fg2">{p.email}</td>
+                              <td>{p.position}</td>
+                              <td className={p.department ? undefined : "is-muted"}>
+                                {p.department?.name ?? "—"}
+                              </td>
+                              <td>
+                                <span className={`bz-chip ${statusInfo.tone}`}>
+                                  {statusInfo.label}
+                                </span>
+                              </td>
+                              <td className="is-num">
+                                {p.experienceYear}{" "}
+                                <span className="text-fg3">yıl</span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                  </tbody>
+                </table>
               </div>
-            )}
-          </GlassCard>
+            </>
+          )}
+
+          {/* Sayfalama */}
+          {totalPages > 1 && data && (
+            <Pagination
+              className="mt-2"
+              page={currentPage}
+              pageSize={data.pageSize}
+              total={data.total}
+              onPageChange={(p) => updateFilter("page", String(p))}
+            />
+          )}
         </motion.div>
       </motion.div>
     </div>

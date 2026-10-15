@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { UserRole } from "@ph/shared";
-import { setAccessToken } from "@/lib/api";
+import { setAccessToken, setAuthFailureHandler } from "@/lib/api";
 
 interface AuthUser {
   id: string;
@@ -46,3 +46,6 @@ export const useAuthStore = create<AuthState>()(
     }
   )
 );
+
+// Refresh token geçersizse kalıcı oturum bilgisi de temizlensin (AuthGuard yönlendirsin)
+setAuthFailureHandler(() => useAuthStore.getState().clearAuth());

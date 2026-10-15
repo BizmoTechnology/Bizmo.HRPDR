@@ -1,0 +1,2 @@
+/* Katman sırası ilk tanımlanan yerde belirlenir: bu dosya globals.css içinde ilk @import olmalıdır. */
+@layer tw-base, bizmo;

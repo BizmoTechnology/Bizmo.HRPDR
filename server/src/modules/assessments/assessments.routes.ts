@@ -1,5 +1,41 @@
 import type { FastifyPluginAsync } from "fastify";
+import { z } from "zod";
 import { prisma } from "../../lib/prisma.js";
+import { assertQuestionSetInOrg } from "../../lib/tenant.js";
+import { requireRoleForWrites, ROLE_GROUPS } from "../../middleware/authenticate.js";
+
+const optionalDate = z.preprocess(
+  (v) => (v === "" ? null : v),
+  z.coerce.date().nullable().optional(),
+);
+
+const statusEnum = z.enum(["DRAFT", "ACTIVE", "PAUSED", "COMPLETED", "ARCHIVED"]);
+
+const createSchema = z
+  .object({
+    title: z.string().trim().min(2).max(300),
+    description: z.string().max(2000).nullable().optional(),
+    questionSetId: z.string().min(1),
+    startsAt: optionalDate,
+    endsAt: optionalDate,
+  })
+  .refine((v) => !v.startsAt || !v.endsAt || v.startsAt < v.endsAt, {
+    message: "Bitiş tarihi başlangıçtan sonra olmalı",
+    path: ["endsAt"],
+  });
+
+const updateSchema = z.object({
+  title: z.string().trim().min(2).max(300).optional(),
+  description: z.string().max(2000).nullable().optional(),
+  status: statusEnum.optional(),
+  startsAt: optionalDate,
+  endsAt: optionalDate,
+});
+
+const assignSchema = z.object({
+  personnelIds: z.array(z.string().min(1)).min(1).max(1000),
+  dueAt: optionalDate,
+});
 
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
@@ -15,6 +51,7 @@ function paginate(query: { page?: string; pageSize?: string }) {
 
 const assessmentRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.addHook("onRequest", fastify.authenticate);
+  fastify.addHook("preHandler", requireRoleForWrites(ROLE_GROUPS.manage));
 
   // ── GET / — Değerlendirme listesi ──────────────
   fastify.get<{
@@ -72,44 +109,28 @@ const assessmentRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // ── POST / — Yeni değerlendirme ────────────────
-  fastify.post<{
-    Body: {
-      title: string;
-      description?: string;
-      questionSetId: string;
-      startsAt?: string;
-      endsAt?: string;
-    };
-  }>("/", async (request, reply) => {
-    try {
-      const orgId = request.user.orgId!;
-      const { title, description, questionSetId, startsAt, endsAt } = request.body;
+  fastify.post("/", async (request, reply) => {
+    const orgId = request.user.orgId!;
+    const body = createSchema.parse(request.body);
+    await assertQuestionSetInOrg(orgId, body.questionSetId);
 
-      const assessment = await prisma.assessment.create({
-        data: {
-          title,
-          description,
-          questionSetId,
-          createdById: request.user.sub,
-          organizationId: orgId,
-          status: "DRAFT",
-          startsAt: startsAt ? new Date(startsAt) : undefined,
-          endsAt: endsAt ? new Date(endsAt) : undefined,
-        },
-        include: {
-          questionSet: { select: { id: true, name: true } },
-        },
-      });
+    const assessment = await prisma.assessment.create({
+      data: {
+        title: body.title,
+        description: body.description ?? null,
+        questionSetId: body.questionSetId,
+        createdById: request.user.sub,
+        organizationId: orgId,
+        status: "DRAFT",
+        startsAt: body.startsAt ?? null,
+        endsAt: body.endsAt ?? null,
+      },
+      include: {
+        questionSet: { select: { id: true, name: true } },
+      },
+    });
 
-      return reply.status(201).send({ data: assessment });
-    } catch (err) {
-      request.log.error(err);
-      return reply.status(500).send({
-        code: "INTERNAL_ERROR",
-        message: "Değerlendirme oluşturulurken hata oluştu",
-        traceId: request.traceId,
-      });
-    }
+    return reply.status(201).send({ data: assessment });
   });
 
   // ── GET /:id — Değerlendirme detayı ────────────
@@ -156,45 +177,53 @@ const assessmentRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // ── PUT /:id — Değerlendirme güncelleme ────────
-  fastify.put<{
-    Params: { id: string };
-    Body: { title?: string; description?: string; status?: string; startsAt?: string; endsAt?: string };
-  }>("/:id", async (request, reply) => {
-    try {
-      const orgId = request.user.orgId!;
-      const existing = await prisma.assessment.findFirst({
-        where: { id: request.params.id, organizationId: orgId },
-      });
+  fastify.put<{ Params: { id: string } }>("/:id", async (request, reply) => {
+    const orgId = request.user.orgId!;
+    const body = updateSchema.parse(request.body);
 
-      if (!existing) {
-        return reply.status(404).send({
-          code: "NOT_FOUND",
-          message: "Değerlendirme bulunamadı",
-          traceId: request.traceId,
-        });
-      }
+    const existing = await prisma.assessment.findFirst({
+      where: { id: request.params.id, organizationId: orgId },
+      include: { questionSet: { select: { _count: { select: { items: true } } } } },
+    });
 
-      const { title, description, status, startsAt, endsAt } = request.body;
-      const assessment = await prisma.assessment.update({
-        where: { id: request.params.id },
-        data: {
-          ...(title !== undefined && { title }),
-          ...(description !== undefined && { description }),
-          ...(status !== undefined && { status: status as never }),
-          ...(startsAt !== undefined && { startsAt: new Date(startsAt) }),
-          ...(endsAt !== undefined && { endsAt: new Date(endsAt) }),
-        },
-      });
-
-      return reply.send({ data: assessment });
-    } catch (err) {
-      request.log.error(err);
-      return reply.status(500).send({
-        code: "INTERNAL_ERROR",
-        message: "Değerlendirme güncellenirken hata oluştu",
+    if (!existing) {
+      return reply.status(404).send({
+        code: "NOT_FOUND",
+        message: "Değerlendirme bulunamadı",
         traceId: request.traceId,
       });
     }
+
+    if (body.status === "ACTIVE" && existing.questionSet._count.items === 0) {
+      return reply.status(409).send({
+        code: "EMPTY_QUESTION_SET",
+        message: "Soru içermeyen bir soru setiyle değerlendirme etkinleştirilemez",
+        traceId: request.traceId,
+      });
+    }
+
+    const startsAt = body.startsAt !== undefined ? body.startsAt : existing.startsAt;
+    const endsAt = body.endsAt !== undefined ? body.endsAt : existing.endsAt;
+    if (startsAt && endsAt && startsAt >= endsAt) {
+      return reply.status(400).send({
+        code: "VALIDATION_ERROR",
+        message: "Bitiş tarihi başlangıçtan sonra olmalı",
+        traceId: request.traceId,
+      });
+    }
+
+    const assessment = await prisma.assessment.update({
+      where: { id: request.params.id },
+      data: {
+        ...(body.title !== undefined && { title: body.title }),
+        ...(body.description !== undefined && { description: body.description }),
+        ...(body.status !== undefined && { status: body.status }),
+        ...(body.startsAt !== undefined && { startsAt: body.startsAt }),
+        ...(body.endsAt !== undefined && { endsAt: body.endsAt }),
+      },
+    });
+
+    return reply.send({ data: assessment });
   });
 
   // ── DELETE /:id — Sadece DRAFT silinebilir ─────
@@ -239,12 +268,21 @@ const assessmentRoutes: FastifyPluginAsync = async (fastify) => {
       const orgId = request.user.orgId!;
       const existing = await prisma.assessment.findFirst({
         where: { id: request.params.id, organizationId: orgId },
+        include: { questionSet: { select: { _count: { select: { items: true } } } } },
       });
 
       if (!existing) {
         return reply.status(404).send({
           code: "NOT_FOUND",
           message: "Değerlendirme bulunamadı",
+          traceId: request.traceId,
+        });
+      }
+
+      if (existing.questionSet._count.items === 0) {
+        return reply.status(409).send({
+          code: "EMPTY_QUESTION_SET",
+          message: "Soru içermeyen bir soru setiyle değerlendirme etkinleştirilemez",
           traceId: request.traceId,
         });
       }
@@ -266,55 +304,68 @@ const assessmentRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // ── POST /:id/assign — Personele atama ────────
-  fastify.post<{
-    Params: { id: string };
-    Body: { personnelIds: string[]; dueAt?: string };
-  }>("/:id/assign", async (request, reply) => {
-    try {
-      const orgId = request.user.orgId!;
-      const { personnelIds, dueAt } = request.body;
+  fastify.post<{ Params: { id: string } }>("/:id/assign", async (request, reply) => {
+    const orgId = request.user.orgId!;
+    const body = assignSchema.parse(request.body);
+    const personnelIds = [...new Set(body.personnelIds)];
 
-      const existing = await prisma.assessment.findFirst({
-        where: { id: request.params.id, organizationId: orgId },
-      });
+    const existing = await prisma.assessment.findFirst({
+      where: { id: request.params.id, organizationId: orgId },
+    });
 
-      if (!existing) {
-        return reply.status(404).send({
-          code: "NOT_FOUND",
-          message: "Değerlendirme bulunamadı",
-          traceId: request.traceId,
-        });
-      }
-
-      const existingSessions = await prisma.assessmentSession.findMany({
-        where: { assessmentId: existing.id, personnelId: { in: personnelIds } },
-        select: { personnelId: true },
-      });
-
-      const alreadyAssigned = new Set(existingSessions.map((s) => s.personnelId));
-      const toCreate = personnelIds.filter((pid) => !alreadyAssigned.has(pid));
-
-      if (toCreate.length > 0) {
-        await prisma.assessmentSession.createMany({
-          data: toCreate.map((personnelId) => ({
-            assessmentId: existing.id,
-            personnelId,
-            dueAt: dueAt ? new Date(dueAt) : undefined,
-          })),
-        });
-      }
-
-      return reply.status(201).send({
-        data: { createdCount: toCreate.length, skippedCount: alreadyAssigned.size },
-      });
-    } catch (err) {
-      request.log.error(err);
-      return reply.status(500).send({
-        code: "INTERNAL_ERROR",
-        message: "Atama yapılırken hata oluştu",
+    if (!existing) {
+      return reply.status(404).send({
+        code: "NOT_FOUND",
+        message: "Değerlendirme bulunamadı",
         traceId: request.traceId,
       });
     }
+
+    if (existing.status === "COMPLETED" || existing.status === "ARCHIVED") {
+      return reply.status(409).send({
+        code: "ASSESSMENT_CLOSED",
+        message: "Tamamlanmış veya arşivlenmiş değerlendirmeye atama yapılamaz",
+        traceId: request.traceId,
+      });
+    }
+
+    // Yalnızca aynı organizasyondaki, silinmemiş personel atanabilir
+    const validPersonnel = await prisma.personnel.findMany({
+      where: { id: { in: personnelIds }, organizationId: orgId, deletedAt: null },
+      select: { id: true },
+    });
+    const validIds = new Set(validPersonnel.map((p) => p.id));
+    const invalidCount = personnelIds.filter((pid) => !validIds.has(pid)).length;
+    if (invalidCount > 0) {
+      return reply.status(400).send({
+        code: "INVALID_PERSONNEL",
+        message: `${invalidCount} personel bulunamadı veya silinmiş`,
+        traceId: request.traceId,
+      });
+    }
+
+    const existingSessions = await prisma.assessmentSession.findMany({
+      where: { assessmentId: existing.id, personnelId: { in: personnelIds } },
+      select: { personnelId: true },
+    });
+
+    const alreadyAssigned = new Set(existingSessions.map((s) => s.personnelId));
+    const toCreate = personnelIds.filter((pid) => !alreadyAssigned.has(pid));
+
+    if (toCreate.length > 0) {
+      await prisma.assessmentSession.createMany({
+        data: toCreate.map((personnelId) => ({
+          assessmentId: existing.id,
+          personnelId,
+          dueAt: body.dueAt ?? null,
+        })),
+        skipDuplicates: true,
+      });
+    }
+
+    return reply.status(201).send({
+      data: { createdCount: toCreate.length, skippedCount: alreadyAssigned.size },
+    });
   });
 
   // ── GET /:id/sessions — Oturum listesi ─────────

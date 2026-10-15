@@ -10,12 +10,15 @@ import { ArrowLeft, Loader2, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { GlassCard } from "@ph/ui";
 import { cn } from "@/lib/utils";
+import { dimensionColor } from "@/lib/dimension-colors";
 import {
   useCreateQuestionSet,
   useSuggestQuestionSetAi,
+  useAiStatus,
   type QuestionSetDetail,
 } from "@/hooks/use-api";
 import { DIMENSION_SHORT_LABELS } from "@ph/shared";
+import { AiNotConnectedNotice } from "@/components/ai/AiNotConnectedNotice";
 
 const WEIGHT_FIELDS = [
   { key: "LOGICAL_ALGORITHMIC", field: "weightLogical" as const },
@@ -43,6 +46,8 @@ export default function NewQuestionSetPage() {
   const router = useRouter();
   const createMutation = useCreateQuestionSet();
   const suggestMutation = useSuggestQuestionSetAi();
+  const { data: aiStatus } = useAiStatus();
+  const aiConnected = aiStatus?.connected !== false;
 
   const [aiBrief, setAiBrief] = useState("");
   const [aiMax, setAiMax] = useState(20);
@@ -128,8 +133,7 @@ export default function NewQuestionSetPage() {
     }
   };
 
-  const inputCls =
-    "w-full px-3 py-2.5 rounded-xl bg-muted/50 border border-border/40 text-sm placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all";
+  const busy = isSubmitting || createMutation.isPending;
 
   return (
     <div className="w-full max-w-4xl mx-auto space-y-6">
@@ -141,165 +145,183 @@ export default function NewQuestionSetPage() {
         <button
           type="button"
           onClick={() => router.back()}
-          className="mb-4 flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+          className="bz-btn bz-btn--subtle bz-btn--sm mb-4"
         >
-          <ArrowLeft className="h-4 w-4" />
+          <ArrowLeft />
           Geri
         </button>
-        <h1 className="text-2xl font-bold text-foreground">
-          Yeni Soru Seti
-        </h1>
-        <p className="mt-0.5 text-sm text-muted-foreground">
-          Manuel girin veya AI ile soru havuzundan seçim yaptırın
-        </p>
+        <div className="bz-page-header mb-0">
+          <div className="bz-page-header__text">
+            <h1 className="bz-page-header__title">Yeni soru seti</h1>
+            <p className="bz-page-header__sub">
+              Manuel girin veya AI ile soru havuzundan seçim yaptırın
+            </p>
+          </div>
+        </div>
       </motion.div>
 
       <GlassCard hover={false}>
-        <div className="mb-4 flex items-center gap-2">
-          <Sparkles className="h-5 w-5 text-primary" />
-          <h2 className="text-base font-semibold text-foreground">
+        <div className="mb-3 flex items-center gap-3">
+          <span className="bz-icon-box" aria-hidden="true">
+            <Sparkles className="text-data" />
+          </span>
+          <h2 className="text-[15px] font-bold text-foreground">
             AI destekli taslak
           </h2>
         </div>
-        <p className="mb-3 text-sm text-muted-foreground">
+        <p className="mb-4 text-[13px] text-fg2">
           Hedef rol, sektör veya değerlendirme odağını en az 20 karakter ile
           yazın. Kuruluşunuzun soru havuzundan uygun sorular seçilir (aktif AI
-          yapılandırması gerekir; MOCK ile test edebilirsiniz).
+          entegrasyonu gerekir).
         </p>
-        <textarea
-          value={aiBrief}
-          onChange={(e) => setAiBrief(e.target.value)}
-          rows={4}
-          placeholder="Örn: Üretim hattı takım liderleri için teknik problem çözme ve iletişim becerilerini ölçen bir set..."
-          className={cn(inputCls, "resize-none")}
-        />
-        <div className="mt-3 flex flex-wrap items-end gap-3">
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">
+        {!aiConnected && (
+          <AiNotConnectedNotice feature="AI destekli taslak" className="mb-4" />
+        )}
+        <div className="bz-form-row">
+          <label htmlFor="qs-ai-brief" className="bz-label">
+            Hedef ve bağlam
+          </label>
+          <textarea
+            id="qs-ai-brief"
+            value={aiBrief}
+            onChange={(e) => setAiBrief(e.target.value)}
+            rows={4}
+            placeholder="Örn: Üretim hattı takım liderleri için teknik problem çözme ve iletişim becerilerini ölçen bir set..."
+            className="bz-field"
+          />
+        </div>
+        <div className="mt-4 flex flex-wrap items-end gap-3">
+          <div className="bz-form-row">
+            <label htmlFor="qs-ai-max" className="bz-label">
               En fazla soru sayısı
             </label>
             <input
+              id="qs-ai-max"
               type="number"
+              inputMode="numeric"
               min={3}
               max={50}
               value={aiMax}
               onChange={(e) =>
                 setAiMax(Math.min(50, Math.max(3, Number(e.target.value) || 20)))
               }
-              className={cn(inputCls, "w-28 tabular-nums")}
+              className="bz-field w-28 tabular-nums"
             />
           </div>
           <button
             type="button"
             onClick={() => void runAiSuggest()}
-            disabled={suggestMutation.isPending}
-            className="inline-flex items-center gap-2 rounded-xl bg-primary/15 px-4 py-2.5 text-sm font-semibold text-primary transition-colors hover:bg-primary/25 disabled:opacity-50"
+            disabled={suggestMutation.isPending || !aiConnected}
+            className="bz-btn bz-btn--soft"
           >
             {suggestMutation.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Loader2 className="animate-spin" />
             ) : (
-              <Sparkles className="h-4 w-4" />
+              <Sparkles />
             )}
-            Öneri oluştur
+            {suggestMutation.isPending ? "Öneri hazırlanıyor" : "Öneri oluştur"}
           </button>
         </div>
         {pickedQuestionIds.length > 0 && (
-          <p className="mt-3 text-xs text-primary">
-            AI seçimi: {pickedQuestionIds.length} soru forma uygulandı (kaydedince
-            sete eklenir).
-          </p>
+          <div className="bz-callout mt-4" data-tone="info">
+            AI seçimi: <b>{pickedQuestionIds.length} soru</b> forma uygulandı;
+            kaydettiğinizde sete eklenir.
+          </div>
         )}
       </GlassCard>
 
       <GlassCard hover={false}>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
-          <h2 className="text-base font-semibold text-foreground">
+          <h2 className="text-[15px] font-bold text-foreground">
             Soru seti bilgileri
           </h2>
 
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-foreground">
-              Ad <span className="text-destructive">*</span>
+          <div className="bz-form-row">
+            <label htmlFor="qs-name" className="bz-label">
+              Ad <span className="bz-req">*</span>
             </label>
             <input
+              id="qs-name"
               {...register("name")}
               placeholder="Örn: Liderlik — Çekirdek Set v2"
-              className={cn(inputCls, errors.name && "border-destructive/50")}
+              aria-invalid={errors.name ? true : undefined}
+              aria-describedby={errors.name ? "qs-name-err" : undefined}
+              className="bz-field"
             />
             {errors.name && (
-              <p className="mt-1 text-xs text-destructive">{errors.name.message}</p>
+              <span id="qs-name-err" className="bz-error-text">
+                {errors.name.message}
+              </span>
             )}
           </div>
 
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-foreground">
+          <div className="bz-form-row">
+            <label htmlFor="qs-desc" className="bz-label">
               Açıklama
             </label>
             <textarea
+              id="qs-desc"
               {...register("description")}
               rows={3}
-              className={cn(inputCls, "resize-none")}
+              className="bz-field"
             />
           </div>
 
           <div className="flex flex-wrap gap-6">
-            <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
-              <input
-                type="checkbox"
-                {...register("isActive")}
-                className="rounded border-border text-primary focus:ring-primary/30"
-              />
+            <label className="bz-check">
+              <input type="checkbox" {...register("isActive")} />
               Aktif
             </label>
-            <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
-              <input
-                type="checkbox"
-                {...register("isDefault")}
-                className="rounded border-border text-primary focus:ring-primary/30"
-              />
+            <label className="bz-check">
+              <input type="checkbox" {...register("isDefault")} />
               Varsayılan soru seti
             </label>
           </div>
 
-          <div>
-            <p className="mb-2 text-sm font-medium text-foreground">
-              Boyut ağırlıkları
-            </p>
+          <fieldset className="bz-fieldset">
+            <legend className="bz-label mb-3">Boyut ağırlıkları</legend>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {WEIGHT_FIELDS.map(({ key, field }) => (
-                <div key={key}>
-                  <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                <div key={key} className="bz-form-row">
+                  <label
+                    htmlFor={`qs-w-${field}`}
+                    className="bz-label flex items-center gap-2 font-medium text-fg2"
+                  >
+                    <span
+                      className={cn("h-2 w-2 rounded-full", dimensionColor(key).bar)}
+                      aria-hidden="true"
+                    />
                     {DIMENSION_SHORT_LABELS[key]}
                   </label>
                   <input
+                    id={`qs-w-${field}`}
                     type="number"
+                    inputMode="numeric"
                     min={0}
                     step={1}
                     {...register(field)}
-                    className={cn(inputCls, "tabular-nums")}
+                    className="bz-field tabular-nums"
                   />
                 </div>
               ))}
             </div>
-          </div>
+          </fieldset>
 
-          <div className="flex justify-end gap-3 border-t border-border/20 pt-4">
+          <div className="flex justify-end gap-2 border-t border-divider pt-4">
             <button
               type="button"
               onClick={() => router.back()}
-              className="rounded-xl px-4 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/60"
+              className="bz-btn"
             >
-              İptal
+              Vazgeç
             </button>
             <button
               type="submit"
-              disabled={isSubmitting || createMutation.isPending}
-              className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={busy}
+              className="bz-btn bz-btn--primary"
             >
-              {(isSubmitting || createMutation.isPending) && (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              )}
-              Oluştur
+              {busy && <Loader2 className="animate-spin" />}
+              {busy ? "Oluşturuluyor" : "Seti oluştur"}
             </button>
           </div>
         </form>

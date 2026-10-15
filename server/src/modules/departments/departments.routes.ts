@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { prisma } from "../../lib/prisma.js";
+import { requireRoleForWrites, ROLE_GROUPS } from "../../middleware/authenticate.js";
 
 const createSchema = z.object({
   name: z.string().min(1).max(200),
@@ -12,6 +13,7 @@ const updateSchema = createSchema.partial();
 
 const departmentRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.addHook("onRequest", fastify.authenticate);
+  fastify.addHook("preHandler", requireRoleForWrites(ROLE_GROUPS.manage));
 
   // GET / — list departments
   fastify.get<{
@@ -83,14 +85,29 @@ const departmentRoutes: FastifyPluginAsync = async (fastify) => {
         });
       }
 
-      const department = await prisma.department.create({
-        data: {
-          name: body.name,
-          description: body.description,
-          color: body.color,
-          organizationId: orgId,
-        },
+      // (organizationId, name) veritabanında tekil: aynı adla silinmiş bir
+      // kayıt varsa yeni kayıt açmak yerine geri yüklenir.
+      const softDeleted = await prisma.department.findFirst({
+        where: { organizationId: orgId, name: body.name, deletedAt: { not: null } },
       });
+
+      const department = softDeleted
+        ? await prisma.department.update({
+            where: { id: softDeleted.id },
+            data: {
+              deletedAt: null,
+              description: body.description ?? null,
+              color: body.color ?? null,
+            },
+          })
+        : await prisma.department.create({
+            data: {
+              name: body.name,
+              description: body.description,
+              color: body.color,
+              organizationId: orgId,
+            },
+          });
 
       return reply.status(201).send({ data: department });
     } catch (err) {
@@ -182,11 +199,11 @@ const departmentRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       if (body.name && body.name !== department.name) {
+        // Silinmiş kayıtlar da tekil kısıtına dahildir
         const duplicate = await prisma.department.findFirst({
           where: {
             organizationId: orgId,
             name: body.name,
-            deletedAt: null,
             id: { not: id },
           },
         });
@@ -243,10 +260,22 @@ const departmentRoutes: FastifyPluginAsync = async (fastify) => {
           });
         }
 
-        await prisma.department.update({
-          where: { id },
-          data: { deletedAt: new Date() },
-        });
+        const now = new Date();
+        await prisma.$transaction([
+          // Personel silinmiş departman/ekiplere bağlı kalmasın
+          prisma.personnel.updateMany({
+            where: { organizationId: orgId, departmentId: id },
+            data: { departmentId: null, teamId: null },
+          }),
+          prisma.team.updateMany({
+            where: { departmentId: id, deletedAt: null },
+            data: { deletedAt: now },
+          }),
+          prisma.department.update({
+            where: { id },
+            data: { deletedAt: now },
+          }),
+        ]);
 
         return reply.send({ data: { ok: true } });
       } catch (err) {

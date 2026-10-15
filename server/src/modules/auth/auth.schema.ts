@@ -28,6 +28,15 @@ export const resetPasswordBodySchema = z.object({
     .regex(/[0-9]/),
 });
 
+export const changePasswordBodySchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z
+    .string()
+    .min(8, "Şifre en az 8 karakter olmalı")
+    .regex(/[A-Z]/, "En az bir büyük harf içermeli")
+    .regex(/[0-9]/, "En az bir rakam içermeli"),
+});
+
 export type LoginBody = z.infer<typeof loginBodySchema>;
 export type PortalLoginBody = z.infer<typeof portalLoginBodySchema>;
 export type RefreshBody = z.infer<typeof refreshBodySchema>;

@@ -9,6 +9,8 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
+    "@bizmo/theme": "file:../../packages/theme",
+    "@hookform/resolvers": "^3.9.0",
     "@ph/shared": "*",
     "@ph/ui": "*",
     "@tanstack/react-query": "^5.48.0",
@@ -20,7 +22,6 @@
     "next": "14.2.5",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "@hookform/resolvers": "^3.9.0",
     "react-hook-form": "^7.52.1",
     "sonner": "^1.5.0",
     "tailwind-merge": "^2.3.0",

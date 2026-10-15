@@ -24,12 +24,16 @@ import {
 import { toast } from "sonner";
 import { GlassCard, PortalModal } from "@ph/ui";
 import { cn } from "@/lib/utils";
+import { apiErrorMessage } from "@/lib/api";
+import { dimensionColor } from "@/lib/dimension-colors";
+import { AiNotConnectedNotice } from "@/components/ai/AiNotConnectedNotice";
 import {
   useQuestionSet,
   useDeleteQuestionSet,
   useUpdateQuestionSet,
   useQuestionList,
   useGenerateAiQuestions,
+  useAiStatus,
   type QuestionSetItemRow,
   type QuestionSetDetail,
   type QuestionRow,
@@ -57,15 +61,6 @@ const editQsSchema = z.object({
 
 type EditQsFormValues = z.infer<typeof editQsSchema>;
 
-const DEFAULT_DIM_COLOR = { bg: "bg-blue-500/10", text: "text-blue-500", bar: "bg-blue-500" };
-const DIMENSION_COLORS: Record<string, { bg: string; text: string; bar: string }> = {
-  LOGICAL_ALGORITHMIC: { bg: "bg-blue-500/10", text: "text-blue-500", bar: "bg-blue-500" },
-  LEADERSHIP: { bg: "bg-purple-500/10", text: "text-purple-500", bar: "bg-purple-500" },
-  SOCIAL_INTELLIGENCE: { bg: "bg-emerald-500/10", text: "text-emerald-500", bar: "bg-emerald-500" },
-  GROWTH_POTENTIAL: { bg: "bg-amber-500/10", text: "text-amber-500", bar: "bg-amber-500" },
-  DOMAIN_ALIGNMENT: { bg: "bg-rose-500/10", text: "text-rose-500", bar: "bg-rose-500" },
-};
-
 const WEIGHT_MAP: { key: string; field: string }[] = [
   { key: "LOGICAL_ALGORITHMIC", field: "weightLogical" },
   { key: "LEADERSHIP", field: "weightLeadership" },
@@ -73,6 +68,25 @@ const WEIGHT_MAP: { key: string; field: string }[] = [
   { key: "GROWTH_POTENTIAL", field: "weightGrowth" },
   { key: "DOMAIN_ALIGNMENT", field: "weightDomain" },
 ];
+
+/**
+ * Mevcut öğelere yeni soruları ekler: sette zaten olan sorular atlanır ve
+ * sıra numaraları 1..n olarak yeniden verilir (sunucuda soru ve sıra tekil).
+ */
+function buildItemsPayload(currentItems: QuestionSetItemRow[], newQuestionIds: string[]) {
+  const sorted = [...currentItems].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  const existingIds = new Set(sorted.map((item) => item.question.id));
+  const additions = [...new Set(newQuestionIds)].filter((qId) => !existingIds.has(qId));
+  const items = [
+    ...sorted.map((item) => ({
+      questionId: item.question.id,
+      isRequired: item.isRequired,
+      customWeight: item.customWeight ?? undefined,
+    })),
+    ...additions.map((questionId) => ({ questionId, isRequired: true, customWeight: undefined })),
+  ].map((item, i) => ({ ...item, order: i + 1 }));
+  return { items, addedCount: additions.length };
+}
 
 export default function QuestionSetDetailPage() {
   const params = useParams();
@@ -163,7 +177,7 @@ export default function QuestionSetDetailPage() {
   const allQuestions = questionsData?.items ?? [];
 
   const handleDelete = async () => {
-    if (!confirm("Bu soru setini silmek istediğinizden emin misiniz?")) return;
+    if (!confirm("Soru seti silinsin mi? Bu işlem geri alınamaz.")) return;
     try {
       await deleteMutation.mutateAsync(id);
       toast.success("Soru seti silindi");
@@ -176,27 +190,13 @@ export default function QuestionSetDetailPage() {
   const handleAddQuestions = async () => {
     if (selectedQuestions.length === 0) return;
     try {
-      const currentItems = qs?.items ?? [];
-      const existingPayload = currentItems.map((item: QuestionSetItemRow) => ({
-        questionId: item.question.id,
-        order: item.order,
-        isRequired: item.isRequired,
-        customWeight: item.customWeight ?? undefined,
-      }));
-      const newItems = selectedQuestions.map((qId, i) => ({
-        questionId: qId,
-        order: currentItems.length + i + 1,
-        isRequired: true as const,
-      }));
-      await updateMutation.mutateAsync({
-        id,
-        data: { items: [...existingPayload, ...newItems] },
-      });
-      toast.success(`${selectedQuestions.length} soru eklendi`);
+      const { items: payload, addedCount } = buildItemsPayload(qs?.items ?? [], selectedQuestions);
+      await updateMutation.mutateAsync({ id, data: { items: payload } });
+      toast.success(`${addedCount} soru eklendi`);
       setAddOpen(false);
       setSelectedQuestions([]);
-    } catch {
-      toast.error("Soru ekleme başarısız");
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Soru ekleme başarısız"));
     }
   };
 
@@ -208,21 +208,28 @@ export default function QuestionSetDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="space-y-6 w-full">
-        <div className="h-8 w-48 bg-muted/40 rounded-xl animate-pulse" />
-        <div className="h-40 bg-muted/40 rounded-xl animate-pulse" />
-        <div className="h-64 bg-muted/40 rounded-xl animate-pulse" />
+      <div className="space-y-6 w-full" aria-busy="true">
+        <div className="bz-skeleton h-8 w-48" />
+        <div className="bz-skeleton h-40 rounded-2xl" />
+        <div className="bz-skeleton h-64 rounded-2xl" />
       </div>
     );
   }
 
   if (!qs) {
     return (
-      <div className="flex flex-col items-center justify-center py-24 text-center">
-        <p className="text-sm text-muted-foreground">Soru seti bulunamadı</p>
+      <div className="bz-empty py-24">
+        <span className="bz-icon-box" aria-hidden="true">
+          <Library />
+        </span>
+        <p className="bz-empty__title">Soru seti bulunamadı</p>
+        <p className="bz-empty__text">
+          Set silinmiş ya da bağlantı hatalı olabilir.
+        </p>
         <button
+          type="button"
           onClick={() => router.push("/question-sets")}
-          className="mt-3 text-sm text-primary hover:underline"
+          className="bz-btn bz-btn--soft"
         >
           Listeye dön
         </button>
@@ -246,92 +253,91 @@ export default function QuestionSetDetailPage() {
         transition={{ duration: 0.3 }}
       >
         <button
+          type="button"
           onClick={() => router.push("/question-sets")}
-          className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mb-4"
+          className="bz-btn bz-btn--subtle bz-btn--sm mb-4"
         >
-          <ArrowLeft className="h-4 w-4" />
-          Soru Setleri
+          <ArrowLeft />
+          Soru setleri
         </button>
 
-        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-          <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-2xl font-bold text-foreground">{qs.name}</h1>
-            <span className="text-xs tabular-nums text-muted-foreground px-2 py-0.5 rounded-md bg-muted">
-              v{qs.version}
-            </span>
-            {qs.isDefault && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-500 text-[11px] font-semibold">
-                <Star className="h-3 w-3 fill-amber-500" />
-                Varsayılan
+        <div className="bz-page-header mb-0">
+          <div className="bz-page-header__text">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="bz-page-header__title">{qs.name}</h1>
+              <span className="bz-chip tabular-nums" title="Sürüm">
+                v{qs.version}
               </span>
+              {qs.isDefault && (
+                <span className="bz-chip bz-chip--success">
+                  <Star />
+                  Varsayılan
+                </span>
+              )}
+            </div>
+            {qs.description && (
+              <p className="bz-page-header__sub">{qs.description}</p>
             )}
           </div>
-          <div className="flex gap-2">
+          <div className="bz-page-header__actions">
             <button
               type="button"
-              onClick={() => setAddOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary/10 text-primary text-sm font-medium hover:bg-primary/20 transition-colors"
+              onClick={handleDelete}
+              disabled={deleteMutation.isPending}
+              className="bz-btn bz-btn--danger"
             >
-              <Plus className="h-3.5 w-3.5" />
-              Soru Ekle
+              <Trash2 />
+              Sil
             </button>
             <button
               type="button"
               onClick={() => setEditOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-muted-foreground hover:bg-muted/60 transition-colors"
+              className="bz-btn"
             >
-              <Pencil className="h-3.5 w-3.5" />
+              <Pencil />
               Düzenle
             </button>
             <button
-              onClick={handleDelete}
-              disabled={deleteMutation.isPending}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-destructive hover:bg-destructive/10 transition-colors disabled:opacity-50"
+              type="button"
+              onClick={() => setAddOpen(true)}
+              className="bz-btn bz-btn--primary"
             >
-              <Trash2 className="h-3.5 w-3.5" />
-              Sil
+              <Plus />
+              Soru ekle
             </button>
           </div>
         </div>
-
-        {qs.description && (
-          <p className="text-sm text-muted-foreground mt-2">
-            {qs.description}
-          </p>
-        )}
       </motion.div>
 
       {/* Dimension Weights */}
       <GlassCard hover={false}>
-        <h2 className="text-base font-semibold text-foreground mb-4">
-          Boyut Ağırlıkları
+        <h2 className="text-[15px] font-bold text-foreground mb-4">
+          Boyut ağırlıkları
         </h2>
         <div className="space-y-3">
           {WEIGHT_MAP.map(({ key, field }) => {
             const w = qsW[field] ?? 0;
-            const colors = DIMENSION_COLORS[key] ?? DEFAULT_DIM_COLOR;
+            const colors = dimensionColor(key);
             return (
               <div key={key} className="flex items-center gap-3">
-                <span
-                  className={cn(
-                    "w-24 sm:w-28 text-xs font-medium shrink-0",
-                    colors.text,
-                  )}
-                >
+                <span className="flex w-24 sm:w-28 shrink-0 items-center gap-2 text-[13px] text-fg2">
+                  <span
+                    className={cn("h-2 w-2 shrink-0 rounded-full", colors.bar)}
+                    aria-hidden="true"
+                  />
                   {DIMENSION_SHORT_LABELS[key]}
                 </span>
-                <div className="flex-1 h-4 rounded-full bg-muted/50 overflow-hidden">
+                <div className="flex-1 h-2 rounded-full bg-field overflow-hidden">
                   <motion.div
                     className={cn("h-full rounded-full", colors.bar)}
                     initial={{ width: 0 }}
                     animate={{
                       width: `${(w / maxWeight) * 100}%`,
                     }}
-                    transition={{ duration: 0.6, ease: "easeOut" }}
-                    style={{ opacity: 0.75 }}
+                    transition={{ duration: 0.35, ease: "easeOut" }}
                   />
                 </div>
-                <span className="text-sm font-bold tabular-nums text-foreground w-8 text-right">
+                <span className="text-sm font-semibold tabular-nums text-foreground w-8 text-right">
                   {w}
                 </span>
               </div>
@@ -342,41 +348,50 @@ export default function QuestionSetDetailPage() {
 
       {/* Questions */}
       <GlassCard hover={false}>
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base font-semibold text-foreground">
-            Sorular ({items.length})
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-[15px] font-bold text-foreground">
+            Sorular{" "}
+            <span className="font-sans text-[13px] font-semibold tabular-nums text-fg3">
+              {items.length}
+            </span>
           </h2>
         </div>
 
         {items.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-center">
-            <p className="text-sm text-muted-foreground">
-              Bu sette henüz soru yok
+          <div className="bz-empty">
+            <span className="bz-icon-box" aria-hidden="true">
+              <Library />
+            </span>
+            <p className="bz-empty__title">Bu sette henüz soru yok</p>
+            <p className="bz-empty__text">
+              Havuzdan soru seçin veya AI ile yeni sorular üretin.
             </p>
             <button
+              type="button"
               onClick={() => setAddOpen(true)}
-              className="mt-2 text-sm text-primary hover:underline"
+              className="bz-btn bz-btn--soft"
             >
+              <Plus />
               Soru ekle
             </button>
           </div>
         ) : (
-          <div className="space-y-2">
-            {items
+          <ol className="divide-y divide-divider">
+            {[...items]
               .sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0))
               .map((item: any, idx: number) => {
                 const q = item.question;
                 if (!q) return null;
-                const dimColors =
-                  DIMENSION_COLORS[q.dimension] ?? DEFAULT_DIM_COLOR;
+                const dimColors = dimensionColor(q.dimension);
+                const weight = item.customWeight ?? q.weight;
                 return (
-                  <div
+                  <li
                     key={item.id}
-                    className="flex items-start gap-3 p-3 rounded-xl bg-muted/20 hover:bg-muted/40 transition-colors group"
+                    className="group -mx-2 flex items-start gap-3 rounded-xl px-2 py-3 transition-colors hover:bg-hover"
                   >
-                    <div className="flex items-center gap-2 pt-0.5 shrink-0">
-                      <GripVertical className="h-4 w-4 text-muted-foreground/40 opacity-0 group-hover:opacity-100 transition-opacity" />
-                      <span className="text-xs tabular-nums text-muted-foreground font-medium w-5 text-center">
+                    <div className="flex items-center gap-1 pt-0.5 shrink-0">
+                      <GripVertical className="h-4 w-4 text-fg3 opacity-0 group-hover:opacity-60 transition-opacity" aria-hidden="true" />
+                      <span className="text-xs tabular-nums text-fg3 font-semibold w-5 text-right">
                         {idx + 1}
                       </span>
                     </div>
@@ -384,33 +399,36 @@ export default function QuestionSetDetailPage() {
                       <p className="text-sm text-foreground leading-relaxed">
                         {q.text}
                       </p>
-                      <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1.5">
                         <span
                           className={cn(
-                            "inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold",
+                            "bz-chip text-foreground",
                             dimColors.bg,
-                            dimColors.text,
                           )}
                         >
+                          <span
+                            className={cn("h-1.5 w-1.5 rounded-full", dimColors.bar)}
+                            aria-hidden="true"
+                          />
                           {DIMENSION_LABELS[q.dimension]}
                         </span>
-                        <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold bg-muted text-muted-foreground">
+                        <span className="text-xs text-fg3">
                           {QUESTION_TYPE_LABELS[q.type] ?? q.type}
-                        </span>
-                        <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold bg-muted text-muted-foreground">
+                          {" · "}
                           {QUESTION_PHASE_LABELS[q.phase] ?? q.phase}
+                          {weight !== 1 && (
+                            <>
+                              {" · "}Ağırlık{" "}
+                              <b className="tabular-nums">{weight}</b>
+                            </>
+                          )}
                         </span>
-                        {(item.customWeight ?? q.weight) !== 1 && (
-                          <span className="text-[10px] text-muted-foreground/70">
-                            Ağırlık: {item.customWeight ?? q.weight}
-                          </span>
-                        )}
                       </div>
                     </div>
-                  </div>
+                  </li>
                 );
               })}
-          </div>
+          </ol>
         )}
       </GlassCard>
 
@@ -441,7 +459,7 @@ export default function QuestionSetDetailPage() {
           <PortalModal key="qs-edit">
             <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 sm:p-6">
               <motion.div
-                className="absolute inset-0 bg-foreground/25 backdrop-blur-sm"
+                className="bz-scrim"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
@@ -451,26 +469,34 @@ export default function QuestionSetDetailPage() {
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="qs-edit-title"
-                className="relative z-10 max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-border/50 bg-popover p-6 shadow-xl"
-                initial={{ opacity: 0, scale: 0.96 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.96 }}
+                aria-describedby="qs-edit-desc"
+                className="relative z-modal max-h-[86vh] w-full max-w-[480px] overflow-y-auto rounded-3xl border border-glass-border bg-popover p-6 shadow-3 backdrop-blur-xl"
+                initial={{ opacity: 0, scale: 0.98, y: 8 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.98, y: 8 }}
                 transition={{ duration: 0.2 }}
                 onClick={(e) => e.stopPropagation()}
               >
-                <div className="mb-5 flex items-center justify-between">
-                  <h3
-                    id="qs-edit-title"
-                    className="text-lg font-semibold text-foreground"
-                  >
-                    Soru Setini Düzenle
-                  </h3>
+                <div className="mb-5 flex items-start justify-between gap-4">
+                  <div>
+                    <h3
+                      id="qs-edit-title"
+                      className="font-display text-[19px] font-bold text-foreground"
+                    >
+                      Soru setini düzenle
+                    </h3>
+                    <p id="qs-edit-desc" className="mt-1 text-[13px] text-fg2">
+                      Ad, açıklama ve boyut ağırlıklarını güncelleyin.
+                    </p>
+                  </div>
                   <button
                     type="button"
                     onClick={() => setEditOpen(false)}
-                    className="rounded-lg p-1.5 transition-colors hover:bg-muted/60"
+                    className="bz-icon-btn bz-icon-btn--sm -mr-2 -mt-1"
+                    aria-label="Kapat"
+                    title="Kapat"
                   >
-                    <X className="h-4 w-4 text-muted-foreground" />
+                    <X />
                   </button>
                 </div>
 
@@ -478,93 +504,93 @@ export default function QuestionSetDetailPage() {
                   className="space-y-4"
                   onSubmit={handleEditSubmit(onEditSave)}
                 >
-                  <div>
-                    <label className="mb-1 block text-sm font-medium text-foreground">
-                      Ad <span className="text-destructive">*</span>
+                  <div className="bz-form-row">
+                    <label htmlFor="qs-edit-name" className="bz-label">
+                      Ad <span className="bz-req">*</span>
                     </label>
                     <input
+                      id="qs-edit-name"
                       {...registerEdit("name")}
-                      className={cn(
-                        "w-full rounded-xl border border-border/40 bg-muted/50 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30",
-                        editErrors.name && "border-destructive/60",
-                      )}
+                      aria-invalid={editErrors.name ? true : undefined}
+                      aria-describedby={editErrors.name ? "qs-edit-name-err" : undefined}
+                      className="bz-field"
                     />
                     {editErrors.name && (
-                      <p className="mt-1 text-xs text-destructive">
+                      <span id="qs-edit-name-err" className="bz-error-text">
                         {editErrors.name.message}
-                      </p>
+                      </span>
                     )}
                   </div>
 
-                  <div>
-                    <label className="mb-1 block text-sm font-medium text-foreground">
+                  <div className="bz-form-row">
+                    <label htmlFor="qs-edit-desc-field" className="bz-label">
                       Açıklama
                     </label>
                     <textarea
+                      id="qs-edit-desc-field"
                       {...registerEdit("description")}
                       rows={3}
-                      className="w-full resize-none rounded-xl border border-border/40 bg-muted/50 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      className="bz-field"
                     />
                   </div>
 
-                  <div className="flex flex-wrap gap-4">
-                    <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
-                      <input
-                        type="checkbox"
-                        {...registerEdit("isActive")}
-                        className="rounded border-border text-primary focus:ring-primary/30"
-                      />
+                  <div className="flex flex-wrap gap-x-6 gap-y-3">
+                    <label className="bz-check">
+                      <input type="checkbox" {...registerEdit("isActive")} />
                       Aktif
                     </label>
-                    <label className="flex cursor-pointer items-center gap-2 text-sm text-foreground">
-                      <input
-                        type="checkbox"
-                        {...registerEdit("isDefault")}
-                        className="rounded border-border text-primary focus:ring-primary/30"
-                      />
+                    <label className="bz-check">
+                      <input type="checkbox" {...registerEdit("isDefault")} />
                       Varsayılan soru seti
                     </label>
                   </div>
 
-                  <div>
-                    <p className="mb-2 text-sm font-medium text-foreground">
-                      Boyut ağırlıkları
-                    </p>
+                  <fieldset className="bz-fieldset">
+                    <legend className="bz-label mb-3">Boyut ağırlıkları</legend>
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       {WEIGHT_MAP.map(({ key, field }) => (
-                        <div key={key}>
-                          <label className="mb-1 block text-xs font-medium text-muted-foreground">
+                        <div key={key} className="bz-form-row">
+                          <label
+                            htmlFor={`qs-edit-w-${field}`}
+                            className="bz-label flex items-center gap-2 font-medium text-fg2"
+                          >
+                            <span
+                              className={cn("h-2 w-2 rounded-full", dimensionColor(key).bar)}
+                              aria-hidden="true"
+                            />
                             {DIMENSION_SHORT_LABELS[key]}
                           </label>
                           <input
+                            id={`qs-edit-w-${field}`}
                             type="number"
+                            inputMode="numeric"
                             min={0}
                             step={1}
                             {...registerEdit(field as keyof EditQsFormValues)}
-                            className="w-full rounded-xl border border-border/40 bg-muted/50 px-3 py-2 text-sm tabular-nums focus:outline-none focus:ring-2 focus:ring-primary/30"
+                            className="bz-field tabular-nums"
                           />
                         </div>
                       ))}
                     </div>
-                  </div>
+                  </fieldset>
 
                   <div className="flex justify-end gap-2 pt-2">
                     <button
                       type="button"
                       onClick={() => setEditOpen(false)}
-                      className="rounded-xl px-4 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/60"
+                      className="bz-btn"
                     >
-                      İptal
+                      Vazgeç
                     </button>
                     <button
                       type="submit"
                       disabled={updateMutation.isPending}
-                      className="flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
+                      className="bz-btn bz-btn--primary"
                     >
                       {updateMutation.isPending && (
-                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <Loader2 className="animate-spin" />
                       )}
-                      Kaydet
+                      {updateMutation.isPending ? "Kaydediliyor" : "Değişiklikleri kaydet"}
                     </button>
                   </div>
                 </form>
@@ -617,6 +643,9 @@ function AddQuestionDialog({
   questionSetId: string;
 }) {
   const [tab, setTab] = useState<AddTab>("pool");
+  // Sette zaten bulunan sorular seçim listesinde gösterilmez
+  const existingQuestionIds = new Set(existingItems.map((item) => item.question.id));
+  const availableQuestions = allQuestions.filter((q) => !existingQuestionIds.has(q.id));
   const [aiDimension, setAiDimension] = useState<string>(ALL_DIMENSIONS[0]!);
   const [aiTypes, setAiTypes] = useState<string[]>([]);
   const [aiCount, setAiCount] = useState(5);
@@ -626,6 +655,8 @@ function AddQuestionDialog({
 
   const generateMutation = useGenerateAiQuestions();
   const updateQsMutation = useUpdateQuestionSet();
+  const { data: aiStatus } = useAiStatus();
+  const aiConnected = aiStatus?.connected !== false;
 
   const handleGenerate = () => {
     setGeneratedQuestions([]);
@@ -644,7 +675,7 @@ function AddQuestionDialog({
           toast.success(`${data.length} soru AI tarafından üretildi`);
         },
         onError: (err) => {
-          toast.error(err instanceof Error ? err.message : "AI soru üretimi başarısız");
+          toast.error(apiErrorMessage(err, "AI soru üretimi başarısız"));
         },
       },
     );
@@ -665,32 +696,19 @@ function AddQuestionDialog({
   const handleAddGenerated = async () => {
     if (selectedGenerated.length === 0) return;
     try {
-      const currentPayload = existingItems.map((item: QuestionSetItemRow) => ({
-        questionId: item.question.id,
-        order: item.order,
-        isRequired: item.isRequired,
-        customWeight: item.customWeight ?? undefined,
-      }));
-      const newItems = selectedGenerated.map((qId, i) => ({
-        questionId: qId,
-        order: existingItems.length + i + 1,
-        isRequired: true as const,
-      }));
-      await updateQsMutation.mutateAsync({
-        id: questionSetId,
-        data: { items: [...currentPayload, ...newItems] },
-      });
-      toast.success(`${selectedGenerated.length} AI sorusu sete eklendi`);
+      const { items: payload, addedCount } = buildItemsPayload(existingItems, selectedGenerated);
+      await updateQsMutation.mutateAsync({ id: questionSetId, data: { items: payload } });
+      toast.success(`${addedCount} AI sorusu sete eklendi`);
       onClose();
-    } catch {
-      toast.error("Soru ekleme başarısız");
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Soru ekleme başarısız"));
     }
   };
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 sm:p-6">
       <motion.div
-        className="absolute inset-0 bg-foreground/25 backdrop-blur-sm"
+        className="bz-scrim"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
@@ -700,104 +718,114 @@ function AddQuestionDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="qs-add-title"
-        className="relative z-10 flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border/50 bg-popover shadow-xl"
-        initial={{ opacity: 0, scale: 0.96 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.96 }}
+        aria-describedby="qs-add-desc"
+        className="relative z-modal flex max-h-[86vh] w-full max-w-[720px] flex-col overflow-hidden rounded-3xl border border-glass-border bg-popover shadow-3 backdrop-blur-xl"
+        initial={{ opacity: 0, scale: 0.98, y: 8 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.98, y: 8 }}
         transition={{ duration: 0.2 }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex shrink-0 items-center justify-between border-b border-border/30 px-5 py-4">
-          <h3 id="qs-add-title" className="text-base font-semibold text-foreground">
-            Soru Ekle
-          </h3>
-          <button type="button" onClick={onClose} className="rounded-lg p-1.5 transition-colors hover:bg-muted/60">
-            <X className="h-4 w-4 text-muted-foreground" />
+        <div className="flex shrink-0 items-start justify-between gap-4 px-6 pt-5 pb-3">
+          <div>
+            <h3 id="qs-add-title" className="font-display text-[19px] font-bold text-foreground">
+              Soru ekle
+            </h3>
+            <p id="qs-add-desc" className="mt-1 text-[13px] text-fg2">
+              Havuzdan soru seçin veya AI ile yeni sorular üretin.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="bz-icon-btn bz-icon-btn--sm -mr-2"
+            aria-label="Kapat"
+            title="Kapat"
+          >
+            <X />
           </button>
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 px-5 pt-3 shrink-0 border-b border-border/20">
+        <div className="bz-tabs shrink-0 px-4" role="tablist" aria-label="Soru kaynağı">
           <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "pool"}
             onClick={() => setTab("pool")}
-            className={cn(
-              "flex items-center gap-1.5 px-3 py-2 rounded-t-lg text-xs font-medium transition-colors border-b-2",
-              tab === "pool"
-                ? "border-primary text-primary bg-primary/5"
-                : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/40",
-            )}
+            className="bz-tab"
           >
-            <Library className="h-3.5 w-3.5" />
-            Havuzdan Seç
+            <Library className="h-4 w-4" />
+            Havuzdan seç
           </button>
           <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "ai"}
             onClick={() => setTab("ai")}
-            className={cn(
-              "flex items-center gap-1.5 px-3 py-2 rounded-t-lg text-xs font-medium transition-colors border-b-2",
-              tab === "ai"
-                ? "border-purple-500 text-purple-500 bg-purple-500/5"
-                : "border-transparent text-muted-foreground hover:text-foreground hover:bg-muted/40",
-            )}
+            className="bz-tab"
           >
-            <Sparkles className="h-3.5 w-3.5" />
-            AI ile Oluştur
+            <Sparkles className="h-4 w-4" />
+            AI ile oluştur
           </button>
         </div>
 
         {/* Tab Content */}
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="min-h-0 flex-1 overflow-y-auto" role="tabpanel">
           {tab === "pool" ? (
             /* ── Havuzdan Seç ── */
             <div className="flex flex-col h-full">
-              <div className="shrink-0 px-5 pb-2 pt-4">
-                <div className="relative">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <div className="shrink-0 px-6 pb-3 pt-4">
+                <div className="bz-input-group">
+                  <span className="bz-input-prefix">
+                    <Search className="h-4 w-4" />
+                  </span>
                   <input
-                    type="text"
-                    placeholder="Soru ara..."
+                    type="search"
+                    placeholder="Soru ara"
+                    aria-label="Soru ara"
                     value={qSearch}
                     onChange={(e) => setQSearch(e.target.value)}
-                    className="w-full rounded-xl border border-border/40 bg-muted/50 py-2 pl-9 pr-3 text-sm placeholder:text-muted-foreground/60 transition-all focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/30"
+                    className="bz-field"
                   />
                 </div>
                 {selectedQuestions.length > 0 && (
-                  <p className="mt-2 text-xs text-primary">{selectedQuestions.length} soru seçildi</p>
+                  <p className="bz-hint mt-2">
+                    <b className="tabular-nums">{selectedQuestions.length}</b> soru seçildi
+                  </p>
                 )}
               </div>
-              <div className="flex-1 space-y-1 px-5 pb-2">
-                {allQuestions.length === 0 ? (
-                  <p className="py-8 text-center text-sm text-muted-foreground">Soru bulunamadı</p>
+              <div className="flex-1 space-y-2 px-6 pb-4">
+                {availableQuestions.length === 0 ? (
+                  <div className="bz-empty py-10">
+                    <p className="bz-empty__title">
+                      {allQuestions.length > 0 ? "Listelenen soruların tümü zaten sette" : "Soru bulunamadı"}
+                    </p>
+                    <p className="bz-empty__text">Farklı bir arama terimi deneyin.</p>
+                  </div>
                 ) : (
-                  allQuestions.map((q: QuestionRow) => {
+                  availableQuestions.map((q: QuestionRow) => {
                     const selected = selectedQuestions.includes(q.id);
-                    const dimColors = DIMENSION_COLORS[q.dimension] ?? DEFAULT_DIM_COLOR;
+                    const dimColors = dimensionColor(q.dimension);
                     return (
-                      <button
-                        key={q.id}
-                        type="button"
-                        onClick={() => toggleQuestion(q.id)}
-                        className={cn(
-                          "flex w-full items-start gap-3 rounded-xl p-2.5 text-left transition-colors",
-                          selected ? "bg-primary/10" : "hover:bg-muted/40",
-                        )}
-                      >
-                        <div className={cn(
-                          "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 transition-colors",
-                          selected ? "border-primary bg-primary" : "border-border/60",
-                        )}>
-                          {selected && <Check className="h-3 w-3 text-primary-foreground" />}
-                        </div>
+                      <label key={q.id} className="bz-choice-card w-full py-3">
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          onChange={() => toggleQuestion(q.id)}
+                        />
                         <div className="min-w-0 flex-1">
                           <p className="line-clamp-2 text-sm text-foreground">{q.text}</p>
-                          <div className="mt-1 flex items-center gap-1.5">
-                            <span className={cn("inline-flex rounded px-1.5 py-0.5 text-[10px] font-semibold", dimColors.bg, dimColors.text)}>
+                          <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+                            <span className={cn("bz-chip text-foreground", dimColors.bg)}>
+                              <span className={cn("h-1.5 w-1.5 rounded-full", dimColors.bar)} aria-hidden="true" />
                               {DIMENSION_SHORT_LABELS[q.dimension]}
                             </span>
-                            <span className="text-[10px] text-muted-foreground">{QUESTION_TYPE_LABELS[q.type]}</span>
+                            <span className="text-xs text-fg3">{QUESTION_TYPE_LABELS[q.type]}</span>
                           </div>
                         </div>
-                      </button>
+                      </label>
                     );
                   })
                 )}
@@ -805,68 +833,57 @@ function AddQuestionDialog({
             </div>
           ) : (
             /* ── AI ile Oluştur ── */
-            <div className="px-5 py-4 space-y-4">
+            <div className="px-6 py-4 space-y-5">
+              {!aiConnected && <AiNotConnectedNotice feature="AI ile soru üretimi" />}
               {/* Boyut Seçimi */}
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">
-                  Boyut Kriteri <span className="text-destructive">*</span>
-                </label>
+              <fieldset className="bz-fieldset gap-2">
+                <legend className="bz-label mb-2">
+                  Boyut kriteri <span className="bz-req">*</span>
+                </legend>
                 <div className="grid grid-cols-1 gap-2">
                   {ALL_DIMENSIONS.map((dim: string) => {
-                    const colors = DIMENSION_COLORS[dim] ?? DEFAULT_DIM_COLOR;
+                    const colors = dimensionColor(dim);
                     const isSelected = aiDimension === dim;
                     return (
-                      <button
-                        key={dim}
-                        type="button"
-                        onClick={() => setAiDimension(dim)}
-                        className={cn(
-                          "flex items-start gap-3 rounded-xl p-3 text-left transition-all border-2",
-                          isSelected
-                            ? `${colors.bg} border-current ${colors.text}`
-                            : "border-border/30 hover:border-border/60 hover:bg-muted/30",
-                        )}
-                      >
-                        <div className={cn(
-                          "mt-0.5 h-4 w-4 rounded-full border-2 flex items-center justify-center shrink-0",
-                          isSelected ? "border-current" : "border-border/60",
-                        )}>
-                          {isSelected && <div className={cn("h-2 w-2 rounded-full", colors.bar)} />}
-                        </div>
+                      <label key={dim} className="bz-choice-card w-full py-3">
+                        <input
+                          type="radio"
+                          name="qs-ai-dimension"
+                          checked={isSelected}
+                          onChange={() => setAiDimension(dim)}
+                        />
                         <div className="min-w-0">
-                          <p className={cn("text-sm font-semibold", isSelected ? colors.text : "text-foreground")}>
+                          <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                            <span className={cn("h-2 w-2 shrink-0 rounded-full", colors.bar)} aria-hidden="true" />
                             {DIMENSION_LABELS[dim]}
                           </p>
-                          <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-2">
+                          <p className="text-xs text-fg3 mt-0.5 line-clamp-2">
                             {DIMENSION_DESCRIPTIONS[dim]}
                           </p>
                         </div>
-                      </button>
+                      </label>
                     );
                   })}
                 </div>
-              </div>
+              </fieldset>
 
               {/* Soru Tipleri */}
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-1.5">
-                  Soru Tipleri <span className="text-muted-foreground text-xs font-normal">(boş = tümü)</span>
-                </label>
-                <div className="flex flex-wrap gap-1.5">
+              <div className="bz-form-row">
+                <span className="bz-label" id="qs-ai-types">
+                  Soru tipleri <span className="text-xs font-normal text-fg3">(boş = tümü)</span>
+                </span>
+                <div className="flex flex-wrap gap-1.5" role="group" aria-labelledby="qs-ai-types">
                   {QUESTION_TYPE_OPTIONS.map((opt) => {
                     const active = aiTypes.includes(opt.value);
                     return (
                       <button
                         key={opt.value}
                         type="button"
+                        aria-pressed={active}
                         onClick={() => toggleAiType(opt.value)}
-                        className={cn(
-                          "px-2.5 py-1 rounded-lg text-xs font-medium transition-colors border",
-                          active
-                            ? "bg-primary/10 text-primary border-primary/30"
-                            : "bg-muted/30 text-muted-foreground border-border/30 hover:bg-muted/50",
-                        )}
+                        className="bz-chip bz-chip--lg"
                       >
+                        {active && <Check aria-hidden="true" />}
                         {opt.label}
                       </button>
                     );
@@ -875,22 +892,16 @@ function AddQuestionDialog({
               </div>
 
               {/* Soru Adedi */}
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-1.5">
-                  Soru Adedi
-                </label>
-                <div className="flex items-center gap-2">
+              <div className="bz-form-row">
+                <span className="bz-label" id="qs-ai-count">Soru adedi</span>
+                <div className="bz-segmented self-start" role="group" aria-labelledby="qs-ai-count">
                   {[3, 5, 7, 10].map((n) => (
                     <button
                       key={n}
                       type="button"
+                      aria-pressed={aiCount === n}
                       onClick={() => setAiCount(n)}
-                      className={cn(
-                        "h-9 w-9 rounded-lg text-sm font-semibold transition-colors",
-                        aiCount === n
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-muted/40 text-muted-foreground hover:bg-muted/60",
-                      )}
+                      className="min-w-[44px] tabular-nums"
                     >
                       {n}
                     </button>
@@ -899,87 +910,75 @@ function AddQuestionDialog({
               </div>
 
               {/* Ek Bağlam */}
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-1.5">
-                  Ek Bağlam <span className="text-muted-foreground text-xs font-normal">(isteğe bağlı)</span>
+              <div className="bz-form-row">
+                <label htmlFor="qs-ai-context" className="bz-label">
+                  Ek bağlam <span className="text-xs font-normal text-fg3">(isteğe bağlı)</span>
                 </label>
                 <textarea
+                  id="qs-ai-context"
                   value={aiContext}
                   onChange={(e) => setAiContext(e.target.value)}
                   rows={2}
                   placeholder="Örn: Üretim sektöründe çalışan ekip liderleri için..."
-                  className="w-full rounded-xl border border-border/40 bg-muted/50 px-3 py-2 text-sm resize-none placeholder:text-muted-foreground/40 focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  className="bz-field"
                 />
               </div>
 
               {/* Üret Butonu */}
-              <motion.button
+              <button
+                type="button"
                 onClick={handleGenerate}
-                disabled={generateMutation.isPending}
-                className="w-full flex items-center justify-center gap-2 h-11 rounded-xl bg-gradient-to-r from-purple-500 to-primary text-white text-sm font-semibold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                whileHover={{ scale: 1.01 }}
-                whileTap={{ scale: 0.98 }}
+                disabled={generateMutation.isPending || !aiConnected}
+                className="bz-btn bz-btn--data bz-btn--block"
               >
                 {generateMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader2 className="animate-spin" />
                 ) : (
-                  <Sparkles className="h-4 w-4" />
+                  <Sparkles />
                 )}
-                {generateMutation.isPending ? "AI Soruları Üretiyor..." : "AI ile Soru Üret"}
-              </motion.button>
+                {generateMutation.isPending ? "Sorular üretiliyor" : "AI ile soru üret"}
+              </button>
 
               {/* Üretilen Sorular */}
               {generatedQuestions.length > 0 && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <h4 className="text-sm font-semibold text-foreground flex items-center gap-1.5">
-                      <BrainCircuit className="h-4 w-4 text-purple-500" />
-                      Üretilen Sorular ({generatedQuestions.length})
+                    <h4 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                      <BrainCircuit className="h-4 w-4 text-data" aria-hidden="true" />
+                      Üretilen sorular
+                      <span className="tabular-nums text-fg3">{generatedQuestions.length}</span>
                     </h4>
-                    <p className="text-[10px] text-muted-foreground">
+                    <p className="text-xs text-fg3 tabular-nums">
                       {selectedGenerated.length} seçili
                     </p>
                   </div>
-                  {generatedQuestions.map((q: QuestionRow, idx: number) => {
+                  {generatedQuestions.map((q: QuestionRow) => {
                     const selected = selectedGenerated.includes(q.id);
-                    const dimColors = DIMENSION_COLORS[q.dimension] ?? DEFAULT_DIM_COLOR;
+                    const dimColors = dimensionColor(q.dimension);
                     return (
-                      <button
-                        key={q.id}
-                        type="button"
-                        onClick={() => toggleGenerated(q.id)}
-                        className={cn(
-                          "flex w-full items-start gap-3 rounded-xl p-3 text-left transition-all border",
-                          selected
-                            ? "bg-purple-500/5 border-purple-500/30"
-                            : "border-border/20 hover:bg-muted/30",
-                        )}
-                      >
-                        <div className={cn(
-                          "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 transition-colors",
-                          selected ? "border-purple-500 bg-purple-500" : "border-border/60",
-                        )}>
-                          {selected && <Check className="h-3 w-3 text-white" />}
-                        </div>
+                      <label key={q.id} className="bz-choice-card w-full py-3">
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          onChange={() => toggleGenerated(q.id)}
+                        />
                         <div className="min-w-0 flex-1">
                           <p className="text-sm text-foreground leading-relaxed">{q.text}</p>
-                          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                            <span className={cn("inline-flex rounded px-1.5 py-0.5 text-[10px] font-semibold", dimColors.bg, dimColors.text)}>
+                          <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+                            <span className={cn("bz-chip text-foreground", dimColors.bg)}>
+                              <span className={cn("h-1.5 w-1.5 rounded-full", dimColors.bar)} aria-hidden="true" />
                               {DIMENSION_SHORT_LABELS[q.dimension]}
                             </span>
-                            <span className="text-[10px] text-muted-foreground">
-                              {QUESTION_TYPE_LABELS[q.type]}
+                            <span className="text-xs text-fg3">
+                              {QUESTION_TYPE_LABELS[q.type]} · {QUESTION_PHASE_LABELS[q.phase]}
                             </span>
-                            <span className="text-[10px] text-muted-foreground">
-                              {QUESTION_PHASE_LABELS[q.phase]}
-                            </span>
-                            <span className="inline-flex items-center gap-0.5 text-[10px] text-purple-500">
-                              <Sparkles className="h-2.5 w-2.5" />
+                            <span className="bz-chip bz-chip--info">
+                              <Sparkles />
                               AI
                             </span>
                           </div>
                         </div>
-                      </button>
+                      </label>
                     );
                   })}
                 </div>
@@ -989,33 +988,35 @@ function AddQuestionDialog({
         </div>
 
         {/* Footer */}
-        <div className="flex shrink-0 justify-end gap-2 border-t border-border/30 px-5 py-4">
+        <div className="flex shrink-0 justify-end gap-2 border-t border-divider px-6 py-4">
           <button
             type="button"
             onClick={onClose}
-            className="rounded-xl px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/60"
+            className="bz-btn"
           >
-            İptal
+            Vazgeç
           </button>
           {tab === "pool" ? (
             <button
               type="button"
               onClick={() => void handleAddQuestions()}
               disabled={selectedQuestions.length === 0 || updateMutation.isPending}
-              className="flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+              className="bz-btn bz-btn--primary"
             >
-              {updateMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-              Ekle ({selectedQuestions.length})
+              {updateMutation.isPending && <Loader2 className="animate-spin" />}
+              Sete ekle
+              <span className="tabular-nums">({selectedQuestions.length})</span>
             </button>
           ) : (
             <button
               type="button"
               onClick={() => void handleAddGenerated()}
               disabled={selectedGenerated.length === 0 || updateQsMutation.isPending}
-              className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-purple-500 to-primary px-4 py-2 text-sm font-semibold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+              className="bz-btn bz-btn--primary"
             >
-              {updateQsMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-              Sete Ekle ({selectedGenerated.length})
+              {updateQsMutation.isPending && <Loader2 className="animate-spin" />}
+              Sete ekle
+              <span className="tabular-nums">({selectedGenerated.length})</span>
             </button>
           )}
         </div>

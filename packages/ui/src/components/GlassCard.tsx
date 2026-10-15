@@ -5,6 +5,7 @@ import { motion, type HTMLMotionProps } from "framer-motion";
 import { cn } from "../lib/utils";
 
 interface GlassCardProps extends HTMLMotionProps<"div"> {
+  /** Tıklanabilir kartta üzerine gelince gölge 2 + 1px yükselme (.bz-card--interactive); yalnız onClick varsa uygulanır */
   hover?: boolean;
   /** Mount entrance animation (default off — use parent stagger or set true for hero cards). */
   animate?: boolean;
@@ -30,13 +31,13 @@ export const GlassCard = memo(function GlassCard({
         }
       : { initial: false as const };
 
+  // Bizmo içerik kartı (DESIGN.md §14): opak yüzey, 16 köşe, cam kenar, gölge 1, 20px iç boşluk.
+  // Cam yalnız kabuk ve yüzen katmanlardadır; içerik kartı opaktır.
+  const interactive = hover && typeof props.onClick === "function";
+
   return (
     <motion.div
-      className={cn(
-        hover ? "glass-surface" : "glass-surface-static",
-        "rounded-xl p-5 md:p-6",
-        className
-      )}
+      className={cn("bz-card p-5", interactive && "bz-card--interactive", className)}
       {...entrance}
       {...props}
     >

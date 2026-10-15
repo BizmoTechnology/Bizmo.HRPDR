@@ -1,6 +1,8 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { prisma } from "../../lib/prisma.js";
+import { isHttpError } from "../../lib/http-error.js";
+import { requireRoleForWrites, ROLE_GROUPS } from "../../middleware/authenticate.js";
 import { generateAiQuestions } from "../../services/question-ai-generate.service.js";
 
 const DEFAULT_PAGE_SIZE = 20;
@@ -53,6 +55,7 @@ function parsePagination(query: { page?: string; pageSize?: string }) {
 
 const questionRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.addHook("onRequest", fastify.authenticate);
+  fastify.addHook("preHandler", requireRoleForWrites(ROLE_GROUPS.manage));
 
   // GET / — list questions (paginated)
   fastify.get<{
@@ -143,6 +146,13 @@ const questionRoutes: FastifyPluginAsync = async (fastify) => {
 
       return reply.send({ data: questions });
     } catch (err) {
+      if (isHttpError(err)) {
+        return reply.status(err.statusCode).send({
+          code: err.code ?? "REQUEST_ERROR",
+          message: err.message,
+          traceId: request.traceId,
+        });
+      }
       const message = err instanceof Error ? err.message : "AI soru üretimi sırasında hata oluştu";
       request.log.error(err, "questions.aiGenerate failed");
       return reply.status(500).send({

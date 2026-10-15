@@ -28,11 +28,11 @@ export function Pagination({
   return (
     <div
       className={cn(
-        "flex items-center justify-between rounded-xl bg-muted/50 px-4 py-2.5 backdrop-blur-sm",
+        "flex items-center justify-between gap-3 px-1 py-2",
         className,
       )}
     >
-      <span className="text-sm text-muted-foreground">
+      <span className="text-[13px] text-muted-foreground tabular-nums">
         {total === 0 ? "Sonuç bulunamadı" : `${start}–${end} / ${total} sonuç`}
       </span>
 
@@ -41,17 +41,13 @@ export function Pagination({
           type="button"
           disabled={!canPrev}
           onClick={() => onPageChange(page - 1)}
-          className={cn(
-            "inline-flex h-8 w-8 items-center justify-center rounded-lg transition-colors",
-            canPrev
-              ? "hover:bg-accent/20 text-foreground"
-              : "cursor-not-allowed text-muted-foreground/40",
-          )}
+          className="bz-icon-btn bz-icon-btn--sm disabled:pointer-events-none disabled:opacity-40"
+          aria-label="Önceki sayfa"
         >
           <ChevronLeft className="h-4 w-4" />
         </button>
 
-        <span className="min-w-[3rem] text-center text-sm font-medium tabular-nums">
+        <span className="min-w-[3.5rem] text-center text-[13px] font-semibold tabular-nums">
           {page} / {totalPages}
         </span>
 
@@ -59,12 +55,8 @@ export function Pagination({
           type="button"
           disabled={!canNext}
           onClick={() => onPageChange(page + 1)}
-          className={cn(
-            "inline-flex h-8 w-8 items-center justify-center rounded-lg transition-colors",
-            canNext
-              ? "hover:bg-accent/20 text-foreground"
-              : "cursor-not-allowed text-muted-foreground/40",
-          )}
+          className="bz-icon-btn bz-icon-btn--sm disabled:pointer-events-none disabled:opacity-40"
+          aria-label="Sonraki sayfa"
         >
           <ChevronRight className="h-4 w-4" />
         </button>

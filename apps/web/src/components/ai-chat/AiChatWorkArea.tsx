@@ -16,7 +16,9 @@ import {
   useCreateAiChatConversation,
   useDeleteAiChatConversation,
   useSendAiChatMessage,
+  useAiStatus,
 } from "@/hooks/use-api";
+import { AiNotConnectedNotice } from "@/components/ai/AiNotConnectedNotice";
 import { AiChatMessageList } from "./AiChatMessageList";
 import { AiChatInput } from "./AiChatInput";
 import { cn } from "@/lib/utils";
@@ -33,14 +35,17 @@ function AiChatOuter({
   if (embedded) {
     return <div className={className}>{children}</div>;
   }
-  return <GlassCard className={className}>{children}</GlassCard>;
+  return <GlassCard className={cn("p-0", className)}>{children}</GlassCard>;
 }
 
 export function AiChatWorkArea({
   embedded = false,
+  showHeading = true,
   className,
 }: {
   embedded?: boolean;
+  /** Sayfa kendi başlığını gösteriyorsa (ör. /ai-chat) başlık tekrarlanmaz; yalnız eylemler kalır */
+  showHeading?: boolean;
   className?: string;
 }) {
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -53,6 +58,8 @@ export function AiChatWorkArea({
   const createConv = useCreateAiChatConversation();
   const sendMsg = useSendAiChatMessage();
   const deleteConv = useDeleteAiChatConversation();
+  const { data: aiStatus } = useAiStatus();
+  const aiConnected = aiStatus?.connected !== false;
 
   const messages = useMemo(
     () =>
@@ -113,36 +120,48 @@ export function AiChatWorkArea({
     >
       <div
         className={cn(
-          "flex shrink-0 items-start justify-between gap-2 border-b border-border/50 px-3 pb-2 pt-4 sm:px-4 sm:pb-3 sm:pt-5",
-          embedded ? "" : "rounded-t-2xl",
+          "flex shrink-0 items-start justify-between gap-2 border-b border-divider px-3 sm:px-4",
+          showHeading ? "pb-2 pt-4 sm:pb-3 sm:pt-5" : "py-2",
+          // Çekmecede sağ üst köşe Kapat düğmesine ayrılır
+          embedded ? "pr-16 sm:pr-16 pl-5 sm:pl-6" : "rounded-t-2xl",
         )}
       >
-        <div className="min-w-0 flex-1 pr-10">
-          <h2 className="text-base font-semibold leading-tight tracking-tight text-foreground">
-            İK AI Asistanı
-          </h2>
-          <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-muted-foreground sm:text-xs">
-            Terfi, amirlik ve aday önerileri — kurum değerlendirme verilerine dayanır
-          </p>
+        <div className="min-w-0 flex-1">
+          {showHeading ? (
+            <>
+              <h2 className="text-base font-bold leading-tight text-foreground">
+                İK AI Asistanı
+              </h2>
+              <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-muted-foreground sm:text-xs">
+                Terfi, amirlik ve aday önerileri — kurum değerlendirme verilerine dayanır
+              </p>
+            </>
+          ) : (
+            <p className="truncate pt-1.5 text-sm font-semibold text-foreground">
+              {conversationId ? detail?.title?.trim() || "Sohbet" : "Yeni sohbet"}
+            </p>
+          )}
         </div>
         <div className="flex shrink-0 gap-0.5">
           <button
             type="button"
             onClick={newChat}
-            className="rounded-lg p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="bz-icon-btn"
             title="Yeni sohbet"
+            aria-label="Yeni sohbet"
           >
-            <MessageSquarePlus className="h-5 w-5" />
+            <MessageSquarePlus />
           </button>
           {conversationId ? (
             <button
               type="button"
               onClick={() => void removeChat()}
               disabled={busy}
-              className="rounded-lg p-2 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+              className="bz-icon-btn hover:bg-danger-soft hover:text-danger-ink"
               title="Sohbeti sil"
+              aria-label="Sohbeti sil"
             >
-              <Trash2 className="h-5 w-5" />
+              <Trash2 />
             </button>
           ) : null}
         </div>
@@ -216,7 +235,7 @@ export function AiChatWorkArea({
           {conversationListOpen ? (
             <>
               <div className="flex shrink-0 items-center justify-between gap-1 border-b border-border/35 px-2 py-2">
-                <span className="min-w-0 flex-1 truncate text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                <span className="bz-kicker min-w-0 flex-1 truncate">
                   Sohbetler
                 </span>
                 <button
@@ -288,6 +307,9 @@ export function AiChatWorkArea({
             ) : (
               <>
                 <div className="scrollbar-thin min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain pr-0.5 [-webkit-overflow-scrolling:touch]">
+                  {!aiConnected && (
+                    <AiNotConnectedNotice feature="AI asistan" className="mb-3" />
+                  )}
                   {!conversationId && messages.length === 0 ? (
                     <div className="rounded-xl border border-dashed border-border/60 bg-muted/30 p-4 text-center">
                       <p className="mb-2 text-sm font-medium text-foreground">
@@ -316,8 +338,8 @@ export function AiChatWorkArea({
                 <div className="shrink-0 border-t border-border/30 pt-2">
                   <AiChatInput
                     onSend={handleSend}
-                    disabled={busy}
-                    placeholder="Sorunuzu yazın…"
+                    disabled={busy || !aiConnected}
+                    placeholder={aiConnected ? "Sorunuzu yazın…" : "AI entegrasyonu bağlı değil"}
                   />
                 </div>
               </>

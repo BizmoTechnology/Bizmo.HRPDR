@@ -100,7 +100,8 @@ const analyticsRoutes: FastifyPluginAsync = async (fastify) => {
         ? Math.round((completedSessions / totalSessions) * 10000) / 100
         : 0;
 
-      let avgScore = 0;
+      // Skorlu oturum yoksa ortalama "yok" (0 değil) olarak döner
+      let avgScore: number | null = null;
       if (completedSessionsData.length > 0) {
         const allAvgs = completedSessionsData
           .map((s) => extractAvgFromScores(s.dimensionScores))

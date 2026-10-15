@@ -1,14 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { motion } from "framer-motion";
-import { Eye, EyeOff, Loader2, AlertCircle, Lock } from "lucide-react";
+import { Eye, EyeOff, AlertCircle, LogIn, KeyRound, MonitorSmartphone } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import axios from "axios";
+import { AppMark } from "@/components/AppMark";
+import { api, errorMessage, saveSession } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 const portalLoginSchema = z.object({
   employeeId: z.string().min(1, "Sicil numarası zorunlu"),
@@ -20,150 +22,168 @@ type PortalLoginInput = z.infer<typeof portalLoginSchema>;
 export default function PortalLoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
   const router = useRouter();
 
   const { register, handleSubmit, formState: { errors } } = useForm<PortalLoginInput>({
     resolver: zodResolver(portalLoginSchema),
   });
 
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("expired")) {
+      toast.info("Oturumunuzun süresi doldu. Lütfen tekrar giriş yapın.");
+    }
+  }, []);
+
   const onSubmit = async (data: PortalLoginInput) => {
     setIsLoading(true);
+    setFormError(null);
     try {
-      const res = await axios.post(
-        `${process.env["NEXT_PUBLIC_API_URL"] ?? "http://localhost:3001"}/api/auth/portal/login`,
-        data
-      );
+      const res = await api.post("/api/auth/portal/login", data);
       const { accessToken, refreshToken, personnel } = res.data.data;
-      sessionStorage.setItem("ph_portal_token", accessToken);
-      sessionStorage.setItem("ph_portal_refresh", refreshToken);
-      sessionStorage.setItem("ph_personnel", JSON.stringify(personnel));
+      saveSession({ accessToken, refreshToken, personnel });
       toast.success(`Hoş geldiniz, ${personnel.firstName}!`);
-      router.push("/welcome");
+      router.replace("/welcome");
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
-        ?? "Sicil numarası veya şifre hatalı";
-      toast.error(msg);
+      // Giriş hatası kart içinde kalıcı uyarı olarak gösterilir (DESIGN.md §39: durumlar .bz-alert ile)
+      setFormError(errorMessage(err, "Sicil numarası veya şifre hatalı"));
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div
-      className="min-h-screen flex items-center justify-center p-4"
-      style={{
-        background: "linear-gradient(135deg, hsl(200 13% 5%) 0%, hsl(153 40% 10%) 60%, hsl(200 10% 8%) 100%)",
-      }}
-    >
-      {/* Dekoratif arka plan */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 rounded-full bg-primary/5 blur-3xl" />
-        <div className="absolute bottom-1/4 right-1/4 w-80 h-80 rounded-full bg-primary/8 blur-3xl" />
-      </div>
-
+    <main className="bz-aurora flex min-h-dvh w-full flex-col items-center justify-center px-4 py-10">
       <motion.div
-        className="relative w-full max-w-sm"
-        initial={{ opacity: 0, y: 24 }}
+        className="w-full max-w-[400px]"
+        initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: [0.25, 0.46, 0.45, 0.94] }}
+        transition={{ duration: 0.35, ease: [0.25, 0.46, 0.45, 0.94] }}
       >
-        {/* Logo */}
-        <div className="flex flex-col items-center mb-8">
-          <div className="h-16 w-16 rounded-2xl bg-primary flex items-center justify-center mb-4 shadow-lg shadow-primary/20">
-            <span className="text-white font-bold text-2xl select-none">PH</span>
-          </div>
-          <h1 className="text-xl font-bold text-white">PotansiyelHaritası</h1>
-          <p className="text-white/50 text-sm mt-1">Personel Değerlendirme Portalı</p>
+        {/* Marka */}
+        <div className="mb-6 flex flex-col items-center text-center">
+          <AppMark size="lg" />
+          <p className="mt-3 font-display text-xl font-extrabold tracking-[-0.02em] text-foreground">
+            PotansiyelHaritası
+          </p>
+          <p className="mt-0.5 text-[13px] text-fg3">Personel değerlendirme portalı</p>
         </div>
 
-        {/* Form Kartı */}
-        <div className="glass-surface rounded-2xl p-6 sm:p-8">
-          <h2 className="text-xl font-bold text-foreground mb-1">Giriş Yap</h2>
-          <p className="text-sm text-muted-foreground mb-6">
-            Değerlendirmeye başlamak için giriş yapın
+        {/* Giriş kartı */}
+        <div className="rounded-3xl border border-glass-border bg-surface p-6 shadow-2 sm:p-8">
+          <h1 className="font-display text-2xl font-extrabold tracking-[-0.02em] text-foreground">
+            Giriş yapın
+          </h1>
+          <p className="mt-1 text-[13.5px] text-fg2">
+            Değerlendirmeye başlamak için sicil numaranız ve şifrenizle giriş yapın.
           </p>
 
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            {/* Sicil No */}
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground">
-                Sicil Numarası
+          {formError && (
+            <div role="alert" className="bz-alert bz-alert--danger mt-5">
+              <AlertCircle />
+              <div>
+                <p className="bz-alert__title">Giriş yapılamadı</p>
+                <p>{formError}</p>
+              </div>
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit(onSubmit)} className="mt-6 space-y-4">
+            {/* Sicil no */}
+            <div className="bz-form-row">
+              <label htmlFor="portal-employee-id" className="bz-label">
+                Sicil numarası
               </label>
               <input
                 {...register("employeeId")}
+                id="portal-employee-id"
                 type="text"
-                placeholder="P001"
-                className="w-full h-12 rounded-xl bg-muted/50 border border-border/50 px-4 text-base
-                  placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2
-                  focus:ring-primary/30 transition-colors"
+                placeholder="Örn. P001"
+                className="bz-field h-11 text-base sm:text-sm"
                 autoComplete="username"
+                autoCapitalize="characters"
                 autoFocus
+                aria-invalid={errors.employeeId ? true : undefined}
+                aria-describedby={errors.employeeId ? "portal-employee-id-error" : undefined}
               />
               {errors.employeeId && (
-                <p className="flex items-center gap-1 text-xs text-destructive">
-                  <AlertCircle className="h-3 w-3" />
+                <p id="portal-employee-id-error" className="bz-error-text">
                   {errors.employeeId.message}
                 </p>
               )}
             </div>
 
             {/* Şifre */}
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground">
+            <div className="bz-form-row">
+              <label htmlFor="portal-password" className="bz-label">
                 Şifre
               </label>
               <div className="relative">
                 <input
                   {...register("password")}
+                  id="portal-password"
                   type={showPassword ? "text" : "password"}
                   placeholder="••••••••"
-                  className="w-full h-12 rounded-xl bg-muted/50 border border-border/50 px-4 pr-12 text-base
-                    placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2
-                    focus:ring-primary/30 transition-colors"
+                  className="bz-field h-11 pr-12 text-base sm:text-sm"
                   autoComplete="current-password"
+                  aria-invalid={errors.password ? true : undefined}
+                  aria-describedby={errors.password ? "portal-password-error" : undefined}
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword((v) => !v)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  tabIndex={-1}
+                  className="bz-icon-btn bz-icon-btn--sm absolute inset-y-0 right-1.5 my-auto"
+                  aria-label={showPassword ? "Şifreyi gizle" : "Şifreyi göster"}
+                  title={showPassword ? "Şifreyi gizle" : "Şifreyi göster"}
+                  aria-pressed={showPassword}
                 >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  {showPassword ? <EyeOff /> : <Eye />}
                 </button>
               </div>
               {errors.password && (
-                <p className="flex items-center gap-1 text-xs text-destructive">
-                  <AlertCircle className="h-3 w-3" />
+                <p id="portal-password-error" className="bz-error-text">
                   {errors.password.message}
                 </p>
               )}
             </div>
 
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="w-full h-12 rounded-xl bg-primary text-primary-foreground font-semibold text-base
-                hover:bg-primary/90 active:scale-[0.98] transition-all disabled:opacity-60 flex items-center justify-center gap-2 mt-2"
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Giriş yapılıyor...
-                </>
-              ) : (
-                <>
-                  <Lock className="h-4 w-4" />
-                  Değerlendirmeye Başla
-                </>
-              )}
-            </button>
+            {/* Ekrandaki tek birincil eylem */}
+            <div className="pt-2">
+              <button
+                type="submit"
+                disabled={isLoading}
+                aria-busy={isLoading || undefined}
+                className={cn(
+                  "bz-btn bz-btn--primary bz-btn--lg bz-btn--block",
+                  isLoading && "is-loading",
+                )}
+              >
+                {isLoading ? (
+                  "Giriş yapılıyor…"
+                ) : (
+                  <>
+                    <LogIn />
+                    Değerlendirmeye başla
+                  </>
+                )}
+              </button>
+            </div>
           </form>
 
-          <p className="text-xs text-muted-foreground/60 text-center mt-6">
-            Şifrenizi bilmiyorsanız İK departmanınızla iletişime geçin
-          </p>
+          <div className="mt-6 space-y-3 border-t border-divider pt-5">
+            <p className="bz-auth__notice">
+              <KeyRound />
+              <span>Şifrenizi bilmiyorsanız İK departmanınızla iletişime geçin.</span>
+            </p>
+            <p className="bz-auth__notice">
+              <MonitorSmartphone />
+              <span>
+                Ortak bir cihaz kullanıyorsanız değerlendirme bitince sekmeyi kapatın.
+              </span>
+            </p>
+          </div>
         </div>
       </motion.div>
-    </div>
+    </main>
   );
 }

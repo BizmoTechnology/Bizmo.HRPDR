@@ -13,6 +13,7 @@
     "react-dom": ">=18"
   },
   "dependencies": {
+    "@bizmo/theme": "file:../../packages/theme",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "framer-motion": "^11.2.10",
@@ -22,6 +23,8 @@
   "devDependencies": {
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
+    "eslint": "^8.57.0",
+    "eslint-config-next": "14.2.5",
     "typescript": "*"
   }
 }

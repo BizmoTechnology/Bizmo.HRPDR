@@ -2,6 +2,10 @@ import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { prisma } from "../../lib/prisma.js";
+import { isHttpError } from "../../lib/http-error.js";
+import { assertDepartmentAndTeam } from "../../lib/tenant.js";
+import { computeOverallScore, readDimensionScores } from "../../services/scoring.service.js";
+import { requireRoleForWrites, ROLE_GROUPS } from "../../middleware/authenticate.js";
 
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
@@ -15,27 +19,43 @@ const personnelShiftEnum = z.enum([
   "ROTATING",
 ]);
 
+/** Formlardaki boş metinleri ("") null'a çevirir */
+const emptyToNull = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess((v) => (typeof v === "string" && v.trim() === "" ? null : v), schema);
+
 const createSchema = z.object({
-  employeeId: z.string().min(1).max(50),
-  firstName: z.string().min(1).max(100),
-  lastName: z.string().min(1).max(100),
-  email: z.string().email().max(255),
-  phone: z.string().max(30).optional(),
-  position: z.string().min(1).max(200),
+  employeeId: z.string().trim().min(1).max(50),
+  firstName: z.string().trim().min(1).max(100),
+  lastName: z.string().trim().min(1).max(100),
+  email: z.string().trim().email().max(255),
+  phone: emptyToNull(z.string().max(30).nullable().optional()),
+  position: z.string().trim().min(1).max(200),
   experienceYear: z.number().int().min(0).default(0),
   status: personnelStatusEnum.default("ACTIVE"),
   shift: personnelShiftEnum.default("NONE"),
   preferredLanguage: z.string().max(10).default("tr"),
-  departmentId: z.string().optional(),
-  teamId: z.string().optional(),
-  hireDate: z.coerce.date().optional(),
-  birthDate: z.coerce.date().optional(),
-  notes: z.string().max(2000).optional(),
-  avatarUrl: z.string().url().max(500).optional(),
-  portalPassword: z.string().min(6).max(128).optional(),
+  departmentId: emptyToNull(z.string().min(1).nullable().optional()),
+  teamId: emptyToNull(z.string().min(1).nullable().optional()),
+  hireDate: emptyToNull(z.coerce.date().nullable().optional()),
+  birthDate: emptyToNull(z.coerce.date().nullable().optional()),
+  notes: emptyToNull(z.string().max(2000).nullable().optional()),
+  avatarUrl: emptyToNull(z.string().url().max(500).nullable().optional()),
+  portalPassword: emptyToNull(z.string().min(6).max(128).nullable().optional()),
+});
+
+const portalPasswordSchema = z.object({
+  password: z.string().min(6).max(128),
 });
 
 const updateSchema = createSchema.partial();
+
+/** Şifre ve token özetlerini yanıttan çıkarır */
+function toPublicPersonnel<T extends { portalPasswordHash: string | null; portalRefreshToken: string | null }>(
+  p: T,
+) {
+  const { portalPasswordHash, portalRefreshToken: _rt, ...rest } = p;
+  return { ...rest, hasPortalPassword: !!portalPasswordHash };
+}
 
 function parsePagination(query: { page?: string; pageSize?: string }) {
   const page = Math.max(1, parseInt(query.page ?? "1", 10) || 1);
@@ -46,6 +66,7 @@ function parsePagination(query: { page?: string; pageSize?: string }) {
 
 const personnelRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.addHook("onRequest", fastify.authenticate);
+  fastify.addHook("preHandler", requireRoleForWrites(ROLE_GROUPS.manage));
 
   // GET /stats — personnel statistics (registered before parameterized routes)
   fastify.get("/stats", async (request, reply) => {
@@ -154,7 +175,7 @@ const personnelRoutes: FastifyPluginAsync = async (fastify) => {
       ]);
 
       return reply.send({
-        data,
+        data: data.map(toPublicPersonnel),
         meta: { total, page, pageSize },
       });
     } catch (err) {
@@ -173,6 +194,7 @@ const personnelRoutes: FastifyPluginAsync = async (fastify) => {
 
     try {
       const body = createSchema.parse(request.body);
+      await assertDepartmentAndTeam(orgId, body.departmentId, body.teamId);
 
       const { portalPassword, ...rest } = body;
       const portalPasswordHash = portalPassword
@@ -187,8 +209,9 @@ const personnelRoutes: FastifyPluginAsync = async (fastify) => {
         },
       });
 
-      return reply.status(201).send({ data: personnel });
+      return reply.status(201).send({ data: toPublicPersonnel(personnel) });
     } catch (err) {
+      if (isHttpError(err)) throw err;
       if (err instanceof z.ZodError) {
         return reply.status(400).send({
           code: "VALIDATION_ERROR",
@@ -230,14 +253,16 @@ const personnelRoutes: FastifyPluginAsync = async (fastify) => {
           team: { select: { id: true, name: true } },
           assessmentSessions: {
             orderBy: { createdAt: "desc" },
-            take: 5,
+            take: 20,
             select: {
               id: true,
               status: true,
               startedAt: true,
               completedAt: true,
+              createdAt: true,
               dimensionScores: true,
               assessment: { select: { id: true, title: true } },
+              report: { select: { id: true } },
             },
           },
         },
@@ -251,7 +276,21 @@ const personnelRoutes: FastifyPluginAsync = async (fastify) => {
         });
       }
 
-      return reply.send({ data: personnel });
+      const { assessmentSessions, ...rest } = toPublicPersonnel(personnel);
+      const sessions = assessmentSessions.map(({ report, ...s }) => ({
+        ...s,
+        reportId: report?.id ?? null,
+        avgScore: computeOverallScore(readDimensionScores(s.dimensionScores)),
+      }));
+      const scored = sessions
+        .filter((s) => s.status === "COMPLETED" && s.avgScore !== null)
+        .map((s) => s.avgScore as number);
+      const avgScore =
+        scored.length > 0
+          ? Math.round((scored.reduce((a, b) => a + b, 0) / scored.length) * 10) / 10
+          : null;
+
+      return reply.send({ data: { ...rest, sessions, avgScore } });
     } catch (err) {
       request.log.error(err, "personnel.getById failed");
       return reply.status(500).send({
@@ -282,6 +321,19 @@ const personnelRoutes: FastifyPluginAsync = async (fastify) => {
         });
       }
 
+      // Departman değişip ekip gönderilmediyse eski ekip yeni departmana ait olmayabilir
+      const nextDepartmentId =
+        body.departmentId !== undefined ? body.departmentId : existing.departmentId;
+      let nextTeamId = body.teamId !== undefined ? body.teamId : existing.teamId;
+      if (body.departmentId !== undefined && body.teamId === undefined && nextTeamId) {
+        const team = await prisma.team.findUnique({
+          where: { id: nextTeamId },
+          select: { departmentId: true },
+        });
+        if (team?.departmentId !== nextDepartmentId) nextTeamId = null;
+      }
+      await assertDepartmentAndTeam(orgId, nextDepartmentId, nextTeamId);
+
       const { portalPassword, ...rest } = body;
       const portalPasswordHash = portalPassword
         ? await bcrypt.hash(portalPassword, 12)
@@ -291,12 +343,16 @@ const personnelRoutes: FastifyPluginAsync = async (fastify) => {
         where: { id },
         data: {
           ...rest,
-          ...(portalPasswordHash && { portalPasswordHash }),
+          teamId: nextTeamId,
+          ...(portalPasswordHash && { portalPasswordHash, portalRefreshToken: null }),
+          // Pasife alınan personelin portal oturumu sonlandırılır
+          ...(rest.status && rest.status !== "ACTIVE" && { portalRefreshToken: null }),
         },
       });
 
-      return reply.send({ data: updated });
+      return reply.send({ data: toPublicPersonnel(updated) });
     } catch (err) {
+      if (isHttpError(err)) throw err;
       if (err instanceof z.ZodError) {
         return reply.status(400).send({
           code: "VALIDATION_ERROR",
@@ -325,6 +381,39 @@ const personnelRoutes: FastifyPluginAsync = async (fastify) => {
     }
   });
 
+  // POST /:id/portal-password — portal şifresi oluştur/sıfırla
+  fastify.post<{ Params: { id: string } }>(
+    "/:id/portal-password",
+    async (request, reply) => {
+      const orgId = request.user.orgId!;
+      const { id } = request.params;
+      const { password } = portalPasswordSchema.parse(request.body);
+
+      const personnel = await prisma.personnel.findFirst({
+        where: { id, organizationId: orgId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!personnel) {
+        return reply.status(404).send({
+          code: "NOT_FOUND",
+          message: "Personel bulunamadı",
+          traceId: request.traceId,
+        });
+      }
+
+      await prisma.personnel.update({
+        where: { id },
+        data: {
+          portalPasswordHash: await bcrypt.hash(password, 12),
+          // Eski portal oturumları geçersiz olsun
+          portalRefreshToken: null,
+        },
+      });
+
+      return reply.send({ data: { ok: true } });
+    },
+  );
+
   // DELETE /:id — soft delete
   fastify.delete<{ Params: { id: string } }>(
     "/:id",
@@ -347,7 +436,7 @@ const personnelRoutes: FastifyPluginAsync = async (fastify) => {
 
         await prisma.personnel.update({
           where: { id },
-          data: { deletedAt: new Date() },
+          data: { deletedAt: new Date(), portalRefreshToken: null },
         });
 
         return reply.send({ data: { ok: true } });

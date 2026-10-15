@@ -69,6 +69,11 @@ const WEIGHT_MAP: { key: string; field: string }[] = [
   { key: "DOMAIN_ALIGNMENT", field: "weightDomain" },
 ];
 
+/** Sorunun dayandığı çerçeveler: `ref:` etiketleri (ör. ref:IPIP → IPIP) */
+function sourceTags(tags: string[] | undefined): string[] {
+  return (tags ?? []).filter((t) => t.startsWith("ref:")).map((t) => t.slice(4));
+}
+
 /**
  * Mevcut öğelere yeni soruları ekler: sette zaten olan sorular atlanır ve
  * sıra numaraları 1..n olarak yeniden verilir (sunucuda soru ve sıra tekil).
@@ -423,6 +428,13 @@ export default function QuestionSetDetailPage() {
                             </>
                           )}
                         </span>
+                        {q.scoring?.reverse && <span className="bz-chip">Ters madde</span>}
+                        {q.scoring?.key && <span className="bz-chip">Puan anahtarlı</span>}
+                        {sourceTags(q.tags).length > 0 && (
+                          <span className="text-xs text-fg3">
+                            Kaynak: {sourceTags(q.tags).join(" · ")}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </li>

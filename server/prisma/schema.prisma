@@ -216,6 +216,9 @@ model Question {
   weight         Float             @default(1.0)
   followUpPrompt String?
   options        Json?
+  /// Deterministik puanlama kuralı: SCALE için { reverse: true }, MULTIPLE_CHOICE için
+  /// { key: { "A": 3, ... } }. Personele gönderilmez (server/src/lib/question-scoring.ts).
+  scoring        Json?
   minScale       Int?
   maxScale       Int?
   isActive       Boolean           @default(true)

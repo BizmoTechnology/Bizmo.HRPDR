@@ -1,7 +1,10 @@
 import type { FastifyPluginAsync } from "fastify";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "../../lib/prisma.js";
 import { isHttpError } from "../../lib/http-error.js";
+import { normalizeQuestionOptions } from "../../lib/question-options.js";
+import { questionScoringInputSchema, questionScoringIssue } from "../../lib/question-scoring.js";
 import { requireRoleForWrites, ROLE_GROUPS } from "../../middleware/authenticate.js";
 import { generateAiQuestions } from "../../services/question-ai-generate.service.js";
 
@@ -35,6 +38,8 @@ const createSchema = z.object({
   weight: z.number().min(0).default(1.0),
   followUpPrompt: z.string().max(2000).optional(),
   options: z.any().optional(),
+  /** Ters madde (SCALE) veya puan anahtarı (MULTIPLE_CHOICE); null kuralı kaldırır */
+  scoring: questionScoringInputSchema.nullable().optional(),
   minScale: z.number().int().optional(),
   maxScale: z.number().int().optional(),
   isActive: z.boolean().default(true),
@@ -45,6 +50,18 @@ const createSchema = z.object({
 });
 
 const updateSchema = createSchema.partial();
+
+/** Puanlama kuralını soru tipi ve seçeneklerle doğrular; Json null'ı Prisma'ya çevirir. */
+function scoringData(
+  scoring: z.infer<typeof questionScoringInputSchema> | null | undefined,
+  type: string,
+  options: unknown,
+) {
+  if (scoring === undefined) return undefined;
+  const issue = questionScoringIssue(type, scoring, normalizeQuestionOptions(options));
+  if (issue) throw new z.ZodError([{ code: "custom", path: ["scoring"], message: issue }]);
+  return scoring === null ? Prisma.DbNull : scoring;
+}
 
 function parsePagination(query: { page?: string; pageSize?: string }) {
   const page = Math.max(1, parseInt(query.page ?? "1", 10) || 1);
@@ -169,10 +186,12 @@ const questionRoutes: FastifyPluginAsync = async (fastify) => {
 
     try {
       const body = createSchema.parse(request.body);
+      const scoring = scoringData(body.scoring, body.type, body.options);
 
       const question = await prisma.question.create({
         data: {
           ...body,
+          scoring,
           organizationId: orgId,
         },
       });
@@ -215,9 +234,16 @@ const questionRoutes: FastifyPluginAsync = async (fastify) => {
         });
       }
 
+      // Kural yalnız gönderildiğinde doğrulanır; tipe uymayan eski kural skorlamada yok sayılır
+      const scoring = scoringData(
+        body.scoring,
+        body.type ?? existing.type,
+        body.options !== undefined ? body.options : existing.options,
+      );
+
       const updated = await prisma.question.update({
         where: { id },
-        data: body,
+        data: { ...body, scoring },
       });
 
       return reply.send({ data: updated });

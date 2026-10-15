@@ -779,6 +779,9 @@ export interface QuestionRow {
   phase: string;
   choicesJson: unknown | null;
   weight: number;
+  tags?: string[];
+  /** Ters madde (SCALE) / puan anahtarı (MULTIPLE_CHOICE) */
+  scoring?: { reverse?: boolean; key?: Record<string, number> } | null;
 }
 
 /* ─── Session Detail Types ─── */
@@ -815,7 +818,17 @@ export interface AnswerRow {
   choiceKey: string | null;
   durationSec: number | null;
   aiScore: number | null;
-  question?: { text: string; dimension: string };
+  /** Deterministik puan (0–10): skala ve puan anahtarlı seçimler; diğerleri null */
+  score?: number | null;
+  choiceLabel?: string | null;
+  question?: {
+    text: string;
+    dimension: string;
+    type?: string;
+    minScale?: number | null;
+    maxScale?: number | null;
+    scoring?: { reverse?: boolean; key?: Record<string, number> } | null;
+  };
 }
 
 export interface SessionEvent {

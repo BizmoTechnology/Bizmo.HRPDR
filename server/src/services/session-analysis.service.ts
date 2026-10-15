@@ -11,6 +11,7 @@ import {
 } from "../lib/ai-connection.js";
 import { completeChat } from "../lib/llm.js";
 import { normalizeQuestionOptions } from "../lib/question-options.js";
+import { keyedChoiceScore, parseQuestionScoring } from "../lib/question-scoring.js";
 import {
   computeScaleScores,
   mergeDimensionScores,
@@ -110,6 +111,7 @@ function formatAnswersForAi(answers: Array<{
     type: string;
     phase: string;
     options: Prisma.JsonValue;
+    scoring: Prisma.JsonValue;
     maxScale: number | null;
   } | null;
   textAnswer: string | null;
@@ -120,12 +122,18 @@ function formatAnswersForAi(answers: Array<{
   return answers
     .filter((a) => a.question)
     .map((a, i) => {
+      const scoring = parseQuestionScoring(a.question!.scoring);
       let answer = "";
       if (a.textAnswer) answer = asData(a.textAnswer);
-      else if (a.scaleValue !== null) answer = `Puan: ${a.scaleValue}/${a.question!.maxScale ?? 10}`;
+      else if (a.scaleValue !== null) {
+        answer = `Puan: ${a.scaleValue}/${a.question!.maxScale ?? 10}`;
+        if (scoring?.reverse) answer += " (ters puanlanan madde: düşük puan olumlu yönü gösterir)";
+      }
       else if (a.choiceKey) {
         const label = normalizeQuestionOptions(a.question!.options)?.[a.choiceKey];
         answer = `Seçim: ${a.choiceKey}${label ? ` — ${label}` : ""}`;
+        const keyed = keyedChoiceScore(scoring, a.choiceKey);
+        if (keyed !== null) answer += ` (puan anahtarına göre ${keyed.toFixed(1)}/10)`;
       }
       else answer = "(Cevap verilmedi)";
 
@@ -182,6 +190,7 @@ export async function runSessionAnalysis(params: {
               type: true,
               phase: true,
               options: true,
+              scoring: true,
               maxScale: true,
             },
           },
@@ -357,7 +366,7 @@ export async function applyReviewToDimensionScores(
       hrPdrAnalysis: true,
       questionSetSnapshot: true,
       assessment: { select: { questionSetId: true } },
-      answers: { select: { questionId: true, scaleValue: true } },
+      answers: { select: { questionId: true, scaleValue: true, choiceKey: true } },
     },
   });
   if (!session || session.status !== "COMPLETED") return;

@@ -11,8 +11,10 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:migrate:prod": "prisma migrate deploy",
     "prisma:seed": "tsx prisma/seed.ts",
+    "prisma:seed:sector": "tsx prisma/seed-sector.ts",
     "prisma:studio": "prisma studio",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit && tsc -p tsconfig.seed.json",
+    "test": "tsx --test \"src/**/*.test.ts\" \"prisma/**/*.test.ts\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.24.0",

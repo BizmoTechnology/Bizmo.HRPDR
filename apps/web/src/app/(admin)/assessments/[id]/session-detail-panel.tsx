@@ -447,26 +447,41 @@ export function SessionDetailPanel({
                                     <div>
                                       <p className="bz-kicker mb-1.5">Puan</p>
                                       <div className="flex items-center gap-3">
-                                        <div
-                                          className={cn(
-                                            "bz-progress flex-1",
-                                            TONE_PROGRESS[scoreTone(answer.scaleValue)],
-                                          )}
-                                        >
-                                          <span style={pct(answer.scaleValue)} />
-                                        </div>
+                                        {typeof answer.score === "number" && (
+                                          <div
+                                            className={cn(
+                                              "bz-progress flex-1",
+                                              TONE_PROGRESS[scoreTone(answer.score)],
+                                            )}
+                                          >
+                                            <span style={pct(answer.score)} />
+                                          </div>
+                                        )}
                                         <span className="text-sm font-semibold tabular-nums text-foreground">
-                                          {answer.scaleValue}/10
+                                          {answer.scaleValue}/{answer.question?.maxScale ?? 10}
                                         </span>
                                       </div>
+                                      {answer.question?.scoring?.reverse && typeof answer.score === "number" && (
+                                        <p className="mt-1.5 text-xs text-muted-foreground">
+                                          Ters puanlanan madde: düşük katılım olumlu yönü gösterir · skor{" "}
+                                          <b className="tabular-nums">{answer.score.toFixed(1)}</b>/10
+                                        </p>
+                                      )}
                                     </div>
                                   )}
                                   {answer.choiceKey && (
                                     <div>
                                       <p className="bz-kicker mb-1.5">Seçim</p>
                                       <p className="text-sm text-foreground">
-                                        {answer.choiceKey}
+                                        <span className="font-semibold">{answer.choiceKey}</span>
+                                        {answer.choiceLabel && <>. {answer.choiceLabel}</>}
                                       </p>
+                                      {typeof answer.score === "number" && (
+                                        <p className="mt-1.5 text-xs text-muted-foreground">
+                                          Puan anahtarına göre{" "}
+                                          <b className="tabular-nums">{answer.score.toFixed(1)}</b>/10
+                                        </p>
+                                      )}
                                     </div>
                                   )}
                                   {answer.durationSec !== null && (

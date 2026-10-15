@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
 import { normalizeQuestionOptions } from "../lib/question-options.js";
+import { parseQuestionScoring, type QuestionScoring } from "../lib/question-scoring.js";
 import { dimensionWeightMap, type Dimension } from "./scoring.service.js";
 
 export interface SnapshotQuestion {
@@ -13,6 +14,8 @@ export interface SnapshotQuestion {
   weight: number;
   customWeight: number | null;
   options: Record<string, string> | null;
+  /** Puanlama kuralı (ters madde / puan anahtarı); personele gönderilmez */
+  scoring?: QuestionScoring | null;
   minScale: number | null;
   maxScale: number | null;
   order: number;
@@ -60,6 +63,7 @@ export async function buildQuestionSetSnapshot(
         weight: item.question.weight,
         customWeight: item.customWeight,
         options: normalizeQuestionOptions(item.question.options),
+        scoring: parseQuestionScoring(item.question.scoring),
         minScale: item.question.minScale,
         maxScale: item.question.maxScale,
         order: item.order,
@@ -102,7 +106,7 @@ export async function getSessionSnapshot(session: {
   );
 }
 
-/** Personele gösterilecek alanlar (ağırlık ve boyut gibi iç bilgiler hariç). */
+/** Personele gösterilecek alanlar (ağırlık, boyut ve puanlama kuralı gibi iç bilgiler hariç). */
 export function toPortalQuestion(q: SnapshotQuestion) {
   return {
     id: q.id,

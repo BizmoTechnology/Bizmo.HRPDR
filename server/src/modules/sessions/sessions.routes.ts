@@ -10,14 +10,17 @@ import {
   queueSessionAnalysis,
   runSessionAnalysis,
 } from "../../services/session-analysis.service.js";
-import { computeScaleScores } from "../../services/scoring.service.js";
+import { computeScaleScores, scoreAnswer } from "../../services/scoring.service.js";
 import {
   buildQuestionSetSnapshot,
   getSessionSnapshot,
+  parseSnapshot,
   toPortalQuestion,
   type SnapshotQuestion,
 } from "../../services/session-questions.service.js";
 import { isHttpError } from "../../lib/http-error.js";
+import { normalizeQuestionOptions } from "../../lib/question-options.js";
+import { parseQuestionScoring } from "../../lib/question-scoring.js";
 import {
   AI_NOT_CONNECTED_REASON,
   ANALYSIS_AWAITS_REVIEW_REASON,
@@ -75,7 +78,17 @@ export const sessionAdminRoutes: FastifyPluginAsync = async (fastify) => {
             orderBy: { answeredAt: "asc" },
             include: {
               question: {
-                select: { id: true, text: true, dimension: true, type: true, phase: true },
+                select: {
+                  id: true,
+                  text: true,
+                  dimension: true,
+                  type: true,
+                  phase: true,
+                  options: true,
+                  scoring: true,
+                  minScale: true,
+                  maxScale: true,
+                },
               },
             },
           },
@@ -92,9 +105,29 @@ export const sessionAdminRoutes: FastifyPluginAsync = async (fastify) => {
         });
       }
 
+      // Puanlama oturum başındaki anlık görüntüye göre (soru sonradan düzenlense de)
+      const snapshotById = new Map(
+        (parseSnapshot(session.questionSetSnapshot)?.questions ?? []).map((q) => [q.id, q]),
+      );
+      const answers = session.answers.map(({ question, ...answer }) => {
+        const snap = snapshotById.get(answer.questionId);
+        const scoring = parseQuestionScoring(snap ? snap.scoring : question.scoring);
+        const minScale = snap?.minScale ?? question.minScale;
+        const maxScale = snap?.maxScale ?? question.maxScale;
+        const options = snap?.options ?? normalizeQuestionOptions(question.options);
+        return {
+          ...answer,
+          question: { ...question, options, scoring, minScale, maxScale },
+          /** Deterministik puan (0–10): SCALE ve puan anahtarlı seçimler; diğerleri null */
+          score: scoreAnswer({ ...question, minScale, maxScale, scoring }, answer),
+          choiceLabel: answer.choiceKey ? (options?.[answer.choiceKey] ?? null) : null,
+        };
+      });
+
       return reply.send({
         data: {
           ...session,
+          answers,
           dimensionScores: session.dimensionScores,
           swotAnalysis: session.swotAnalysis,
           careerPaths: session.careerPaths,

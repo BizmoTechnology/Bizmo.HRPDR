@@ -3,6 +3,7 @@ import "../src/env.js";
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { seedRespondents } from "./seed-respondents.js";
+import { seedSectorTemplates } from "./seed-sector-templates.js";
 
 const prisma = new PrismaClient();
 
@@ -321,6 +322,15 @@ async function main() {
     });
     console.log("✅ Bildirimler (admin + İK)");
   }
+
+  // ── Sektörel soru şablonları (talaşlı imalat) ──
+  // Örnek değerlendirme varsayılan seti kullanır; şablonlar ondan sonra eklenir.
+  const sector = await seedSectorTemplates({
+    prisma,
+    organizationId: org.id,
+    createdById: admin.id,
+  });
+  for (const name of sector.created) console.log(`✅ QuestionSet (şablon): ${name}`);
 
   console.log("\n🎉 Seed tamamlandı!");
   console.log("─────────────────────────────────────────");

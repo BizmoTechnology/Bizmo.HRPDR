@@ -3,14 +3,11 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  ChevronRight, ChevronLeft, Loader2,
-  CheckCircle2, AlertCircle,
-} from "lucide-react";
+import { ChevronRight, ChevronLeft, CheckCircle2, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { GlassCard } from "@ph/ui";
 import { cn } from "@/lib/utils";
-import { AppMark } from "@/components/AppMark";
+import { PortalHeader } from "@/components/PortalHeader";
 import { api, errorCode, errorMessage, hasToken } from "@/lib/api";
 
 interface Question {
@@ -178,7 +175,7 @@ export default function AssessmentPage() {
       });
       return true;
     } catch (err) {
-      toast.error(errorMessage(err, "Cevabın kaydedilemedi. Lütfen tekrar dene."));
+      toast.error(errorMessage(err, "Cevabınız kaydedilemedi. Lütfen tekrar deneyin."));
       return false;
     }
   };
@@ -209,7 +206,7 @@ export default function AssessmentPage() {
             setCurrentIndex(firstMissing);
           }
         }
-        toast.error(errorMessage(err, "Değerlendirme tamamlanamadı. Lütfen tekrar dene."));
+        toast.error(errorMessage(err, "Değerlendirme tamamlanamadı. Lütfen tekrar deneyin."));
       }
       return;
     }
@@ -250,12 +247,9 @@ export default function AssessmentPage() {
             </span>
             <p className="bz-empty__title">Sorular yüklenemedi</p>
             <p className="bz-empty__text">{loadError}</p>
-            <button
-              type="button"
-              onClick={() => router.replace("/welcome")}
-              className="bz-btn mt-2"
-            >
-              Geri dön
+            <button type="button" onClick={() => router.replace("/welcome")} className="bz-btn mt-2">
+              <ChevronLeft />
+              Karşılama ekranına dön
             </button>
           </div>
         </GlassCard>
@@ -264,13 +258,30 @@ export default function AssessmentPage() {
   }
 
   if (!sessionId || !currentQuestion) {
+    // Yükleniyor: soru ekranının şeklinde iskelet (DESIGN.md §17)
     return (
-      <main
-        role="status"
-        aria-label="Yükleniyor"
-        className="bz-aurora flex min-h-dvh w-full items-center justify-center"
-      >
-        <Loader2 className="h-7 w-7 animate-spin text-fg3" />
+      <main className="bz-aurora min-h-dvh w-full px-4 pb-10 pt-4 sm:pt-10">
+        <div
+          role="status"
+          aria-label="Sorular yükleniyor"
+          className="mx-auto w-full max-w-[560px]"
+        >
+          <span className="bz-sr-only">Yükleniyor…</span>
+          <PortalHeader>
+            <span className="bz-skeleton h-4 w-24" />
+          </PortalHeader>
+          <div className="bz-skeleton mb-6 h-1.5 rounded-full" />
+          <div className="bz-card rounded-3xl p-5 shadow-2 sm:p-7">
+            <div className="bz-skeleton h-6 w-28 rounded-full" />
+            <div className="bz-skeleton mt-4 h-6 w-11/12" />
+            <div className="bz-skeleton mt-2 h-6 w-3/4" />
+            <div className="bz-skeleton mt-6 h-[140px] rounded-xl" />
+          </div>
+          <div className="mt-4 flex gap-3">
+            <div className="bz-skeleton h-11 w-24 rounded-xl" />
+            <div className="bz-skeleton h-11 flex-1 rounded-xl" />
+          </div>
+        </div>
       </main>
     );
   }
@@ -279,26 +290,23 @@ export default function AssessmentPage() {
   const isTextQuestion = ["OPEN_ENDED", "SITUATIONAL", "BEHAVIORAL"].includes(currentQuestion.type);
   const answerLength = String(currentAnswer).length;
   const { min: scaleMin, max: scaleMax } = scaleBounds(currentQuestion);
-  const scaleFill = ((Number(currentAnswer) - scaleMin) / (scaleMax - scaleMin || 1)) * 100;
+  const scaleValues = Array.from({ length: scaleMax - scaleMin + 1 }, (_, i) => scaleMin + i);
+  // Telefonda en çok 5 sütun (her karo ≥ 44px); geniş ekranda 10'a kadar tek satır
+  const scaleCols = Math.min(scaleValues.length, 5);
+  const scaleColsWide = scaleValues.length <= 10 ? scaleValues.length : Math.ceil(scaleValues.length / 2);
   const busy = isSubmitting || isCompleting;
 
   return (
-    <main className="bz-aurora min-h-dvh w-full px-4 pb-10 pt-5 sm:pt-10">
-      <div className="mx-auto w-full max-w-[560px]">
-        {/* Üst bilgi */}
-        <header className="mb-3 flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-2.5">
-            <AppMark size="sm" />
-            <span className="truncate font-display text-[15px] font-extrabold tracking-[-0.01em] text-foreground">
-              PotansiyelHaritası
-            </span>
-          </div>
+    // Telefonda dikey esnek düzen: soru alanı boşluğu doldurur, eylem şeridi her zaman ekranın altında
+    <main className="bz-aurora flex min-h-dvh w-full flex-col px-4 pt-4 sm:block sm:pb-10 sm:pt-10">
+      <div className="mx-auto flex w-full max-w-[560px] flex-1 flex-col sm:block">
+        <PortalHeader>
           <span className="flex-none text-[13px] tabular-nums text-fg2">
             Soru <b className="font-semibold text-foreground">{currentIndex + 1}</b> / {total}
           </span>
-        </header>
+        </PortalHeader>
 
-        {/* İlerleme */}
+        {/* İlerleme: cevaplanan soru oranı */}
         <div
           className="bz-progress mb-6"
           role="progressbar"
@@ -306,13 +314,15 @@ export default function AssessmentPage() {
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={Math.round(progress)}
+          aria-valuetext={`${answeredCount} / ${total} soru cevaplandı`}
         >
           <span style={{ "--value": `${progress}%` } as React.CSSProperties} />
         </div>
 
         {/* Soru kartı */}
-        <div className="relative min-h-[360px]">
-          <AnimatePresence mode="wait" custom={direction}>
+        {/* popLayout: çıkan kart akıştan hemen çıkar; geçişte yükseklik çökmez, düğmeler zıplamaz */}
+        <div className="relative flex-1">
+          <AnimatePresence mode="popLayout" initial={false} custom={direction}>
             <motion.div
               key={currentQuestion.id}
               custom={direction}
@@ -334,9 +344,7 @@ export default function AssessmentPage() {
                   {currentQuestion.text}
                 </h1>
                 {currentQuestion.subText && (
-                  <p className="mt-2 text-sm leading-relaxed text-fg2">
-                    {currentQuestion.subText}
-                  </p>
+                  <p className="mt-2 text-sm leading-relaxed text-fg2">{currentQuestion.subText}</p>
                 )}
 
                 {/* Cevap alanı */}
@@ -345,13 +353,13 @@ export default function AssessmentPage() {
                   {isTextQuestion && (
                     <div className="bz-form-row">
                       <label htmlFor="answer-text" className="bz-sr-only">
-                        Cevabın
+                        Cevabınız
                       </label>
                       <textarea
                         id="answer-text"
                         value={String(currentAnswer)}
                         onChange={(e) => setCurrentAnswer(e.target.value)}
-                        placeholder="Cevabını buraya yaz…"
+                        placeholder="Cevabınızı buraya yazın…"
                         rows={5}
                         aria-describedby="answer-hint"
                         className="bz-field min-h-[140px] text-base sm:text-[15px]"
@@ -365,74 +373,92 @@ export default function AssessmentPage() {
                     </div>
                   )}
 
-                  {/* Ölçek */}
+                  {/* Ölçek: kaydırıcı yerine büyük sayı karoları — eldivenle de seçilir, her karo ≥ 44px
+                      (DESIGN.md §12, §30). Yerel radyo grubu: ok tuşlarıyla gezinilir. */}
                   {currentQuestion.type === "SCALE" && (
-                    <div className="space-y-5 pt-1">
-                      <p className="text-center" aria-live="polite">
-                        <span className="font-display text-5xl font-extrabold tabular-nums text-foreground">
-                          {currentAnswer}
+                    <div className="grid gap-3">
+                      <div
+                        role="radiogroup"
+                        aria-labelledby="question-title"
+                        className="grid grid-cols-[repeat(var(--cols),minmax(0,1fr))] gap-2 sm:grid-cols-[repeat(var(--cols-wide),minmax(0,1fr))] sm:gap-1.5"
+                        style={
+                          { "--cols": scaleCols, "--cols-wide": scaleColsWide } as React.CSSProperties
+                        }
+                      >
+                        {scaleValues.map((v) => (
+                          <label
+                            key={v}
+                            className={cn(
+                              "flex h-14 cursor-pointer select-none items-center justify-center rounded-xl border border-glass-border bg-surface",
+                              // Üzerine gelme yalnız fareli cihazda: dokunmatikte :hover son dokunulan karoda takılı kalır
+                              "font-display text-xl font-extrabold tabular-nums text-fg2 transition-colors [@media(hover:hover)]:hover:border-primary",
+                              // Seçili: seçim kartıyla aynı (yeşil kenar + yeşil yumuşak zemin) + 2px kenar (yalnız renge dayanmaz)
+                              "has-[:checked]:border-primary has-[:checked]:bg-brand-soft has-[:checked]:text-foreground has-[:checked]:shadow-[inset_0_0_0_1px_var(--bz-accent)]",
+                              "has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ring",
+                            )}
+                          >
+                            <input
+                              type="radio"
+                              name={`answer-${currentQuestion.id}`}
+                              value={v}
+                              checked={Number(currentAnswer) === v}
+                              onChange={() => setCurrentAnswer(v)}
+                              className="bz-sr-only"
+                            />
+                            {v}
+                          </label>
+                        ))}
+                      </div>
+                      <div className="flex justify-between gap-3 text-xs text-fg3">
+                        <span>{scaleMin} · en düşük</span>
+                        <span aria-live="polite" className="text-fg2">
+                          Seçiminiz:{" "}
+                          <b className="font-semibold tabular-nums text-foreground">
+                            {currentAnswer} / {scaleMax}
+                          </b>
                         </span>
-                        <span className="ml-1 text-lg tabular-nums text-fg3">/{scaleMax}</span>
-                      </p>
-                      <div className="flex items-center gap-3">
-                        <span className="w-6 text-right text-sm tabular-nums text-fg3">
-                          {scaleMin}
-                        </span>
-                        <input
-                          type="range"
-                          min={scaleMin}
-                          max={scaleMax}
-                          value={Number(currentAnswer)}
-                          onChange={(e) => setCurrentAnswer(Number(e.target.value))}
-                          aria-labelledby="question-title"
-                          className="bz-range flex-1 cursor-pointer"
-                          style={{ "--bz-range-fill": `${scaleFill}%` } as React.CSSProperties}
-                        />
-                        <span className="w-6 text-sm tabular-nums text-fg3">{scaleMax}</span>
+                        <span>{scaleMax} · en yüksek</span>
                       </div>
                     </div>
                   )}
 
                   {/* Çoktan seçmeli: seçenek tanımlanmamışsa kullanıcı bilgilendirilir */}
-                  {currentQuestion.type === "MULTIPLE_CHOICE" &&
-                    !currentQuestion.options && (
-                      <div role="alert" className="bz-alert bz-alert--warning">
-                        <AlertCircle />
-                        <div>
-                          Bu soru için seçenek tanımlanmamış. Lütfen İK ile iletişime geçin.
-                        </div>
-                      </div>
-                    )}
+                  {currentQuestion.type === "MULTIPLE_CHOICE" && !currentQuestion.options && (
+                    <div role="alert" className="bz-alert bz-alert--warning">
+                      <AlertCircle />
+                      <div>Bu soru için seçenek tanımlanmamış. Lütfen İK ile iletişime geçin.</div>
+                    </div>
+                  )}
 
                   {/* Çoktan seçmeli: seçim kartları (seçili → yeşil kenar + yeşil yumuşak zemin) */}
-                  {currentQuestion.type === "MULTIPLE_CHOICE" &&
-                    currentQuestion.options && (
-                      <div role="radiogroup" aria-labelledby="question-title" className="grid gap-2.5">
-                        {Object.entries(currentQuestion.options).map(([key, val]) => (
-                          <label key={key} className="bz-choice-card">
-                            <input
-                              type="radio"
-                              name={`answer-${currentQuestion.id}`}
-                              value={key}
-                              checked={currentAnswer === key}
-                              onChange={() => setCurrentAnswer(key)}
-                            />
-                            <span className="text-[15px] leading-snug text-foreground">
-                              <span className="mr-1.5 font-semibold text-fg3">{key}.</span>
-                              {val}
-                            </span>
-                          </label>
-                        ))}
-                      </div>
-                    )}
+                  {currentQuestion.type === "MULTIPLE_CHOICE" && currentQuestion.options && (
+                    <div role="radiogroup" aria-labelledby="question-title" className="grid gap-2.5">
+                      {Object.entries(currentQuestion.options).map(([key, val]) => (
+                        <label key={key} className="bz-choice-card min-h-14 items-center">
+                          <input
+                            type="radio"
+                            name={`answer-${currentQuestion.id}`}
+                            value={key}
+                            checked={currentAnswer === key}
+                            onChange={() => setCurrentAnswer(key)}
+                          />
+                          <span className="text-[15px] leading-snug text-foreground">
+                            <span className="mr-1.5 font-semibold text-fg3">{key}.</span>
+                            {val}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </GlassCard>
             </motion.div>
           </AnimatePresence>
         </div>
 
-        {/* Gezinme: ikincil (Geri) + tek birincil (Sonraki / Tamamla) */}
-        <div className="mt-4 flex items-center gap-3">
+        {/* Gezinme: ikincil (Geri) + tek birincil (Sonraki / Tamamla).
+            Telefonda ekranın altına yapışık cam şerit: uzun soruda ve klavye açıkken de erişilir. */}
+        <div className="bz-glass-strong sticky bottom-0 z-10 -mx-4 mt-4 flex items-center gap-3 rounded-none border-x-0 border-b-0 px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 shadow-none sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
           <button
             type="button"
             onClick={handleBack}
@@ -451,7 +477,7 @@ export default function AssessmentPage() {
             className={cn("bz-btn bz-btn--primary bz-btn--lg flex-1", busy && "is-loading")}
           >
             {busy ? (
-              isCompleting ? "Tamamlanıyor…" : "Gönderiliyor…"
+              isCompleting ? "Tamamlanıyor…" : "Kaydediliyor…"
             ) : currentIndex === total - 1 ? (
               <>
                 <CheckCircle2 />

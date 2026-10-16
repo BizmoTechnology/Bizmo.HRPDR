@@ -11,6 +11,16 @@ export const portalLoginBodySchema = z.object({
   password: z.string().min(1),
 });
 
+/** SMS ile giriş: sicil numarası (kod isteme) */
+export const portalOtpRequestBodySchema = z.object({
+  employeeId: z.string().trim().min(1, "Sicil numarası zorunlu").max(50),
+});
+
+/** SMS ile giriş: sicil numarası + 6 haneli kod */
+export const portalOtpVerifyBodySchema = portalOtpRequestBodySchema.extend({
+  code: z.string().trim().regex(/^\d{6}$/, "Kod 6 haneli olmalı"),
+});
+
 export const refreshBodySchema = z.object({
   refreshToken: z.string().optional(),
 });

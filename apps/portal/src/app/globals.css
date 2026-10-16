@@ -71,6 +71,20 @@
   }
 }
 
+@layer components {
+  /* SMS kodu kutuları (.bz-otp): 6 × 44px dar telefonda (320px) kartı taşırır; kutular
+     satırı eşit paylaşır, en çok 48px. Yükseklik ve yazı temadan gelir. */
+  .bz-otp {
+    justify-content: center;
+  }
+  .bz-otp > input {
+    flex: 1 1 0;
+    min-width: 0;
+    width: auto;
+    max-width: 48px;
+  }
+}
+
 /* Vurgu (DESIGN.md §3.1): soluk metin içindeki strong / b birincil metin rengine çıkar */
 :where(.text-fg2, .text-fg3, .text-muted-foreground) > :where(strong, b),
 :where(.text-fg2, .text-fg3, .text-muted-foreground) > :where(p, span, li) > :where(strong, b) {

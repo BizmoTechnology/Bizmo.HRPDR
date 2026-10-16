@@ -5,11 +5,11 @@ import Link from "next/link";
 import { useForm, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { createPersonnelSchema, type CreatePersonnelInput } from "@ph/shared";
-import { Save, Loader2 } from "lucide-react";
+import { Save, Loader2, AlertTriangle } from "lucide-react";
 import { GlassCard } from "@ph/ui";
 import { DateTimePicker } from "@/components/ui/datetime-picker";
 import { parseDatetimeLocalString } from "@/lib/datetime-local";
-import { useDepartmentList, useTeamsByDepartment } from "@/hooks/use-api";
+import { useDepartmentList, useSmsStatus, useTeamsByDepartment } from "@/hooks/use-api";
 
 const SHIFT_OPTIONS = [
   { value: "NONE", label: "Yok" },
@@ -112,6 +112,7 @@ export function PersonnelForm({
   cancelHref: string;
 }) {
   const { data: departments, isLoading: depsLoading } = useDepartmentList();
+  const { data: sms } = useSmsStatus();
 
   const {
     register,
@@ -237,14 +238,19 @@ export function PersonnelForm({
                 />
               </FormField>
 
-              <FormField id="phone" label="Telefon" error={errors.phone?.message}>
+              <FormField
+                id="phone"
+                label="Cep telefonu"
+                error={errors.phone?.message}
+                hint="Portal giriş kodu SMS ile bu numaraya gönderilir"
+              >
                 <input
                   {...register("phone")}
-                  {...describe("phone", errors.phone?.message)}
+                  {...describe("phone", errors.phone?.message, true)}
                   type="tel"
                   inputMode="tel"
                   autoComplete="tel"
-                  placeholder="+90 5XX XXX XX XX"
+                  placeholder="05XX XXX XX XX"
                   className="bz-field"
                 />
               </FormField>
@@ -430,8 +436,17 @@ export function PersonnelForm({
           <section className="border-t border-divider pt-6">
             <SectionTitle
               title="Portal erişimi"
-              sub="Personel, test portalına sicil numarası ve bu şifreyle giriş yapar"
+              sub="Aktif değerlendirmeye atanan personel portala sicil numarası ve cep telefonuna gelen SMS koduyla şifresiz girer. Şifre ikinci giriş yöntemidir."
             />
+            {sms && !sms.connected && (
+              <div role="status" className="bz-alert bz-alert--warning mb-4">
+                <AlertTriangle aria-hidden="true" />
+                <div>
+                  <p className="bz-alert__title">SMS entegrasyonu bağlı değil</p>
+                  <p>Personel şimdilik yalnız portal şifresiyle girebilir. Ayrıntı: Ayarlar → SMS ile personel girişi.</p>
+                </div>
+              </div>
+            )}
             <div className="bz-form-grid md:grid-cols-2">
               <FormField
                 id="portalPassword"

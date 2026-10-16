@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
 import { ArrowLeft, UserX } from "lucide-react";
-import type { CreatePersonnelInput } from "@ph/shared";
+import { formatTrMobile, type CreatePersonnelInput } from "@ph/shared";
 import { GlassCard } from "@ph/ui";
 import { apiErrorMessage } from "@/lib/api";
 import { toDatetimeLocalString } from "@/lib/datetime-local";
@@ -125,7 +125,7 @@ export default function EditPersonnelPage() {
             firstName: person.firstName,
             lastName: person.lastName,
             email: person.email,
-            phone: person.phone,
+            phone: person.phone ? formatTrMobile(person.phone) : null,
             position: person.position,
             experienceYear: person.experienceYear,
             status: person.status,

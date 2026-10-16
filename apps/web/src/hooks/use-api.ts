@@ -445,6 +445,41 @@ export function useAiStatus() {
   });
 }
 
+/* ─── SMS (İletimerkezi) ─── */
+
+export interface SmsStatus {
+  provider: string;
+  /** Sunucuda ILETIMERKEZI_* tanımlı */
+  configured: boolean;
+  /** Tanımlı ve sağlayıcıda bakiye sorgusuyla doğrulandı */
+  connected: boolean;
+  sender: string | null;
+  balance: { amount: string | null; sms: string | null } | null;
+  error: string | null;
+  /** Portalda erişebileceği aktif değerlendirmesi olan personel */
+  assignedCount: number;
+  /** Bunlardan geçerli cep telefonu kayıtlı olmayanlar (SMS ile giremez) */
+  missingPhoneCount: number;
+}
+
+/** GET /api/sms-status — SMS ile personel girişinin durumu (tüm panel kullanıcıları) */
+export function useSmsStatus() {
+  return useQuery({
+    queryKey: ["sms-status"],
+    queryFn: () => get<SmsStatus>("/api/sms-status"),
+    staleTime: 60_000,
+  });
+}
+
+/** Sağlayıcı bağlantısını önbelleği atlayarak yeniden denetler */
+export function useRecheckSmsStatus() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => get<SmsStatus>("/api/sms-status?refresh=1"),
+    onSuccess: (data) => qc.setQueryData(["sms-status"], data),
+  });
+}
+
 /** Yapılandırma değişince liste ve bağlantı durumu birlikte yenilenir */
 function invalidateAiConfig(qc: ReturnType<typeof useQueryClient>) {
   void qc.invalidateQueries({ queryKey: ["ai-config"] });

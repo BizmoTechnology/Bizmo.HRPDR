@@ -25,7 +25,9 @@ import {
   X,
   UserX,
   KeyRound,
+  MessageSquareText,
 } from "lucide-react";
+import { formatTrMobile, normalizeTrMobile } from "@ph/shared";
 import { GlassCard, ScoreGauge, PortalModal } from "@ph/ui";
 import { cn } from "@/lib/utils";
 import { apiErrorMessage } from "@/lib/api";
@@ -34,6 +36,7 @@ import {
   usePersonnel,
   useDeletePersonnel,
   useSetPortalPassword,
+  useSmsStatus,
 } from "@/hooks/use-api";
 
 /** Personel durumu → Bizmo çipi (DESIGN.md §13). Pasif bir hata değildir: nötr çip. */
@@ -130,6 +133,7 @@ export default function PersonnelDetailPage() {
   const deleteMutation = useDeletePersonnel();
   const setPortalPassword = useSetPortalPassword();
   const { canManage, canAnalyze } = usePermissions();
+  const smsStatus = useSmsStatus();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showPortalDialog, setShowPortalDialog] = useState(false);
   const [portalPassword, setPortalPasswordValue] = useState("");
@@ -185,6 +189,19 @@ export default function PersonnelDetailPage() {
     tone: "",
   };
   const fullName = `${person.firstName} ${person.lastName}`;
+
+  // SMS ile giriş: geçerli cep telefonu + bağlı SMS entegrasyonu (kod yalnız aktif ataması olana gider)
+  const hasMobile = !!normalizeTrMobile(person.phone);
+  const smsConnected = smsStatus.data?.connected === true;
+  const smsLogin = !hasMobile
+    ? { label: "Cep telefonu kayıtlı değil", ready: false }
+    : !smsStatus.isFetched
+      ? null
+      : smsConnected
+        ? { label: "Hazır", ready: true }
+        : { label: "SMS entegrasyonu bağlı değil", ready: false };
+  const noPortalAccess =
+    !person.hasPortalPassword && smsStatus.isFetched && !(hasMobile && smsConnected);
 
   return (
     <div className="bz-record w-full">
@@ -264,15 +281,20 @@ export default function PersonnelDetailPage() {
         )}
       </motion.div>
 
-      {/* Portal şifresi yoksa kalıcı uyarı (DESIGN.md §17) */}
-      {!person.hasPortalPassword && (
+      {/* Ne SMS ile ne şifreyle girebiliyorsa kalıcı uyarı (DESIGN.md §17) */}
+      {noPortalAccess && (
         <div role="status" className="bz-alert bz-alert--warning">
           <AlertTriangle aria-hidden="true" />
           <div>
-            <p className="bz-alert__title">Portal şifresi yok</p>
+            <p className="bz-alert__title">Portal girişi yok</p>
             <p>
-              Bu personel atanan değerlendirmelere giriş yapamaz.
-              {canManage && " “Portal şifresi belirle” ile şifre oluşturun."}
+              {hasMobile
+                ? "SMS entegrasyonu bağlı değil ve portal şifresi yok; bu personel atanan değerlendirmelere giriş yapamaz."
+                : "Cep telefonu ve portal şifresi kayıtlı değil; bu personel atanan değerlendirmelere giriş yapamaz."}
+              {canManage &&
+                (hasMobile
+                  ? " “Portal şifresi belirle” ile şifre oluşturun."
+                  : " Düzenle ile cep telefonu ekleyin ya da “Portal şifresi belirle” ile şifre oluşturun.")}
             </p>
           </div>
         </div>
@@ -292,7 +314,26 @@ export default function PersonnelDetailPage() {
             </h2>
             <dl className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 xl:grid-cols-3">
               <InfoRow icon={Mail} label="E-posta" value={person.email} />
-              <InfoRow icon={Phone} label="Telefon" value={person.phone} />
+              <InfoRow
+                icon={Phone}
+                label="Cep telefonu"
+                value={person.phone ? formatTrMobile(person.phone) : null}
+              />
+              <InfoRow
+                icon={MessageSquareText}
+                label="SMS ile giriş"
+                value={
+                  smsLogin && (
+                    <span className={cn("inline-flex items-center gap-1.5", !smsLogin.ready && "font-medium text-fg2")}>
+                      <span
+                        className={cn("bz-dot", smsLogin.ready ? "bz-dot--success" : "bz-dot--warning")}
+                        aria-hidden="true"
+                      />
+                      {smsLogin.label}
+                    </span>
+                  )
+                }
+              />
               <InfoRow icon={Briefcase} label="Pozisyon" value={person.position} />
               <InfoRow
                 icon={Building2}

@@ -173,6 +173,7 @@ model Personnel {
   consentRecords      ConsentRecord[]
   passwordResetTokens PasswordResetToken[] @relation("PersonnelPasswordReset")
   notifications       Notification[]       @relation("PersonnelNotifications")
+  portalLoginOtps     PortalLoginOtp[]
 
   @@unique([organizationId, employeeId])
   @@unique([organizationId, email])
@@ -477,6 +478,34 @@ model PasswordResetToken {
   personnel   Personnel? @relation("PersonnelPasswordReset", fields: [personnelId], references: [id], onDelete: Cascade)
   personnelId String?
 
+  @@index([expiresAt])
+}
+
+// ─────────────────────────────────────────
+// SMS İLE PORTAL GİRİŞİ (tek kullanımlık kod)
+// ─────────────────────────────────────────
+
+// Personelin portala şifresiz girişi için SMS'le gönderilen 6 haneli kod.
+// Kodun kendisi saklanmaz (HMAC özeti); 5 dk geçerli, tek kullanımlık, en çok 5 deneme.
+// Kayıtlar gönderim sınırlarının (personel / telefon başına) sayımında da kullanılır.
+model PortalLoginOtp {
+  id              String    @id @default(cuid())
+  codeHash        String
+  /// Kodun gönderildiği numara (E.164)
+  phone           String
+  attempts        Int       @default(0)
+  expiresAt       DateTime
+  consumedAt      DateTime?
+  ipAddress       String?
+  /// İletimerkezi sipariş numarası
+  providerOrderId String?
+  createdAt       DateTime  @default(now())
+
+  personnel   Personnel @relation(fields: [personnelId], references: [id], onDelete: Cascade)
+  personnelId String
+
+  @@index([personnelId, createdAt])
+  @@index([phone, createdAt])
   @@index([expiresAt])
 }
 

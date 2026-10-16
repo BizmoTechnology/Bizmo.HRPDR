@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import {
   User, Building2, Lock, Bell, Loader2,
   Check, CheckCheck, Eye, EyeOff,
+  MessageSquareText, RotateCw, AlertTriangle, AlertCircle, Info,
 } from "lucide-react";
 import { GlassCard } from "@ph/ui";
 import { cn } from "@/lib/utils";
@@ -15,6 +16,9 @@ import {
   useNotificationList,
   useMarkNotificationRead,
   useMarkAllNotificationsRead,
+  useSmsStatus,
+  useRecheckSmsStatus,
+  type SmsStatus,
 } from "@/hooks/use-api";
 import { toast } from "sonner";
 
@@ -49,6 +53,130 @@ function SectionHeader({
       </div>
       {action}
     </div>
+  );
+}
+
+/** Kalan bakiye: SMS kredisi ve/veya TL bakiye (hesap türüne göre biri sıfırdır) */
+function formatSmsBalance(balance: SmsStatus["balance"]): string {
+  if (!balance) return "—";
+  const parts: string[] = [];
+  const sms = Number(balance.sms);
+  const amount = Number(balance.amount);
+  if (balance.sms !== null && Number.isFinite(sms)) parts.push(`${sms.toLocaleString("tr-TR")} SMS`);
+  if (balance.amount !== null && Number.isFinite(amount) && amount > 0) {
+    parts.push(amount.toLocaleString("tr-TR", { style: "currency", currency: "TRY" }));
+  }
+  return parts.join(" · ") || "—";
+}
+
+/** SMS ile personel girişi: İletimerkezi bağlantısı ve telefonu eksik personel (DESIGN.md §17 durumları) */
+function SmsLoginCard() {
+  const { data: sms, isLoading, isError } = useSmsStatus();
+  const recheck = useRecheckSmsStatus();
+
+  return (
+    <GlassCard hover={false}>
+      <SectionHeader
+        icon={MessageSquareText}
+        title="SMS ile personel girişi"
+        sub="İletimerkezi"
+        action={
+          sms?.configured ? (
+            <button
+              type="button"
+              onClick={() =>
+                recheck.mutate(undefined, {
+                  onError: (err) => toast.error(apiErrorMessage(err, "Bağlantı denetlenemedi")),
+                })
+              }
+              disabled={recheck.isPending}
+              className="bz-btn bz-btn--ghost bz-btn--sm shrink-0"
+              title="Bağlantıyı yeniden denetle"
+            >
+              {recheck.isPending ? <Loader2 className="animate-spin" /> : <RotateCw />}
+              <span>Denetle</span>
+            </button>
+          ) : undefined
+        }
+      />
+
+      {isLoading ? (
+        <div className="space-y-2" aria-busy="true">
+          <div className="bz-skeleton h-3.5 w-1/2" />
+          <div className="bz-skeleton h-3.5 w-2/3" />
+        </div>
+      ) : isError || !sms ? (
+        <p className="text-[13px] text-muted-foreground">SMS durumu alınamadı.</p>
+      ) : (
+        <div className="space-y-4">
+          {!sms.configured ? (
+            <div role="status" className="bz-alert bz-alert--warning">
+              <AlertTriangle aria-hidden="true" />
+              <div>
+                <p className="bz-alert__title">SMS entegrasyonu bağlı değil</p>
+                <p>
+                  Personel portala yalnız şifreyle girebilir. SMS koduyla şifresiz giriş için sunucu
+                  ortamında <code className="font-mono text-[12px]">ILETIMERKEZI_API_KEY</code>,{" "}
+                  <code className="font-mono text-[12px]">ILETIMERKEZI_API_HASH</code> ve{" "}
+                  <code className="font-mono text-[12px]">ILETIMERKEZI_SENDER</code> tanımlanmalı.
+                </p>
+              </div>
+            </div>
+          ) : !sms.connected ? (
+            <div role="alert" className="bz-alert bz-alert--danger">
+              <AlertCircle aria-hidden="true" />
+              <div>
+                <p className="bz-alert__title">SMS sağlayıcısına bağlanılamadı</p>
+                <p>{sms.error ?? "İletimerkezi bağlantısı doğrulanamadı."} Personel bu sırada yalnız şifreyle girebilir.</p>
+              </div>
+            </div>
+          ) : (
+            <dl className="grid grid-cols-[repeat(auto-fit,minmax(8rem,1fr))] gap-x-6 gap-y-4">
+              <div className="min-w-0">
+                <dt className="text-[12px] font-medium text-muted-foreground">Durum</dt>
+                <dd className="mt-1 inline-flex items-center gap-1.5 text-[14px] font-semibold text-foreground">
+                  <span className="bz-dot bz-dot--success" aria-hidden="true" />
+                  Bağlı
+                </dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="text-[12px] font-medium text-muted-foreground">Gönderici başlığı</dt>
+                <dd className="mt-0.5 truncate font-mono text-[14px] font-semibold text-foreground">
+                  {sms.sender ?? "—"}
+                </dd>
+              </div>
+              <div className="min-w-0">
+                <dt className="text-[12px] font-medium text-muted-foreground">Kalan bakiye</dt>
+                <dd className="mt-0.5 text-[14px] font-semibold tabular-nums text-foreground">
+                  {formatSmsBalance(sms.balance)}
+                </dd>
+              </div>
+            </dl>
+          )}
+
+          {sms.missingPhoneCount > 0 && (
+            <div role="status" className="bz-alert bz-alert--info">
+              <Info aria-hidden="true" />
+              <div>
+                <p className="bz-alert__title">
+                  {sms.missingPhoneCount} personelin cep telefonu eksik
+                </p>
+                <p>
+                  Aktif değerlendirmesi olan {sms.assignedCount} personelden {sms.missingPhoneCount}{" "}
+                  kişi SMS koduyla giremez; personel kaydına cep telefonu ekleyin ya da portal şifresi belirleyin.
+                </p>
+              </div>
+            </div>
+          )}
+
+          <p className="text-[12.5px] leading-relaxed text-muted-foreground">
+            Aktif değerlendirmeye atanan personel portala sicil numarasıyla gelir, kayıtlı cep telefonuna
+            6 haneli kod gönderilir. Kod 5 dakika geçerli ve tek kullanımlıktır; 5 hatalı denemede geçersiz
+            olur. Şifreyle giriş ikinci yöntem olarak açık kalır.
+          </p>
+        </div>
+      )}
+    </GlassCard>
   );
 }
 
@@ -198,6 +326,11 @@ export default function SettingsPage() {
                 </dd>
               </dl>
             </GlassCard>
+          </motion.div>
+
+          {/* SMS ile personel girişi */}
+          <motion.div variants={item} className="min-w-0">
+            <SmsLoginCard />
           </motion.div>
 
           {/* Güvenlik */}

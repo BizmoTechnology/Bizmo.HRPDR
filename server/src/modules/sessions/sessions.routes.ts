@@ -18,6 +18,7 @@ import {
   type SnapshotQuestion,
 } from "../../services/session-questions.service.js";
 import { isHttpError } from "../../lib/http-error.js";
+import { portalSessionWhere } from "../../lib/portal-sessions.js";
 import {
   AI_NOT_CONNECTED_REASON,
   ANALYSIS_AWAITS_REVIEW_REASON,
@@ -338,26 +339,6 @@ const answerSchema = z.object({
   followUpAnswer: z.string().max(10_000).nullable().optional(),
   clientDedupeKey: z.string().max(100).optional(),
 });
-
-/** Personelin şu anda erişebileceği oturum koşulu */
-function portalSessionWhere(personnelId: string, now: Date) {
-  return {
-    personnelId,
-    personnel: { deletedAt: null },
-    assessment: { status: "ACTIVE" as const },
-    OR: [
-      { status: "IN_PROGRESS" as const },
-      {
-        status: "NOT_STARTED" as const,
-        AND: [
-          { OR: [{ dueAt: null }, { dueAt: { gte: now } }] },
-          { assessment: { OR: [{ startsAt: null }, { startsAt: { lte: now } }] } },
-          { assessment: { OR: [{ endsAt: null }, { endsAt: { gte: now } }] } },
-        ],
-      },
-    ],
-  };
-}
 
 function isAnswered(
   q: SnapshotQuestion,

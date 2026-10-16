@@ -46,6 +46,8 @@ cp .env.example server/.env
 - `JWT_SECRET` ve `JWT_REFRESH_SECRET` → en az 64 karakter
 - `ENCRYPTION_KEY` → tam 64 hex karakter (32 byte)
 
+SMS ile personel girişi (isteğe bağlı): `ILETIMERKEZI_API_KEY`, `ILETIMERKEZI_API_HASH`, `ILETIMERKEZI_SENDER` (İletimerkezi panelinde onaylı gönderici başlığı). Boş bırakılırsa SMS girişi kapalıdır; portal "SMS entegrasyonu bağlı değil" der, şifreyle giriş çalışmaya devam eder.
+
 Geliştirme için hızlı değer üretme:
 ```bash
 node -e "console.log(require('crypto').randomBytes(64).toString('hex'))"
@@ -130,7 +132,7 @@ npm run dev
 
 ## Temel Akış
 
-1. **Personel** oluştururken "Portal Şifresi" belirleyin (veya personel detayında *Portal Şifresi Belirle*). Şifresi olmayan personel portala giremez.
+1. **Personel** oluştururken cep telefonunu girin: SMS bağlıysa aktif değerlendirmeye atanan personel portala sicil numarası + SMS'le gelen 6 haneli kodla şifresiz girer (kod 5 dk geçerli, tek kullanımlık). İsterseniz "Portal Şifresi" de belirleyin (veya personel detayında *Portal Şifresi Belirle*); şifreyle giriş ikinci yöntem olarak durur. Ne telefonu ne şifresi olan personel portala giremez. SMS bağlantı durumu: *Ayarlar → SMS ile personel girişi*.
 2. **Değerlendirme** oluşturun, *Aktifleştir* ve personele *ata*. Portal yalnızca **aktif** ve tarih aralığındaki değerlendirmeleri gösterir.
 3. Personel portalda KVKK onayıyla testi başlatır; cevaplar her soruda sunucuya kaydedilir, yarıda kalan test kaldığı yerden devam eder.
 4. Test tamamlanınca skala sorularından boyut skorları hesaplanır; aktif bir AI yapılandırması ve personelin AI rızası varsa HR PDR analizi arka planda çalışır. AI'ın önerdiği boyut skorları **yalnızca İK analizi onayladığında** skorlara yansır (reddedilirse veya analiz yeniden çalıştırılırsa skala skorlarına dönülür).

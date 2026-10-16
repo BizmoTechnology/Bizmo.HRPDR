@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
+import { normalizeTrMobile } from "@ph/shared";
 import { prisma } from "../../lib/prisma.js";
 import { isHttpError } from "../../lib/http-error.js";
 import { assertDepartmentAndTeam } from "../../lib/tenant.js";
@@ -28,7 +29,16 @@ const createSchema = z.object({
   firstName: z.string().trim().min(1).max(100),
   lastName: z.string().trim().min(1).max(100),
   email: z.string().trim().email().max(255),
-  phone: emptyToNull(z.string().max(30).nullable().optional()),
+  // SMS ile portal giriş kodu bu numaraya gider: TR cep numarası, E.164 olarak saklanır
+  phone: emptyToNull(
+    z
+      .string()
+      .max(30)
+      .refine((v) => normalizeTrMobile(v) !== null, "Geçerli bir cep telefonu girin (05XX XXX XX XX)")
+      .transform((v) => normalizeTrMobile(v) as string)
+      .nullable()
+      .optional(),
+  ),
   position: z.string().trim().min(1).max(200),
   experienceYear: z.number().int().min(0).default(0),
   status: personnelStatusEnum.default("ACTIVE"),

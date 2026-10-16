@@ -3,6 +3,8 @@ import jwt from "jsonwebtoken";
 import {
   loginBodySchema,
   portalLoginBodySchema,
+  portalOtpRequestBodySchema,
+  portalOtpVerifyBodySchema,
   forgotPasswordBodySchema,
   resetPasswordBodySchema,
   changePasswordBodySchema,
@@ -24,6 +26,13 @@ import {
 import bcrypt from "bcryptjs";
 import { prisma } from "../../lib/prisma.js";
 import { sendMail } from "../../lib/mailer.js";
+import {
+  isSmsConfigured,
+  SmsNotConfiguredError,
+  SmsProviderError,
+  SMS_NOT_CONNECTED_MESSAGE,
+} from "../../lib/iletimerkezi.js";
+import { requestPortalOtp, verifyPortalOtp } from "./portal-otp.service.js";
 
 /** development.md §12.1 — auth endpoint'leri için IP başına sınır */
 const authRateLimit = {
@@ -33,6 +42,18 @@ const authRateLimit = {
 /** Token yenileme httpOnly çerez gerektirir; ortak IP'deki ofisler için daha geniş sınır */
 const refreshRateLimit = {
   config: { rateLimit: { max: 60, timeWindow: "1 minute" } },
+};
+
+/**
+ * SMS kodu isteme/doğrulama için IP başına sınır. Personel ve telefon başına sınırlar
+ * kalıcı olarak veritabanında sayılır (portal-otp.service); fabrikada ortak ağdan
+ * (tek IP) giren ekip birbirini kilitlemesin diye IP sınırı geniş tutulur.
+ */
+const otpRequestRateLimit = {
+  config: { rateLimit: { max: 15, timeWindow: "1 minute" } },
+};
+const otpVerifyRateLimit = {
+  config: { rateLimit: { max: 30, timeWindow: "1 minute" } },
 };
 
 /**
@@ -286,6 +307,117 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
         message: "Sicil numarası veya şifre hatalı",
         traceId: request.traceId,
       });
+    }
+  });
+
+  // ── Portal Giriş Seçenekleri ──────────────────
+  // Giriş ekranı varsayılan yöntemi seçer: SMS bağlı değilse şifre formu açılır
+  fastify.get("/portal/login-options", async (_request, reply) => {
+    return reply.send({ data: { sms: isSmsConfigured() } });
+  });
+
+  // ── Portal SMS Kodu İsteme ────────────────────
+  fastify.post("/portal/otp/request", otpRequestRateLimit, async (request, reply) => {
+    const { employeeId } = portalOtpRequestBodySchema.parse(request.body);
+
+    if (!isSmsConfigured()) {
+      return reply.status(503).send({
+        code: "SMS_NOT_CONNECTED",
+        message: `${SMS_NOT_CONNECTED_MESSAGE} Şifrenizle giriş yapın ya da İK departmanınıza başvurun.`,
+        traceId: request.traceId,
+      });
+    }
+
+    try {
+      const result = await requestPortalOtp(employeeId, request.ip);
+
+      switch (result.kind) {
+        case "sent":
+        case "already_sent":
+          return reply.send({
+            data: {
+              status: result.kind === "sent" ? "SENT" : "ALREADY_SENT",
+              maskedPhone: result.maskedPhone,
+              expiresInSec: result.expiresInSec,
+              resendInSec: result.resendInSec,
+            },
+          });
+        case "cooldown":
+        case "limited":
+          return reply
+            .status(429)
+            .header("Retry-After", String(result.retryAfterSec))
+            .send({
+              code: result.kind === "cooldown" ? "OTP_COOLDOWN" : "OTP_RATE_LIMITED",
+              message:
+                result.kind === "cooldown"
+                  ? `Yeni kodu ${result.retryAfterSec} saniye sonra isteyebilirsiniz.`
+                  : "Çok fazla kod istendi. Bir süre sonra tekrar deneyin ya da şifrenizle giriş yapın.",
+              retryAfterSec: result.retryAfterSec,
+              traceId: request.traceId,
+            });
+        case "unavailable":
+          // Neden (kayıt yok / telefon yok / aktif atama yok) açıklanmaz: tek genel yanıt
+          return reply.status(422).send({
+            code: "OTP_UNAVAILABLE",
+            message:
+              "Bu sicil numarasıyla SMS kodu gönderilemiyor. Sicil numaranızı kontrol edin; " +
+              "aktif bir değerlendirmeniz ya da kayıtlı cep telefonunuz yoksa İK departmanınıza başvurun.",
+            traceId: request.traceId,
+          });
+      }
+    } catch (err) {
+      if (err instanceof SmsNotConfiguredError) {
+        return reply.status(503).send({
+          code: "SMS_NOT_CONNECTED",
+          message: `${SMS_NOT_CONNECTED_MESSAGE} Şifrenizle giriş yapın ya da İK departmanınıza başvurun.`,
+          traceId: request.traceId,
+        });
+      }
+      if (err instanceof SmsProviderError) {
+        // Numara ve kod log'a yazılmaz; yalnız sağlayıcının durum kodu
+        request.log.error(
+          { providerCode: err.providerCode, providerMessage: err.message },
+          "portal OTP SMS gönderilemedi",
+        );
+        return reply.status(502).send({
+          code: "SMS_SEND_FAILED",
+          message: "SMS gönderilemedi. Lütfen biraz sonra tekrar deneyin ya da şifrenizle giriş yapın.",
+          traceId: request.traceId,
+        });
+      }
+      throw err;
+    }
+  });
+
+  // ── Portal SMS Kodu ile Giriş ─────────────────
+  fastify.post("/portal/otp/verify", otpVerifyRateLimit, async (request, reply) => {
+    const { employeeId, code } = portalOtpVerifyBodySchema.parse(request.body);
+    const result = await verifyPortalOtp(fastify, employeeId, code);
+
+    switch (result.kind) {
+      case "ok":
+        return reply.send({ data: result.session });
+      case "invalid":
+        return reply.status(401).send({
+          code: "OTP_INVALID",
+          message: `Kod hatalı. ${result.remainingAttempts} deneme hakkınız kaldı.`,
+          remainingAttempts: result.remainingAttempts,
+          traceId: request.traceId,
+        });
+      case "locked":
+        return reply.status(401).send({
+          code: "OTP_LOCKED",
+          message: "Çok fazla hatalı deneme yapıldı. Yeni kod isteyin.",
+          remainingAttempts: 0,
+          traceId: request.traceId,
+        });
+      case "expired":
+        return reply.status(401).send({
+          code: "OTP_EXPIRED",
+          message: "Kodun süresi dolmuş ya da kod geçersiz. Yeni kod isteyin.",
+          traceId: request.traceId,
+        });
     }
   });
 

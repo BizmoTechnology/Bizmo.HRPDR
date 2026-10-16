@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { normalizeTrMobile } from "../phone";
 
 // ─────────────────────────────────────────
 // TEMEL ŞEMALAR
@@ -70,6 +71,20 @@ const optionalDateString = emptyToNull(
     .optional(),
 );
 
+/**
+ * Cep telefonu: SMS ile portal giriş kodu bu numaraya gider. Türkiye cep numarası
+ * olmalı; kaydedilirken E.164 biçimine (+905321234567) çevrilir.
+ */
+export const trMobilePhoneSchema = emptyToNull(
+  z
+    .string()
+    .max(30)
+    .refine((v) => normalizeTrMobile(v) !== null, "Geçerli bir cep telefonu girin (05XX XXX XX XX)")
+    .transform((v) => normalizeTrMobile(v) as string)
+    .nullable()
+    .optional(),
+);
+
 /** İlişki kimlikleri (seed verilerinde cuid dışı kimlikler de bulunur) */
 const optionalId = emptyToNull(z.string().min(1).nullable().optional());
 
@@ -78,7 +93,7 @@ export const createPersonnelSchema = z.object({
   firstName: z.string().trim().min(1, "Ad zorunlu").max(100),
   lastName: z.string().trim().min(1, "Soyad zorunlu").max(100),
   email: emailSchema,
-  phone: emptyToNull(z.string().max(30).nullable().optional()),
+  phone: trMobilePhoneSchema,
   position: z.string().trim().min(1, "Pozisyon zorunlu").max(200),
   experienceYear: z.preprocess(
     (v) => (v === "" || (typeof v === "number" && Number.isNaN(v)) ? 0 : v),

@@ -170,17 +170,31 @@ export async function portalLogin(
   employeeId: string,
   password: string
 ) {
-  const personnel = await prisma.personnel.findFirst({
-    where: { employeeId, deletedAt: null },
-    include: { organization: true },
+  // Sicil numarası yalnız kurum içinde benzersiz (@@unique([organizationId, employeeId])),
+  // aynı sicil başka kurumlarda da olabilir. Şifresi eşleşen tek kayıt kabul edilir; hiç
+  // ya da birden fazla eşleşme varsa genel hata döner (kaydın hangi kurumda olduğu sızmaz).
+  const candidates = await prisma.personnel.findMany({
+    where: { employeeId, deletedAt: null, status: "ACTIVE", portalPasswordHash: { not: null } },
+    select: {
+      id: true,
+      organizationId: true,
+      employeeId: true,
+      firstName: true,
+      lastName: true,
+      preferredLanguage: true,
+      portalPasswordHash: true,
+    },
+    orderBy: { id: "asc" },
   });
 
-  if (!personnel || !personnel.portalPasswordHash || personnel.status !== "ACTIVE") {
-    throw new Error("INVALID_CREDENTIALS");
+  let personnel: (typeof candidates)[number] | null = null;
+  for (const candidate of candidates) {
+    if (!candidate.portalPasswordHash) continue;
+    if (!(await bcrypt.compare(password, candidate.portalPasswordHash))) continue;
+    if (personnel) throw new Error("INVALID_CREDENTIALS");
+    personnel = candidate;
   }
-
-  const valid = await bcrypt.compare(password, personnel.portalPasswordHash);
-  if (!valid) throw new Error("INVALID_CREDENTIALS");
+  if (!personnel) throw new Error("INVALID_CREDENTIALS");
 
   await prisma.personnel.update({
     where: { id: personnel.id },

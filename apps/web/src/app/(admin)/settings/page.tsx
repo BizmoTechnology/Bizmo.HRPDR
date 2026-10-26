@@ -203,7 +203,7 @@ export default function SettingsPage() {
           {/* Güvenlik */}
           <motion.div variants={item}>
             <GlassCard hover={false} className="p-0">
-              <form onSubmit={handlePasswordSubmit}>
+              <form method="post" onSubmit={handlePasswordSubmit}>
                 <div className="p-5">
                   <SectionHeader icon={Lock} title="Güvenlik" sub="Giriş şifrenizi değiştirin" />
 

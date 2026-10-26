@@ -70,7 +70,7 @@ export default function ResetPasswordPage() {
           <p>Sıfırlama bağlantısı geçersiz. Lütfen yeni bir bağlantı isteyin.</p>
         </div>
       ) : (
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <form method="post" onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <input type="hidden" {...register("token")} />
           <div className="bz-form-row">
             <label htmlFor="reset-password" className="bz-label">

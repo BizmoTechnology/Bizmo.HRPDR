@@ -5,6 +5,7 @@ import { HttpError, isHttpError } from "../../lib/http-error.js";
 import { assertQuestionsInOrg } from "../../lib/tenant.js";
 import { requireRoleForWrites, ROLE_GROUPS } from "../../middleware/authenticate.js";
 import { suggestQuestionSetFromAi } from "../../services/question-set-ai-suggest.service.js";
+import { aiRateLimit } from "../../lib/rate-limit.js";
 
 const aiSuggestSchema = z.object({
   brief: z
@@ -189,7 +190,7 @@ const questionSetRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // POST /ai-suggest — AI ile soru seti taslağı (soru havuzundan seçim)
-  fastify.post("/ai-suggest", async (request, reply) => {
+  fastify.post("/ai-suggest", { config: aiRateLimit("ai-suggest") }, async (request, reply) => {
     const orgId = request.user.orgId!;
 
     try {
@@ -215,12 +216,10 @@ const questionSetRoutes: FastifyPluginAsync = async (fastify) => {
           traceId: request.traceId,
         });
       }
-      const message =
-        err instanceof Error ? err.message : "AI önerisi alınamadı";
       request.log.warn({ err }, "questionSets.aiSuggest failed");
-      return reply.status(400).send({
+      return reply.status(502).send({
         code: "AI_SUGGEST_FAILED",
-        message,
+        message: "AI önerisi alınamadı. Lütfen biraz sonra tekrar deneyin.",
         traceId: request.traceId,
       });
     }
@@ -429,8 +428,10 @@ const questionSetRoutes: FastifyPluginAsync = async (fastify) => {
           });
         }
 
-        const nameBody = (request.body as { name?: string } | null)?.name;
-        const newName = nameBody ?? `${source.name} (Kopya)`;
+        const nameBody = z
+          .object({ name: z.string().trim().min(1).max(200).optional() })
+          .parse(request.body ?? {}).name;
+        const newName = nameBody ?? `${source.name} (Kopya)`.slice(0, 300);
 
         const duplicate = await prisma.$transaction(async (tx) => {
           const qs = await tx.questionSet.create({
@@ -478,6 +479,7 @@ const questionSetRoutes: FastifyPluginAsync = async (fastify) => {
 
         return reply.status(201).send({ data: duplicate });
       } catch (err) {
+        if (err instanceof z.ZodError) throw err;
         request.log.error(err, "questionSets.duplicate failed");
         return reply.status(500).send({
           code: "INTERNAL_ERROR",

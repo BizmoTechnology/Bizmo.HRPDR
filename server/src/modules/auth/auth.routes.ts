@@ -214,11 +214,13 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post("/forgot-password", authRateLimit, async (request, reply) => {
     const { email } = forgotPasswordBodySchema.parse(request.body);
 
-    const user = await prisma.user.findFirst({
-      where: { email, deletedAt: null, isActive: true },
+    // Aynı e-posta birden fazla kurumda kayıtlı olabilir: her hesap için ayrı bağlantı
+    const users = await prisma.user.findMany({
+      where: { email: { equals: email.trim(), mode: "insensitive" }, deletedAt: null, isActive: true },
+      take: 10,
     });
 
-    if (user) {
+    for (const user of users) {
       const token = await createPasswordResetToken(user.id);
       const appUrl = (process.env["APP_URL"] ?? "http://localhost:3000").replace(/\/$/, "");
       const resetUrl = `${appUrl}/reset-password?token=${encodeURIComponent(token)}`;

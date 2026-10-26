@@ -1,5 +1,6 @@
 import type { FastifyRequest, FastifyReply } from "fastify";
 import type { JwtPayload } from "../types/jwt-payload.js";
+import { prisma } from "../lib/prisma.js";
 
 export type { JwtPayload };
 
@@ -42,6 +43,26 @@ export async function authenticate(
       traceId: request.traceId,
     });
   }
+
+  // Token süresi dolmadan pasife alınan/silinen ya da rolü/kurumu değişen hesap
+  // eski yetkiyle devam edemez: 401 → istemci yeniler, yeni token güncel rolü taşır.
+  const user = await prisma.user.findUnique({
+    where: { id: request.user.sub },
+    select: { isActive: true, deletedAt: true, role: true, organizationId: true },
+  });
+  if (
+    !user ||
+    !user.isActive ||
+    user.deletedAt ||
+    user.role !== request.user.role ||
+    user.organizationId !== request.user.orgId
+  ) {
+    return reply.status(401).send({
+      code: "UNAUTHORIZED",
+      message: "Kimlik doğrulaması başarısız",
+      traceId: request.traceId,
+    });
+  }
 }
 
 export async function authenticatePortal(
@@ -62,6 +83,24 @@ export async function authenticatePortal(
     return reply.status(403).send({
       code: "ADMIN_TOKEN_NOT_ALLOWED",
       message: "Bu endpoint personel hesabı gerektiriyor",
+      traceId: request.traceId,
+    });
+  }
+
+  // Silinen ya da pasife alınan personel 1 saatlik token'la test çözmeye devam edemez
+  const personnel = await prisma.personnel.findUnique({
+    where: { id: request.user.sub },
+    select: { status: true, deletedAt: true, organizationId: true },
+  });
+  if (
+    !personnel ||
+    personnel.deletedAt ||
+    personnel.status !== "ACTIVE" ||
+    personnel.organizationId !== request.user.orgId
+  ) {
+    return reply.status(401).send({
+      code: "UNAUTHORIZED",
+      message: "Kimlik doğrulaması başarısız",
       traceId: request.traceId,
     });
   }

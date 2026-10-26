@@ -24,6 +24,7 @@ import {
   NO_AI_CONSENT_REASON,
 } from "../../lib/ai-connection.js";
 import { requireRole, ROLE_GROUPS } from "../../middleware/authenticate.js";
+import { aiRateLimit } from "../../lib/rate-limit.js";
 
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
@@ -92,17 +93,29 @@ export const sessionAdminRoutes: FastifyPluginAsync = async (fastify) => {
         });
       }
 
-      return reply.send({
-        data: {
-          ...session,
-          dimensionScores: session.dimensionScores,
-          swotAnalysis: session.swotAnalysis,
-          careerPaths: session.careerPaths,
-          keyInsights: session.keyInsights,
-          hrPdrAnalysis: session.hrPdrAnalysis,
-          psychologicalAnalysis: session.psychologicalAnalysis,
-        },
-      });
+      // IP/tarayıcı bilgisi ve soru seti kopyası panelde kullanılmaz; hiçbir role dönmez
+      const { ipAddress: _ip, userAgent: _ua, questionSetSnapshot: _snap, ...rest } = session;
+
+      // Rol matrisi (development.md §8): VIEWER analiz ve rapor göremez; cevaplar
+      // ve AI analizleri yalnızca analyze grubuna döner.
+      const canAnalyze = (ROLE_GROUPS.analyze as readonly string[]).includes(request.user.role ?? "");
+      if (!canAnalyze) {
+        return reply.send({
+          data: {
+            ...rest,
+            answers: [],
+            dimensionScores: null,
+            swotAnalysis: null,
+            careerPaths: null,
+            keyInsights: null,
+            hrPdrAnalysis: null,
+            psychologicalAnalysis: null,
+            analysisError: null,
+          },
+        });
+      }
+
+      return reply.send({ data: rest });
     } catch (err) {
       request.log.error(err);
       return reply.status(500).send({
@@ -114,7 +127,10 @@ export const sessionAdminRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // ── GET /:id/events — Oturum olay zaman çizelgesi
-  fastify.get<{ Params: { id: string } }>("/:id/events", async (request, reply) => {
+  fastify.get<{ Params: { id: string } }>(
+    "/:id/events",
+    { preHandler: requireRole(ROLE_GROUPS.analyze) },
+    async (request, reply) => {
     try {
       const orgId = request.user.orgId!;
 
@@ -151,7 +167,14 @@ export const sessionAdminRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post<{
     Params: { id: string };
     Body: { analysisType: "HR_PDR_ANALYSIS" | "PSYCHOLOGICAL_ANALYSIS" };
-  }>("/:id/ai-analysis", { preHandler: requireRole(ROLE_GROUPS.analyze) }, async (request, reply) => {
+  }>(
+    "/:id/ai-analysis",
+    {
+      preHandler: requireRole(ROLE_GROUPS.analyze),
+      // Ücretli LLM çağrısı: kullanıcı başına dakikalık sınır
+      config: aiRateLimit("ai-analysis"),
+    },
+    async (request, reply) => {
     try {
       const orgId = request.user.orgId!;
       const { analysisType } = request.body ?? {};
@@ -185,6 +208,15 @@ export const sessionAdminRoutes: FastifyPluginAsync = async (fastify) => {
         });
       }
 
+      // Arka planda çalışan analizle aynı anda ikinci bir LLM çağrısı başlatılmaz
+      if (session.analysisPipeline === "QUEUED" || session.analysisPipeline === "RUNNING") {
+        return reply.status(409).send({
+          code: "ANALYSIS_IN_PROGRESS",
+          message: "Bu oturumun AI analizi şu anda çalışıyor. Lütfen tamamlanmasını bekleyin.",
+          traceId: request.traceId,
+        });
+      }
+
       const result = await runSessionAnalysis({
         sessionId: session.id,
         organizationId: orgId,
@@ -212,11 +244,11 @@ export const sessionAdminRoutes: FastifyPluginAsync = async (fastify) => {
           traceId: request.traceId,
         });
       }
-      const message = err instanceof Error ? err.message : "AI analizi sırasında hata oluştu";
+      // Sağlayıcı/Prisma ayrıntısı istemciye dönmez; traceId ile log'dan bulunur
       request.log.error(err);
       return reply.status(500).send({
         code: "AI_ANALYSIS_ERROR",
-        message,
+        message: "AI analizi sırasında hata oluştu. Lütfen biraz sonra tekrar deneyin.",
         traceId: request.traceId,
       });
     }
@@ -244,6 +276,16 @@ export const sessionAdminRoutes: FastifyPluginAsync = async (fastify) => {
         });
       }
 
+      // Cevaplar tamamlanmadan onay/ret verilemez: aksi halde sonradan girilen
+      // cevaplar hiç incelenmeden AI analizine ve rapora gider.
+      if (status !== "PENDING" && session.status !== "COMPLETED") {
+        return reply.status(409).send({
+          code: "SESSION_NOT_COMPLETED",
+          message: "İnceleme kararı yalnızca tamamlanmış oturumlar için verilebilir",
+          traceId: request.traceId,
+        });
+      }
+
       // İK onayı AI analizini başlatır (analiz henüz yoksa ve sırada değilse)
       const startsAnalysis =
         status === "APPROVED" &&
@@ -258,8 +300,20 @@ export const sessionAdminRoutes: FastifyPluginAsync = async (fastify) => {
       const decidedAt = status !== "PENDING" ? new Date() : null;
       // İnceleme durumu ve skorlar aynı kilitli işlemde yazılır; eşzamanlı onay/ret
       // veya yeni bir analiz ikisini birbirinden ayıramaz.
-      const review = await prisma.$transaction(async (tx) => {
+      const { saved: review, queued } = await prisma.$transaction(async (tx) => {
         await lockSession(tx, session.id);
+        // Kilit altında yeniden okunur: eşzamanlı iki onay analizi iki kez kuyruğa almasın
+        const fresh = startsAnalysis
+          ? await tx.assessmentSession.findUnique({
+              where: { id: session.id },
+              select: { analysisPipeline: true, hrPdrAnalysis: true },
+            })
+          : null;
+        const starts =
+          !!fresh &&
+          fresh.hrPdrAnalysis === null &&
+          fresh.analysisPipeline !== "QUEUED" &&
+          fresh.analysisPipeline !== "RUNNING";
         const saved = await tx.analysisReview.upsert({
           where: { sessionId: session.id },
           create: {
@@ -279,7 +333,7 @@ export const sessionAdminRoutes: FastifyPluginAsync = async (fastify) => {
         // AI'ın önerdiği boyut skorları yalnızca onayla uygulanır; onay geri alınırsa
         // skala skorlarına dönülür.
         await applyReviewToDimensionScores(tx, session.id, status);
-        if (startsAnalysis) {
+        if (starts) {
           await tx.assessmentSession.update({
             where: { id: session.id },
             data: analysisQueued
@@ -290,12 +344,12 @@ export const sessionAdminRoutes: FastifyPluginAsync = async (fastify) => {
                 },
           });
         }
-        return saved;
+        return { saved, queued: starts && analysisQueued };
       });
 
-      if (analysisQueued) queueSessionAnalysis(session.id, orgId, request.log);
+      if (queued) queueSessionAnalysis(session.id, orgId, request.log);
 
-      return reply.send({ data: { ...review, analysisQueued } });
+      return reply.send({ data: { ...review, analysisQueued: queued } });
     } catch (err) {
       if (err instanceof z.ZodError) throw err;
       request.log.error(err);

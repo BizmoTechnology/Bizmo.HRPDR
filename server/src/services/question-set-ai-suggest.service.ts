@@ -1,3 +1,4 @@
+import { HttpError } from "../lib/http-error.js";
 import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -136,8 +137,10 @@ export async function suggestQuestionSetFromAi(params: {
   });
 
   if (questions.length === 0) {
-    throw new Error(
+    throw new HttpError(
       "Soru bankası boş. Önce Sorular bölümünden soru ekleyin veya içe aktarın.",
+      400,
+      "QUESTION_BANK_EMPTY",
     );
   }
 

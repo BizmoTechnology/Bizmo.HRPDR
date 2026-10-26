@@ -48,7 +48,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { label: "Analitik", href: "/analytics", icon: BarChart3, keywords: ["istatistik", "grafik"] },
       { label: "Raporlar", href: "/reports", icon: FileText, keywords: ["pdf", "çıktı"], requires: "analyze" },
-      { label: "AI asistan", href: "/ai-chat", icon: Sparkles, keywords: ["sohbet", "chat", "terfi", "amir", "aday"] },
+      { label: "AI asistan", href: "/ai-chat", icon: Sparkles, keywords: ["sohbet", "chat", "terfi", "amir", "aday"], requires: "analyze" },
     ],
   },
   {

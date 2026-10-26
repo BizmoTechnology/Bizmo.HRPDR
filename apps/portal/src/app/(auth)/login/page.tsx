@@ -88,7 +88,7 @@ export default function PortalLoginPage() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit(onSubmit)} className="mt-6 space-y-4">
+          <form method="post" onSubmit={handleSubmit(onSubmit)} className="mt-6 space-y-4">
             {/* Sicil no */}
             <div className="bz-form-row">
               <label htmlFor="portal-employee-id" className="bz-label">

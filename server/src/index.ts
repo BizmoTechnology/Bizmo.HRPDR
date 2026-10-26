@@ -2,7 +2,6 @@ import { JWT_ACCESS_SECRET } from "./env.js";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
-import jwt from "@fastify/jwt";
 import cookie from "@fastify/cookie";
 import rateLimit from "@fastify/rate-limit";
 import swagger from "@fastify/swagger";
@@ -10,6 +9,7 @@ import swaggerUi from "@fastify/swagger-ui";
 import fp from "fastify-plugin";
 
 import traceIdPlugin from "./plugins/traceId.js";
+import jwtPlugin from "./plugins/jwt.js";
 import { registerErrorHandlers } from "./plugins/error-handler.js";
 import { authenticate, authenticatePortal } from "./middleware/authenticate.js";
 import authRoutes from "./modules/auth/auth.routes.js";
@@ -74,9 +74,9 @@ await app.register(helmet, {
 
 await app.register(cookie);
 
-await app.register(jwt, {
+await app.register(fp(jwtPlugin), {
   secret: JWT_ACCESS_SECRET,
-  sign: { expiresIn: process.env["JWT_EXPIRES_IN"] ?? "15m" },
+  expiresIn: process.env["JWT_EXPIRES_IN"] ?? "15m",
 });
 
 await app.register(rateLimit, {
@@ -85,20 +85,27 @@ await app.register(rateLimit, {
   hook: "preHandler",
 });
 
-await app.register(swagger, {
-  openapi: {
-    info: { title: "PotansiyelHaritası API", version: "1.1.0" },
-    components: {
-      securitySchemes: {
-        bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "JWT" },
+// API dokümantasyonu (tüm uç noktaların haritası) yalnızca geliştirmede ya da
+// ENABLE_API_DOCS=true ile açılır.
+const apiDocsEnabled =
+  process.env["NODE_ENV"] === "development" || process.env["ENABLE_API_DOCS"] === "true";
+
+if (apiDocsEnabled) {
+  await app.register(swagger, {
+    openapi: {
+      info: { title: "PotansiyelHaritası API", version: "1.1.0" },
+      components: {
+        securitySchemes: {
+          bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "JWT" },
+        },
       },
     },
-  },
-});
+  });
 
-await app.register(swaggerUi, {
-  routePrefix: "/api/docs",
-});
+  await app.register(swaggerUi, {
+    routePrefix: "/api/docs",
+  });
+}
 
 await app.register(fp(traceIdPlugin));
 

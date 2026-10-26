@@ -157,7 +157,7 @@ export default function LoginPage() {
               </div>
             )}
 
-            <form onSubmit={handleSubmit(onSubmit)} className="mt-6 space-y-4">
+            <form method="post" onSubmit={handleSubmit(onSubmit)} className="mt-6 space-y-4">
               {/* E-posta */}
               <div className="bz-form-row">
                 <label htmlFor="login-email" className="bz-label">

@@ -39,7 +39,10 @@ const createSchema = z.object({
   hireDate: emptyToNull(z.coerce.date().nullable().optional()),
   birthDate: emptyToNull(z.coerce.date().nullable().optional()),
   notes: emptyToNull(z.string().max(2000).nullable().optional()),
-  avatarUrl: emptyToNull(z.string().url().max(500).nullable().optional()),
+  // Yalnızca http(s): javascript:/data: bağlantıları kabul edilmez
+  avatarUrl: emptyToNull(
+    z.string().url().max(500).regex(/^https?:\/\//i, "Geçerli bir http(s) adresi girin").nullable().optional(),
+  ),
   portalPassword: emptyToNull(z.string().min(6).max(128).nullable().optional()),
 });
 

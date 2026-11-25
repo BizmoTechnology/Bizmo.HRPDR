@@ -31,6 +31,7 @@ model Organization {
   aiConfigs        AiConfig[]
   aiPromptTemplates AiPromptTemplate[]
   aiChatConversations AiChatConversation[]
+  reviewCycles      ReviewCycle[]
 }
 
 // ─────────────────────────────────────────
@@ -73,6 +74,7 @@ model User {
   notifications        Notification[]       @relation("UserNotifications")
   analysisReviews      AnalysisReview[]     @relation("AnalysisReviewer")
   aiChatConversations  AiChatConversation[]
+  createdReviewCycles  ReviewCycle[]        @relation("ReviewCycleCreator")
 
   @@unique([organizationId, email])
 }
@@ -151,6 +153,11 @@ model Personnel {
   team         Team?       @relation(fields: [teamId], references: [id], onDelete: SetNull)
   teamId       String?
 
+  // Org şeması (360° değerlendirici önerisi): doğrudan yönetici
+  manager       Personnel?  @relation("PersonnelManager", fields: [managerId], references: [id], onDelete: SetNull)
+  managerId     String?
+  directReports Personnel[] @relation("PersonnelManager")
+
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   organizationId String
 
@@ -173,11 +180,14 @@ model Personnel {
   consentRecords      ConsentRecord[]
   passwordResetTokens PasswordResetToken[] @relation("PersonnelPasswordReset")
   notifications       Notification[]       @relation("PersonnelNotifications")
+  reviewSubjects      ReviewSubject[]      @relation("ReviewSubjectPersonnel")
+  reviewAssignments   ReviewAssignment[]   @relation("ReviewAssignmentRater")
 
   @@unique([organizationId, employeeId])
   @@unique([organizationId, email])
   @@index([organizationId])
   @@index([departmentId])
+  @@index([managerId])
 }
 
 // ─────────────────────────────────────────
@@ -263,6 +273,7 @@ model QuestionSet {
 
   items       QuestionSetItem[]
   assessments Assessment[]
+  reviewCycles ReviewCycle[]
 
   @@index([organizationId])
 }
@@ -682,4 +693,153 @@ model AuditLog {
 
   @@index([createdAt])
   @@index([userId])
+}
+
+// ─── 360° değerlendirme ───
+// Çok değerlendiricili, dönemsel değerlendirme. HR/PDR akışından (Assessment /
+// AssessmentSession) bağımsızdır. Değerlendiriciler de Personnel kaydıdır ve
+// personel portalından girer.
+
+enum ReviewFrequency {
+  ANNUAL
+  SEMI_ANNUAL
+  QUARTERLY
+  ADHOC
+}
+
+enum ReviewCycleStatus {
+  DRAFT
+  ACTIVE
+  CLOSED
+}
+
+enum ReviewRelation {
+  SELF
+  MANAGER
+  PEER
+  SUBORDINATE
+}
+
+enum ReviewSubjectStatus {
+  OPEN
+  CLOSED
+  RELEASED
+}
+
+enum ReviewAssignmentStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  DECLINED
+}
+
+model ReviewCycle {
+  id          String            @id @default(cuid())
+  name        String
+  description String?
+  frequency   ReviewFrequency   @default(ADHOC)
+  status      ReviewCycleStatus @default(DRAFT)
+  periodStart DateTime?
+  periodEnd   DateTime?
+  dueAt       DateTime?
+
+  /// Grup ağırlıkları: { SELF, MANAGER, PEER, SUBORDINATE } (0–100)
+  raterWeights       Json
+  /// Eş düzey ve ast grupları en az bu kadar tamamlanmış değerlendirici varsa gösterilir
+  anonymityMinRaters Int      @default(3)
+  includeSelf        Boolean  @default(true)
+  /// null = sistem varsayılanı (Organization.settings); paylaşım mantığı ayrı modülde
+  shareWithEmployee  Boolean?
+
+  questionSet         QuestionSet @relation(fields: [questionSetId], references: [id], onDelete: Restrict)
+  questionSetId       String
+  /// Dönem başlatılınca dondurulan form (QuestionSetSnapshot)
+  questionSetSnapshot Json?
+
+  createdBy   User   @relation("ReviewCycleCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  createdById String
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  organizationId String
+
+  activatedAt DateTime?
+  closedAt    DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  subjects ReviewSubject[]
+
+  @@index([organizationId, status])
+}
+
+model ReviewSubject {
+  id     String              @id @default(cuid())
+  status ReviewSubjectStatus @default(OPEN)
+
+  cycle   ReviewCycle @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  cycleId String
+
+  /// Değerlendirilen kişi
+  personnel   Personnel @relation("ReviewSubjectPersonnel", fields: [personnelId], references: [id], onDelete: Restrict)
+  personnelId String
+
+  releasedAt   DateTime?
+  releasedById String?
+  /// Dönem kapanınca dondurulan anonim özet (SubjectResultSummary)
+  resultJson   Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assignments ReviewAssignment[]
+
+  @@unique([cycleId, personnelId])
+  @@index([personnelId])
+}
+
+model ReviewAssignment {
+  id       String                 @id @default(cuid())
+  relation ReviewRelation
+  status   ReviewAssignmentStatus @default(NOT_STARTED)
+
+  subject   ReviewSubject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  subjectId String
+
+  rater            Personnel @relation("ReviewAssignmentRater", fields: [raterPersonnelId], references: [id], onDelete: Restrict)
+  raterPersonnelId String
+
+  startedAt      DateTime?
+  completedAt    DateTime?
+  declinedAt     DateTime?
+  reminderSentAt DateTime?
+  reminderCount  Int       @default(0)
+
+  /// Değerlendirici başladığında dönemin formundan kopyalanır
+  questionSetSnapshot Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  answers ReviewAnswer[]
+
+  @@unique([subjectId, raterPersonnelId])
+  @@index([raterPersonnelId, status])
+}
+
+model ReviewAnswer {
+  id          String  @id @default(cuid())
+  /// Form anlık görüntüsündeki soru kimliği
+  questionId  String
+  scaleValue  Int?
+  choiceKey   String?
+  textAnswer  String?
+  durationSec Int?
+
+  assignment   ReviewAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  assignmentId String
+
+  answeredAt DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([assignmentId, questionId])
 }

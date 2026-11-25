@@ -3,6 +3,7 @@ import "../src/env.js";
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { seedRespondents } from "./seed-respondents.js";
+import { seedReviews } from "./seed-reviews.js";
 
 const prisma = new PrismaClient();
 
@@ -321,6 +322,9 @@ async function main() {
     });
     console.log("✅ Bildirimler (admin + İK)");
   }
+
+  // ── Org şeması ve örnek 360° dönemi ──
+  await seedReviews({ prisma, organizationId: org.id, createdById: hrManager.id, now: new Date() });
 
   console.log("\n🎉 Seed tamamlandı!");
   console.log("─────────────────────────────────────────");

@@ -17,6 +17,7 @@ import {
   useMarkAllNotificationsRead,
 } from "@/hooks/use-api";
 import { toast } from "sonner";
+import { SharingSettingsCard } from "@/components/sharing/SharingSettingsCard";
 
 interface NotificationUi {
   id: string;
@@ -198,6 +199,11 @@ export default function SettingsPage() {
                 </dd>
               </dl>
             </GlassCard>
+          </motion.div>
+
+          {/* Personelle paylaşım */}
+          <motion.div variants={item} className="min-w-0">
+            <SharingSettingsCard />
           </motion.div>
 
           {/* Güvenlik */}

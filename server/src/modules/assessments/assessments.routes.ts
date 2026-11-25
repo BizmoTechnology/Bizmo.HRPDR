@@ -2,6 +2,7 @@ import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
 import { prisma } from "../../lib/prisma.js";
 import { assertQuestionSetInOrg } from "../../lib/tenant.js";
+import { shareOverrideSchema } from "../../lib/sharing.js";
 import { requireRoleForWrites, ROLE_GROUPS } from "../../middleware/authenticate.js";
 
 const optionalDate = z.preprocess(
@@ -18,6 +19,8 @@ const createSchema = z
     questionSetId: z.string().min(1),
     startsAt: optionalDate,
     endsAt: optionalDate,
+    /** null/eksik = kurum varsayılanı, true = paylaş, false = paylaşma */
+    shareWithEmployee: shareOverrideSchema.optional(),
   })
   .refine((v) => !v.startsAt || !v.endsAt || v.startsAt < v.endsAt, {
     message: "Bitiş tarihi başlangıçtan sonra olmalı",
@@ -30,6 +33,7 @@ const updateSchema = z.object({
   status: statusEnum.optional(),
   startsAt: optionalDate,
   endsAt: optionalDate,
+  shareWithEmployee: shareOverrideSchema.optional(),
 });
 
 const assignSchema = z.object({
@@ -124,6 +128,7 @@ const assessmentRoutes: FastifyPluginAsync = async (fastify) => {
         status: "DRAFT",
         startsAt: body.startsAt ?? null,
         endsAt: body.endsAt ?? null,
+        shareWithEmployee: body.shareWithEmployee ?? null,
       },
       include: {
         questionSet: { select: { id: true, name: true } },
@@ -220,6 +225,7 @@ const assessmentRoutes: FastifyPluginAsync = async (fastify) => {
         ...(body.status !== undefined && { status: body.status }),
         ...(body.startsAt !== undefined && { startsAt: body.startsAt }),
         ...(body.endsAt !== undefined && { endsAt: body.endsAt }),
+        ...(body.shareWithEmployee !== undefined && { shareWithEmployee: body.shareWithEmployee }),
       },
     });
 

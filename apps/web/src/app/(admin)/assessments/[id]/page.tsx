@@ -36,6 +36,8 @@ import {
   usePersonnelList,
   useUpdateAssessment,
 } from "@/hooks/use-api";
+import { ShareStatusChip, ShareWithEmployeeControl } from "@/components/sharing/ShareWithEmployee";
+import type { ShareOverride } from "@/hooks/use-sharing";
 
 const SessionDetailPanel = dynamic(
   () =>
@@ -112,6 +114,7 @@ export default function AssessmentDetailPage() {
 
   const [assignOpen, setAssignOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [editShare, setEditShare] = useState<ShareOverride>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [selectedPersonnel, setSelectedPersonnel] = useState<string[]>([]);
@@ -211,6 +214,7 @@ export default function AssessmentDetailPage() {
         ? toDatetimeLocalString(new Date(assessment.endsAt))
         : "",
     });
+    setEditShare(assessment.shareWithEmployee ?? null);
   }, [assessment, editOpen, resetEditForm]);
 
   const onEditSave = async (values: EditFormValues) => {
@@ -224,6 +228,7 @@ export default function AssessmentDetailPage() {
           status: values.status,
           startsAt: values.startsAt ? new Date(values.startsAt).toISOString() : null,
           endsAt: values.endsAt ? new Date(values.endsAt).toISOString() : null,
+          shareWithEmployee: editShare,
         },
       });
       toast.success("Değerlendirme güncellendi");
@@ -301,6 +306,7 @@ export default function AssessmentDetailPage() {
               >
                 {badge.label}
               </span>
+              <ShareStatusChip value={assessment.shareWithEmployee} />
             </div>
           </div>
 
@@ -888,6 +894,8 @@ export default function AssessmentDetailPage() {
                         )}
                       </div>
                     </div>
+
+                    <ShareWithEmployeeControl value={editShare} onChange={setEditShare} />
 
                     <p className="bz-callout">
                       Soru seti bu ekrandan değiştirilemez; gerekirse yeni bir

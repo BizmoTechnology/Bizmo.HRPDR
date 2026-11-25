@@ -3,20 +3,30 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Check, BrainCircuit, Clock, Sparkles, LogIn } from "lucide-react";
+import { Check, BrainCircuit, Clock, Sparkles, LayoutDashboard, LogOut } from "lucide-react";
 import { GlassCard } from "@ph/ui";
 import { AppMark } from "@/components/AppMark";
 import { getPersonnel, logout } from "@/lib/api";
 
+/** Ortak cihaz (kiosk/tablet) kurulumu: test bitince oturum otomatik kapanır */
+const KIOSK_MODE = process.env["NEXT_PUBLIC_PORTAL_KIOSK"] === "true";
+
 export default function CompletePage() {
   const router = useRouter();
   const [personnel, setPersonnel] = useState<{ firstName: string } | null>(null);
+  const [loggingOut, setLoggingOut] = useState(false);
 
   useEffect(() => {
     setPersonnel(getPersonnel());
-    // Test bitti: ortak cihazda (kiosk/tablet) bir sonraki kişi bu oturumu kullanamasın
-    void logout();
+    // Kiosk modunda bir sonraki kişi bu oturumu kullanamasın
+    if (KIOSK_MODE) void logout();
   }, []);
+
+  const handleLogout = async () => {
+    setLoggingOut(true);
+    await logout();
+    router.replace("/login");
+  };
 
   const steps = [
     {
@@ -99,14 +109,41 @@ export default function CompletePage() {
             <strong className="whitespace-nowrap font-semibold text-foreground">Bu, senin için!</strong>
           </p>
 
-          <button
-            type="button"
-            onClick={() => router.replace("/login")}
-            className="bz-btn bz-btn--ghost bz-btn--sm mt-5"
-          >
-            <LogIn />
-            Giriş ekranına dön
-          </button>
+          {KIOSK_MODE ? (
+            <button
+              type="button"
+              onClick={() => router.replace("/login")}
+              className="bz-btn bz-btn--primary bz-btn--block mt-5"
+            >
+              <LogOut />
+              Giriş ekranına dön
+            </button>
+          ) : (
+            <div className="mt-5 flex flex-col gap-2.5 sm:flex-row">
+              <button
+                type="button"
+                onClick={() => router.replace("/home")}
+                className="bz-btn bz-btn--primary flex-1"
+              >
+                <LayoutDashboard />
+                Panelime dön
+              </button>
+              <button
+                type="button"
+                onClick={handleLogout}
+                disabled={loggingOut}
+                className="bz-btn flex-1"
+              >
+                <LogOut />
+                Çıkış yap
+              </button>
+            </div>
+          )}
+          {!KIOSK_MODE && (
+            <p className="bz-hint mt-3">
+              Ortak bir cihaz kullanıyorsan çıkış yapmayı unutma.
+            </p>
+          )}
         </GlassCard>
       </motion.div>
     </main>

@@ -394,7 +394,7 @@ const answerSchema = z.object({
 });
 
 /** Personelin şu anda erişebileceği oturum koşulu */
-function portalSessionWhere(personnelId: string, now: Date) {
+export function portalSessionWhere(personnelId: string, now: Date) {
   return {
     personnelId,
     personnel: { deletedAt: null },

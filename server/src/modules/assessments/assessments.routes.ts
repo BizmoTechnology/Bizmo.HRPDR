@@ -329,9 +329,14 @@ const assessmentRoutes: FastifyPluginAsync = async (fastify) => {
       });
     }
 
-    // Yalnızca aynı organizasyondaki, silinmemiş personel atanabilir
+    // Yalnızca aynı organizasyondaki, silinmemiş ve işten ayrılmamış personel atanabilir
     const validPersonnel = await prisma.personnel.findMany({
-      where: { id: { in: personnelIds }, organizationId: orgId, deletedAt: null },
+      where: {
+        id: { in: personnelIds },
+        organizationId: orgId,
+        deletedAt: null,
+        status: { not: "TERMINATED" },
+      },
       select: { id: true },
     });
     const validIds = new Set(validPersonnel.map((p) => p.id));
@@ -339,7 +344,7 @@ const assessmentRoutes: FastifyPluginAsync = async (fastify) => {
     if (invalidCount > 0) {
       return reply.status(400).send({
         code: "INVALID_PERSONNEL",
-        message: `${invalidCount} personel bulunamadı veya silinmiş`,
+        message: `${invalidCount} personel bulunamadı, arşivlenmiş veya işten ayrılmış`,
         traceId: request.traceId,
       });
     }

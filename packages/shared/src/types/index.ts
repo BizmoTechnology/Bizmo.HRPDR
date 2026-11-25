@@ -9,7 +9,17 @@ export type UserRole =
   | "ANALYST"
   | "VIEWER";
 
-export type PersonnelStatus = "ACTIVE" | "INACTIVE" | "ON_LEAVE";
+/** TERMINATED: işten ayrıldı. Formdan seçilemez; `POST /api/personnel/:id/terminate` ile atanır. */
+export type PersonnelStatus = "ACTIVE" | "INACTIVE" | "ON_LEAVE" | "TERMINATED";
+
+/** İşten ayrılış nedeni (Personnel.terminationReason) */
+export type TerminationReason =
+  | "RESIGNATION"
+  | "DISMISSAL"
+  | "MUTUAL_AGREEMENT"
+  | "CONTRACT_END"
+  | "RETIREMENT"
+  | "OTHER";
 
 export type PersonnelShift =
   | "NONE"
@@ -144,7 +154,11 @@ export interface Personnel {
   birthDate: string | null;
   notes: string | null;
   avatarUrl: string | null;
+  terminationDate: string | null;
+  terminationReason: TerminationReason | null;
+  terminationNote: string | null;
   importSource: string | null;
+  deletedAt?: string | null;
   createdAt: string;
   updatedAt: string;
   department?: Department;

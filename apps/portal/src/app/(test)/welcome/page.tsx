@@ -10,6 +10,7 @@ import {
 import { toast } from "sonner";
 import { GlassCard } from "@ph/ui";
 import { AppMark } from "@/components/AppMark";
+import { ReviewsEntryLink } from "@/components/ReviewsEntryLink";
 import { api, errorMessage, getPersonnel, hasToken, logout } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -335,6 +336,8 @@ export default function WelcomePage() {
             </>
           )}
         </GlassCard>
+
+        {!loading && <ReviewsEntryLink />}
 
         <div className="mt-4 flex justify-center">
           <button

@@ -173,6 +173,7 @@ model Personnel {
   consentRecords      ConsentRecord[]
   passwordResetTokens PasswordResetToken[] @relation("PersonnelPasswordReset")
   notifications       Notification[]       @relation("PersonnelNotifications")
+  careerPlans         CareerPlan[]
 
   @@unique([organizationId, employeeId])
   @@unique([organizationId, email])
@@ -682,4 +683,48 @@ model AuditLog {
 
   @@index([createdAt])
   @@index([userId])
+}
+
+// ─── Kariyer planı ───
+// AI önerir, İK karar verir: öneri (aiSuggestion) yalnızca İK onaylı ve AI rızalı
+// değerlendirmelerden üretilir; İK taslağa alır, düzenler ve onaylar.
+// Her plan bir sürümdür (version); yeni sürüm onaylanınca önceki onaylı plan arşivlenir.
+
+enum CareerPlanStatus {
+  DRAFT
+  APPROVED
+  ARCHIVED
+}
+
+model CareerPlan {
+  id             String           @id @default(cuid())
+  personnel      Personnel        @relation(fields: [personnelId], references: [id], onDelete: Cascade)
+  personnelId    String
+  /// Kiracı yalıtımı: her sorgu organizationId ile filtrelenir
+  organizationId String
+  status         CareerPlanStatus @default(DRAFT)
+  targetRole     String?
+  horizonMonths  Int              @default(12)
+  /// Sıralı adımlar: [{ id, title, type: TRAINING|MENTORING|PROJECT|ROLE|OTHER, targetDate, status: TODO|IN_PROGRESS|DONE, note }]
+  steps          Json             @default("[]")
+  /// Son AI önerisi (önizleme); İK "Taslağa al" deyince adımlara kopyalanır
+  aiSuggestion   Json?
+  aiModel        String?
+  aiSuggestedAt  DateTime?
+  /// Öneride kullanılan kaynaklar (oturum kimlikleri, değerlendirme adları, tarihler)
+  sourceSummary  Json?
+  /// null: kurum varsayılanı (paylaşım mantığı ayrı modülde)
+  shareWithEmployee Boolean?
+  version        Int              @default(1)
+  /// Bu sürümün kopyalandığı önceki sürüm
+  basedOnVersion Int?
+  createdById    String?
+  approvedById   String?
+  approvedAt     DateTime?
+  archivedAt     DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@unique([personnelId, version])
+  @@index([organizationId, personnelId])
 }

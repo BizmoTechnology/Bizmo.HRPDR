@@ -27,6 +27,7 @@ import reportsRoutes from "./modules/reports/reports.routes.js";
 import aiConfigRoutes, { aiStatusRoutes } from "./modules/ai-config/ai-config.routes.js";
 import notificationsRoutes from "./modules/notifications/notifications.routes.js";
 import aiChatRoutes from "./modules/ai-chat/ai-chat.routes.js";
+import careerPlansRoutes from "./modules/career-plans/career-plans.routes.js";
 import { requeueStaleAnalyses } from "./services/session-analysis.service.js";
 
 /** TRUST_PROXY: boş/false → güvenme, sayı → proxy atlama sayısı (nginx için 1), aksi halde IP/CIDR listesi */
@@ -147,6 +148,7 @@ await app.register(aiConfigRoutes, { prefix: "/api/ai-config" });
 await app.register(aiStatusRoutes, { prefix: "/api/ai-status" });
 await app.register(notificationsRoutes, { prefix: "/api/notifications" });
 await app.register(aiChatRoutes, { prefix: "/api/ai-chat" });
+await app.register(careerPlansRoutes, { prefix: "/api/personnel/:personnelId/career-plans" });
 
 // ── Start ─────────────────────────────────────────
 

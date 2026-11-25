@@ -4,20 +4,74 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 import { motion } from "framer-motion";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Plus, Search, UserX, SearchX } from "lucide-react";
+import { format } from "date-fns";
+import { tr } from "date-fns/locale";
+import { Plus, Search, UserX, SearchX, UserMinus, Archive } from "lucide-react";
+import { TERMINATION_REASON_LABELS } from "@ph/shared";
 import { Pagination } from "@/components/ui/Pagination";
+import { useDepartmentList } from "@/hooks/use-api";
 import {
-  usePersonnelList,
-  useDepartmentList,
-  type PersonnelListParams,
-} from "@/hooks/use-api";
+  usePersonnelListView,
+  usePersonnelStatusCounts,
+  type PersonnelListRow,
+  type PersonnelListView,
+  type PersonnelListViewParams,
+} from "@/hooks/use-personnel-history";
+import { useAuthStore } from "@/store/auth.store";
 
 /** Personel durumu → Bizmo çipi (DESIGN.md §13). Pasif bir hata değildir: nötr çip. */
 const STATUS_LABELS: Record<string, { label: string; tone: string }> = {
   ACTIVE: { label: "Aktif", tone: "bz-chip--success" },
   INACTIVE: { label: "Pasif", tone: "" },
   ON_LEAVE: { label: "İzinli", tone: "bz-chip--warning" },
+  TERMINATED: { label: "Ayrıldı", tone: "bz-chip--danger" },
 };
+
+/** Arşiv (soft-deleted kayıtlar) yalnız bu rollere: sunucudaki ARCHIVE_ROLES ile aynı */
+const ARCHIVE_ROLES = new Set(["SUPER_ADMIN", "ADMIN"]);
+
+const VIEWS: { key: PersonnelListView; label: string }[] = [
+  { key: "current", label: "Çalışanlar" },
+  { key: "terminated", label: "Ayrılanlar" },
+  { key: "archived", label: "Arşiv" },
+];
+
+const fmtDate = (iso: string | null) =>
+  iso ? format(new Date(iso), "d MMM yyyy", { locale: tr }) : "—";
+
+/** Arşivdeki kayıt durumundan bağımsız olarak "Arşivde" gösterilir */
+function statusChip(p: PersonnelListRow, view: PersonnelListView) {
+  if (view === "archived" || p.deletedAt) return { label: "Arşivde", tone: "" };
+  return STATUS_LABELS[p.status] ?? { label: p.status, tone: "" };
+}
+
+/** Görünüme göre son sütun: deneyim · ayrılış · arşivlenme */
+function lastColumn(view: PersonnelListView) {
+  return view === "terminated" ? "Ayrılış" : view === "archived" ? "Arşivlenme" : "Deneyim";
+}
+
+function LastCell({ p, view }: { p: PersonnelListRow; view: PersonnelListView }) {
+  if (view === "terminated") {
+    return (
+      <span className="whitespace-nowrap tabular-nums">
+        {fmtDate(p.terminationDate)}
+        {p.terminationReason && (
+          <span className="block text-[12px] text-fg3">
+            {TERMINATION_REASON_LABELS[p.terminationReason]}
+          </span>
+        )}
+      </span>
+    );
+  }
+  if (view === "archived") {
+    return <span className="whitespace-nowrap tabular-nums">{fmtDate(p.deletedAt)}</span>;
+  }
+  return (
+    <>
+      {p.experienceYear} <span className="text-fg3">yıl</span>
+    </>
+  );
+}
 
 const container = {
   hidden: { opacity: 0 },
@@ -63,19 +117,43 @@ export default function PersonnelPage() {
     };
   }, []);
 
-  const params: PersonnelListParams = useMemo(
+  const role = useAuthStore((st) => st.user?.role);
+  const canSeeArchive = !!role && ARCHIVE_ROLES.has(role);
+  const rawView = searchParams.get("view");
+  const view: PersonnelListView =
+    rawView === "terminated" || (rawView === "archived" && canSeeArchive)
+      ? rawView
+      : "current";
+
+  const params: PersonnelListViewParams = useMemo(
     () => ({
+      view,
       page: Number(searchParams.get("page")) || 1,
       pageSize: 20,
       search: searchParams.get("search") || undefined,
-      status: searchParams.get("status") || undefined,
+      // Durum süzgeci yalnız çalışanlar görünümünde
+      status: view === "current" ? searchParams.get("status") || undefined : undefined,
       departmentId: searchParams.get("departmentId") || undefined,
     }),
-    [searchParams]
+    [searchParams, view]
   );
 
-  const { data, isLoading } = usePersonnelList(params);
+  const { data, isLoading } = usePersonnelListView(params);
+  const { data: counts } = usePersonnelStatusCounts();
   const { data: departments } = useDepartmentList();
+  const views = VIEWS.filter((v) => v.key !== "archived" || canSeeArchive);
+  const countFor = (key: PersonnelListView) =>
+    key === "current" ? counts?.total : key === "terminated" ? counts?.terminated : counts?.archived;
+
+  const selectView = (key: PersonnelListView) => {
+    const sp = new URLSearchParams(window.location.search);
+    if (key === "current") sp.delete("view");
+    else sp.set("view", key);
+    sp.delete("page");
+    sp.delete("status");
+    const qs = sp.toString();
+    router.replace(`/personnel${qs ? `?${qs}` : ""}`);
+  };
 
   const updateFilter = useCallback(
     (key: string, value: string) => {
@@ -96,6 +174,13 @@ export default function PersonnelPage() {
   const totalPages = data ? Math.ceil(data.total / data.pageSize) : 0;
   const currentPage = data?.page ?? 1;
   const hasFilters = !!(params.search || params.status || params.departmentId);
+  const subtitle = !data
+    ? "Yükleniyor..."
+    : view === "terminated"
+      ? `${data.total} ayrılan personel`
+      : view === "archived"
+        ? `${data.total} arşivlenmiş kayıt`
+        : `${data.total} personel kayıtlı`;
   const isEmpty = !isLoading && !data?.items?.length;
 
   return (
@@ -109,9 +194,7 @@ export default function PersonnelPage() {
       >
         <div className="bz-page-header__text">
           <h1 className="bz-page-header__title">Personel yönetimi</h1>
-          <p className="bz-page-header__sub tabular-nums">
-            {data ? `${data.total} personel kayıtlı` : "Yükleniyor..."}
-          </p>
+          <p className="bz-page-header__sub tabular-nums">{subtitle}</p>
         </div>
         <div className="bz-page-header__actions">
           <Link href="/personnel/new" className="bz-btn bz-btn--primary">
@@ -127,6 +210,48 @@ export default function PersonnelPage() {
         initial="hidden"
         animate="show"
       >
+        {/* Görünüm: çalışanlar · ayrılanlar · arşiv (DESIGN.md §42) */}
+        <motion.div variants={item}>
+          <div className="bz-tabs" role="tablist" aria-label="Personel görünümü">
+            {views.map((v) => {
+              const n = countFor(v.key);
+              return (
+                <button
+                  key={v.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={view === v.key}
+                  tabIndex={view === v.key ? 0 : -1}
+                  className="bz-tab"
+                  onClick={() => selectView(v.key)}
+                  onKeyDown={(e) => {
+                    const i = views.findIndex((x) => x.key === view);
+                    const next =
+                      e.key === "ArrowRight"
+                        ? views[(i + 1) % views.length]
+                        : e.key === "ArrowLeft"
+                          ? views[(i - 1 + views.length) % views.length]
+                          : null;
+                    if (!next) return;
+                    e.preventDefault();
+                    selectView(next.key);
+                    const btns =
+                      e.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>(
+                        '[role="tab"]'
+                      );
+                    btns?.[views.indexOf(next)]?.focus();
+                  }}
+                >
+                  {v.key === "terminated" && <UserMinus className="h-4 w-4" aria-hidden="true" />}
+                  {v.key === "archived" && <Archive className="h-4 w-4" aria-hidden="true" />}
+                  {v.label}
+                  {n != null && <span className="bz-tab__count">{n}</span>}
+                </button>
+              );
+            })}
+          </div>
+        </motion.div>
+
         {/* Araç çubuğu: arama + süzgeçler (DESIGN.md §26.3) */}
         <motion.div
           variants={item}
@@ -170,17 +295,19 @@ export default function PersonnelPage() {
             ))}
           </select>
 
-          <select
-            aria-label="Durum"
-            value={params.status ?? ""}
-            onChange={(e) => updateFilter("status", e.target.value)}
-            className="bz-field bz-field--sm min-w-0 md:w-[160px]"
-          >
-            <option value="">Tüm durumlar</option>
-            <option value="ACTIVE">Aktif</option>
-            <option value="INACTIVE">Pasif</option>
-            <option value="ON_LEAVE">İzinli</option>
-          </select>
+          {view === "current" && (
+            <select
+              aria-label="Durum"
+              value={params.status ?? ""}
+              onChange={(e) => updateFilter("status", e.target.value)}
+              className="bz-field bz-field--sm min-w-0 md:w-[160px]"
+            >
+              <option value="">Tüm durumlar</option>
+              <option value="ACTIVE">Aktif</option>
+              <option value="INACTIVE">Pasif</option>
+              <option value="ON_LEAVE">İzinli</option>
+            </select>
+          )}
         </motion.div>
 
         {/* Liste */}
@@ -198,10 +325,26 @@ export default function PersonnelPage() {
                   <button
                     type="button"
                     className="bz-btn bz-btn--soft"
-                    onClick={() => router.push("/personnel")}
+                    onClick={() =>
+                      router.push(view === "current" ? "/personnel" : `/personnel?view=${view}`)
+                    }
                   >
                     Süzgeçleri temizle
                   </button>
+                </div>
+              ) : view === "terminated" ? (
+                <div className="bz-empty">
+                  <UserMinus className="h-8 w-8 text-fg3" aria-hidden="true" />
+                  <p className="bz-empty__title">Ayrılan personel yok</p>
+                  <p className="bz-empty__text">
+                    İşten çıkarılan personel ayrılış tarihi ve nedeniyle burada listelenir.
+                  </p>
+                </div>
+              ) : view === "archived" ? (
+                <div className="bz-empty">
+                  <Archive className="h-8 w-8 text-fg3" aria-hidden="true" />
+                  <p className="bz-empty__title">Arşiv boş</p>
+                  <p className="bz-empty__text">Arşivlenen personel kayıtları burada listelenir.</p>
                 </div>
               ) : (
                 <div className="bz-empty">
@@ -232,10 +375,7 @@ export default function PersonnelPage() {
                       </li>
                     ))
                   : data.items.map((p) => {
-                      const statusInfo = STATUS_LABELS[p.status] ?? {
-                        label: p.status,
-                        tone: "",
-                      };
+                      const statusInfo = statusChip(p, view);
                       return (
                         <li key={p.id}>
                           <Link
@@ -252,6 +392,15 @@ export default function PersonnelPage() {
                               </span>
                               <span className="bz-list-item__sub block">
                                 {p.position} · {p.department?.name ?? "—"}
+                                {view === "terminated" && (
+                                  <span className="tabular-nums">
+                                    {" "}
+                                    · Ayrılış {fmtDate(p.terminationDate)}
+                                  </span>
+                                )}
+                                {view === "archived" && (
+                                  <span className="tabular-nums"> · Arşiv {fmtDate(p.deletedAt)}</span>
+                                )}
                               </span>
                             </span>
                             <span className="bz-list-item__end">
@@ -276,7 +425,9 @@ export default function PersonnelPage() {
                       <th>Pozisyon</th>
                       <th>Departman</th>
                       <th>Durum</th>
-                      <th className="is-num">Deneyim</th>
+                      <th className={view === "current" ? "is-num" : undefined}>
+                        {lastColumn(view)}
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -285,10 +436,7 @@ export default function PersonnelPage() {
                           <TableRowSkeleton key={i} />
                         ))
                       : data.items.map((p) => {
-                          const statusInfo = STATUS_LABELS[p.status] ?? {
-                            label: p.status,
-                            tone: "",
-                          };
+                          const statusInfo = statusChip(p, view);
                           return (
                             <tr
                               key={p.id}
@@ -326,9 +474,8 @@ export default function PersonnelPage() {
                                   {statusInfo.label}
                                 </span>
                               </td>
-                              <td className="is-num">
-                                {p.experienceYear}{" "}
-                                <span className="text-fg3">yıl</span>
+                              <td className={view === "current" ? "is-num" : undefined}>
+                                <LastCell p={p} view={view} />
                               </td>
                             </tr>
                           );

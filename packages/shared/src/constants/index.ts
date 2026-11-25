@@ -1,4 +1,10 @@
-import type { QuestionDimension, PersonnelShift, UserRole } from "../types";
+import type {
+  QuestionDimension,
+  PersonnelShift,
+  PersonnelStatus,
+  TerminationReason,
+  UserRole,
+} from "../types";
 
 // ─────────────────────────────────────────
 // DIMENSION METADATA
@@ -78,6 +84,35 @@ export const SHIFT_LABELS: Record<PersonnelShift, string> = {
   AFTERNOON: "Öğleden Sonra",
   NIGHT: "Gece",
   ROTATING: "Döner",
+};
+
+// ─────────────────────────────────────────
+// PERSONEL DURUMU VE AYRILIŞ
+// ─────────────────────────────────────────
+
+export const PERSONNEL_STATUS_LABELS: Record<PersonnelStatus, string> = {
+  ACTIVE: "Aktif",
+  INACTIVE: "Pasif",
+  ON_LEAVE: "İzinli",
+  TERMINATED: "Ayrıldı",
+};
+
+export const TERMINATION_REASONS: TerminationReason[] = [
+  "RESIGNATION",
+  "DISMISSAL",
+  "MUTUAL_AGREEMENT",
+  "CONTRACT_END",
+  "RETIREMENT",
+  "OTHER",
+];
+
+export const TERMINATION_REASON_LABELS: Record<TerminationReason, string> = {
+  RESIGNATION: "İstifa",
+  DISMISSAL: "İşveren feshi",
+  MUTUAL_AGREEMENT: "Karşılıklı anlaşma",
+  CONTRACT_END: "Sözleşme sonu",
+  RETIREMENT: "Emeklilik",
+  OTHER: "Diğer",
 };
 
 // ─────────────────────────────────────────

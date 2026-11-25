@@ -125,6 +125,8 @@ enum PersonnelStatus {
   ACTIVE
   INACTIVE
   ON_LEAVE
+  /// İşten ayrıldı: portal kapalı, kayıt salt okunur (geçmiş korunur)
+  TERMINATED
 }
 
 enum PersonnelShift {
@@ -165,6 +167,11 @@ model Personnel {
   birthDate  DateTime?
   notes      String?
   avatarUrl  String?
+
+  /// İşten ayrılış (status = TERMINATED): tarih, neden kodu, serbest not
+  terminationDate   DateTime?
+  terminationReason String?
+  terminationNote   String?
 
   portalPasswordHash String?  @map("portal_password_hash")
   portalRefreshToken String?

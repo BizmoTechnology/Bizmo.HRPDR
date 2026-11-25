@@ -105,6 +105,26 @@ export const createPersonnelSchema = z.object({
 
 export const updatePersonnelSchema = createPersonnelSchema.partial();
 
+/** İşten çıkarma: tarih + neden zorunlu, not isteğe bağlı (sunucu: POST /api/personnel/:id/terminate) */
+export const terminatePersonnelSchema = z.object({
+  date: z
+    .string()
+    .min(1, "Ayrılış tarihi zorunlu")
+    .refine((v) => !Number.isNaN(Date.parse(v)), "Geçerli bir tarih girin"),
+  reason: z.enum(
+    [
+      "RESIGNATION",
+      "DISMISSAL",
+      "MUTUAL_AGREEMENT",
+      "CONTRACT_END",
+      "RETIREMENT",
+      "OTHER",
+    ],
+    { errorMap: () => ({ message: "Ayrılış nedenini seçin" }) },
+  ),
+  note: emptyToNull(z.string().trim().max(2000).nullable().optional()),
+});
+
 export const personnelImportRowSchema = z.object({
   sicil_no: z.string().min(1),
   ad: z.string().min(1),
@@ -300,6 +320,7 @@ export type LoginInput = z.infer<typeof loginSchema>;
 export type PortalLoginInput = z.infer<typeof portalLoginSchema>;
 export type CreatePersonnelInput = z.infer<typeof createPersonnelSchema>;
 export type UpdatePersonnelInput = z.infer<typeof updatePersonnelSchema>;
+export type TerminatePersonnelInput = z.input<typeof terminatePersonnelSchema>;
 export type PersonnelImportRow = z.infer<typeof personnelImportRowSchema>;
 export type CreateQuestionInput = z.infer<typeof createQuestionSchema>;
 export type CreateQuestionSetInput = z.infer<typeof createQuestionSetSchema>;

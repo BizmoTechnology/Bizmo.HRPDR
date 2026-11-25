@@ -191,6 +191,12 @@ export default function AssessmentDetailPage() {
     },
   });
 
+  // Personel geçmişinden gelen bağlantı: ?session=<id> oturum panelini açar
+  useEffect(() => {
+    const sessionParam = searchParams.get("session");
+    if (sessionParam) setSelectedSessionId(sessionParam);
+  }, [searchParams]);
+
   useEffect(() => {
     if (searchParams.get("edit") === "true") {
       setEditOpen(true);

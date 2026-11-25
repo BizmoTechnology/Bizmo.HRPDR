@@ -4,6 +4,7 @@ import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { seedRespondents } from "./seed-respondents.js";
 import { seedReviews } from "./seed-reviews.js";
+import { seedHistory } from "./seed-history.js";
 
 const prisma = new PrismaClient();
 
@@ -321,6 +322,15 @@ async function main() {
       update: {},
     });
     console.log("✅ Bildirimler (admin + İK)");
+
+    // Personel geçmişi: önceki dönem oturumları (trend) + işten ayrılmış örnek personel (P004)
+    await seedHistory({
+      prisma,
+      organizationId: org.id,
+      questionSetId: questionSet.id,
+      createdById: admin.id,
+      now,
+    });
   }
 
   // ── Org şeması ve örnek 360° dönemi ──
@@ -330,7 +340,7 @@ async function main() {
   console.log("─────────────────────────────────────────");
   console.log("Admin:    admin@example.com / Admin1234!");
   console.log("HR Mgr:   hr@example.com   / Hr1234567!");
-  console.log("Portal:   P001–P008        / Portal123!");
+  console.log("Portal:   P001–P008        / Portal123!  (P004 ayrıldı: giriş kapalı)");
   console.log("─────────────────────────────────────────");
 }
 

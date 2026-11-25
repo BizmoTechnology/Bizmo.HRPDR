@@ -43,7 +43,7 @@ export default function PortalLoginPage() {
       const { accessToken, refreshToken, personnel } = res.data.data;
       saveSession({ accessToken, refreshToken, personnel });
       toast.success(`Hoş geldiniz, ${personnel.firstName}!`);
-      router.replace("/welcome");
+      router.replace("/home");
     } catch (err: unknown) {
       // Giriş hatası kart içinde kalıcı uyarı olarak gösterilir (DESIGN.md §39: durumlar .bz-alert ile)
       setFormError(errorMessage(err, "Sicil numarası veya şifre hatalı"));

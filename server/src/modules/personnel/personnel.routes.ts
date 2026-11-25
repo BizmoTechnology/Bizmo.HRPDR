@@ -1,16 +1,47 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
+import type { Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { prisma } from "../../lib/prisma.js";
 import { isHttpError } from "../../lib/http-error.js";
 import { assertDepartmentAndTeam } from "../../lib/tenant.js";
-import { computeOverallScore, readDimensionScores } from "../../services/scoring.service.js";
-import { requireRoleForWrites, ROLE_GROUPS } from "../../middleware/authenticate.js";
+import {
+  computeOverallScore,
+  dimensionWeightMap,
+  readDimensionScores,
+} from "../../services/scoring.service.js";
+import { parseSnapshot } from "../../services/session-questions.service.js";
+import { getPersonnelHistory } from "../../services/personnel-history.service.js";
+import {
+  requireRoleForWrites,
+  ROLE_GROUPS,
+  type UserRole,
+} from "../../middleware/authenticate.js";
 
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
 
+/**
+ * Formdan seçilebilen durumlar. TERMINATED yalnız `POST /:id/terminate` ile atanır
+ * (tarih + neden zorunlu), geri dönüş `POST /:id/reactivate` ile.
+ */
 const personnelStatusEnum = z.enum(["ACTIVE", "INACTIVE", "ON_LEAVE"]);
+const LIST_STATUS_FILTERS = new Set(["ACTIVE", "INACTIVE", "ON_LEAVE", "TERMINATED"]);
+
+/** Arşiv (soft-deleted kayıtlar) yalnız bu rollere açık */
+const ARCHIVE_ROLES: readonly UserRole[] = ["SUPER_ADMIN", "ADMIN"];
+
+const terminationReasonEnum = z.enum([
+  "RESIGNATION",
+  "DISMISSAL",
+  "MUTUAL_AGREEMENT",
+  "CONTRACT_END",
+  "RETIREMENT",
+  "OTHER",
+]);
+
+/** Ayrılan personelin açık HR/PDR oturumları bu durumlardan EXPIRED'a çekilir */
+const OPEN_SESSION_STATUSES = ["NOT_STARTED", "IN_PROGRESS", "PAUSED"] as const;
 const personnelShiftEnum = z.enum([
   "NONE",
   "MORNING",
@@ -52,6 +83,26 @@ const portalPasswordSchema = z.object({
 
 const updateSchema = createSchema.partial();
 
+const terminateSchema = z.object({
+  date: z.coerce.date({ errorMap: () => ({ message: "Geçerli bir ayrılış tarihi girin" }) }),
+  reason: z.enum(terminationReasonEnum.options, {
+    errorMap: () => ({ message: "Geçerli bir ayrılış nedeni seçin" }),
+  }),
+  note: emptyToNull(z.string().trim().max(2000).nullable().optional()),
+  /** Kişi yöneticiyse doğrudan astlarının managerId'si boşaltılsın mı (İK onayıyla) */
+  clearDirectReports: z.boolean().optional(),
+});
+
+function hasRole(role: string | undefined, roles: readonly string[]) {
+  return !!role && roles.includes(role);
+}
+
+/** Ayrılan personelin kaydı salt okunurdur; değişiklik için önce yeniden etkinleştirilir */
+const TERMINATED_READ_ONLY = {
+  code: "PERSONNEL_TERMINATED",
+  message: "İşten ayrılan personelin kaydı salt okunurdur. Değişiklik için önce yeniden etkinleştirin.",
+} as const;
+
 /** Şifre ve token özetlerini yanıttan çıkarır */
 function toPublicPersonnel<T extends { portalPasswordHash: string | null; portalRefreshToken: string | null }>(
   p: T,
@@ -76,9 +127,15 @@ const personnelRoutes: FastifyPluginAsync = async (fastify) => {
     const orgId = request.user.orgId!;
 
     try {
-      const baseWhere = { organizationId: orgId, deletedAt: null };
+      // Çalışan personel: ayrılanlar ve arşivlenenler toplamda sayılmaz
+      const baseWhere = {
+        organizationId: orgId,
+        deletedAt: null,
+        status: { not: "TERMINATED" as const },
+      };
+      const canSeeArchive = hasRole(request.user.role, ARCHIVE_ROLES);
 
-      const [total, active, inactive, onLeave, byDepartmentRaw] =
+      const [total, active, inactive, onLeave, terminated, archived, byDepartmentRaw] =
         await Promise.all([
           prisma.personnel.count({ where: baseWhere }),
           prisma.personnel.count({
@@ -90,6 +147,14 @@ const personnelRoutes: FastifyPluginAsync = async (fastify) => {
           prisma.personnel.count({
             where: { ...baseWhere, status: "ON_LEAVE" },
           }),
+          prisma.personnel.count({
+            where: { organizationId: orgId, deletedAt: null, status: "TERMINATED" },
+          }),
+          canSeeArchive
+            ? prisma.personnel.count({
+                where: { organizationId: orgId, deletedAt: { not: null } },
+              })
+            : Promise.resolve(null),
           prisma.personnel.groupBy({
             by: ["departmentId"],
             where: baseWhere,
@@ -118,7 +183,7 @@ const personnelRoutes: FastifyPluginAsync = async (fastify) => {
       }));
 
       return reply.send({
-        data: { total, active, inactive, onLeave, byDepartment },
+        data: { total, active, inactive, onLeave, terminated, archived, byDepartment },
       });
     } catch (err) {
       request.log.error(err, "personnel.stats failed");
@@ -137,18 +202,36 @@ const personnelRoutes: FastifyPluginAsync = async (fastify) => {
       departmentId?: string;
       teamId?: string;
       status?: string;
+      /** "archived": arşivlenmiş (soft-deleted) kayıtlar; yalnız SUPER_ADMIN/ADMIN */
+      view?: string;
       page?: string;
       pageSize?: string;
     };
   }>("/", async (request, reply) => {
     const orgId = request.user.orgId!;
-    const { search, departmentId, teamId, status } = request.query;
+    const { search, departmentId, teamId, status, view } = request.query;
     const { page, pageSize, skip } = parsePagination(request.query);
+    const archived = view === "archived";
+
+    if (archived && !hasRole(request.user.role, ARCHIVE_ROLES)) {
+      return reply.status(403).send({
+        code: "FORBIDDEN",
+        message: "Arşivi görüntüleme yetkiniz yok",
+        traceId: request.traceId,
+      });
+    }
+    if (status && !LIST_STATUS_FILTERS.has(status)) {
+      return reply.status(400).send({
+        code: "VALIDATION_ERROR",
+        message: "Geçersiz durum süzgeci",
+        traceId: request.traceId,
+      });
+    }
 
     try {
       const where: Record<string, unknown> = {
         organizationId: orgId,
-        deletedAt: null,
+        deletedAt: archived ? { not: null } : null,
       };
 
       if (search) {
@@ -162,13 +245,21 @@ const personnelRoutes: FastifyPluginAsync = async (fastify) => {
       if (departmentId) where.departmentId = departmentId;
       if (teamId) where.teamId = teamId;
       if (status) where.status = status;
+      // Varsayılan liste çalışan personeldir; ayrılanlar "Ayrılanlar" görünümünde (status=TERMINATED)
+      else if (!archived) where.status = { not: "TERMINATED" };
+
+      const orderBy: Prisma.PersonnelOrderByWithRelationInput[] = archived
+        ? [{ deletedAt: "desc" }]
+        : status === "TERMINATED"
+          ? [{ terminationDate: { sort: "desc", nulls: "last" } }, { firstName: "asc" }]
+          : [{ firstName: "asc" }, { lastName: "asc" }];
 
       const [data, total] = await Promise.all([
         prisma.personnel.findMany({
           where,
           skip,
           take: pageSize,
-          orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
+          orderBy,
           include: {
             department: { select: { id: true, name: true } },
             team: { select: { id: true, name: true } },
@@ -244,13 +335,21 @@ const personnelRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // GET /:id — get personnel detail
+  // Ayrılan personel de açılır (salt okunur); arşivlenmiş kayıt yalnız SUPER_ADMIN/ADMIN'e.
   fastify.get<{ Params: { id: string } }>("/:id", async (request, reply) => {
     const orgId = request.user.orgId!;
     const { id } = request.params;
+    const canSeeArchive = hasRole(request.user.role, ARCHIVE_ROLES);
+    // Skor ve analiz yalnız analyze grubuna (VIEWER görmez)
+    const canAnalyze = hasRole(request.user.role, ROLE_GROUPS.analyze);
 
     try {
       const personnel = await prisma.personnel.findFirst({
-        where: { id, organizationId: orgId, deletedAt: null },
+        where: {
+          id,
+          organizationId: orgId,
+          ...(canSeeArchive ? {} : { deletedAt: null }),
+        },
         include: {
           department: { select: { id: true, name: true } },
           team: { select: { id: true, name: true } },
@@ -264,7 +363,22 @@ const personnelRoutes: FastifyPluginAsync = async (fastify) => {
               completedAt: true,
               createdAt: true,
               dimensionScores: true,
-              assessment: { select: { id: true, title: true } },
+              questionSetSnapshot: true,
+              assessment: {
+                select: {
+                  id: true,
+                  title: true,
+                  questionSet: {
+                    select: {
+                      weightLogical: true,
+                      weightLeadership: true,
+                      weightSocial: true,
+                      weightGrowth: true,
+                      weightDomain: true,
+                    },
+                  },
+                },
+              },
               report: { select: { id: true } },
             },
           },
@@ -280,11 +394,23 @@ const personnelRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       const { assessmentSessions, ...rest } = toPublicPersonnel(personnel);
-      const sessions = assessmentSessions.map(({ report, ...s }) => ({
-        ...s,
-        reportId: report?.id ?? null,
-        avgScore: computeOverallScore(readDimensionScores(s.dimensionScores)),
-      }));
+      const sessions = assessmentSessions.map(
+        ({ report, questionSetSnapshot, dimensionScores, assessment, ...s }) => {
+          // Rapor ve geçmiş ekranıyla aynı hesap: soru seti ağırlıkları
+          const weights =
+            parseSnapshot(questionSetSnapshot)?.weights ??
+            dimensionWeightMap(assessment.questionSet);
+          return {
+            ...s,
+            assessment: { id: assessment.id, title: assessment.title },
+            dimensionScores: canAnalyze ? dimensionScores : null,
+            reportId: canAnalyze ? (report?.id ?? null) : null,
+            avgScore: canAnalyze
+              ? computeOverallScore(readDimensionScores(dimensionScores), weights)
+              : null,
+          };
+        },
+      );
       const scored = sessions
         .filter((s) => s.status === "COMPLETED" && s.avgScore !== null)
         .map((s) => s.avgScore as number);
@@ -293,7 +419,9 @@ const personnelRoutes: FastifyPluginAsync = async (fastify) => {
           ? Math.round((scored.reduce((a, b) => a + b, 0) / scored.length) * 10) / 10
           : null;
 
-      return reply.send({ data: { ...rest, sessions, avgScore } });
+      return reply.send({
+        data: { ...rest, sessions, avgScore, readOnly: rest.status === "TERMINATED" || !!rest.deletedAt },
+      });
     } catch (err) {
       request.log.error(err, "personnel.getById failed");
       return reply.status(500).send({
@@ -322,6 +450,9 @@ const personnelRoutes: FastifyPluginAsync = async (fastify) => {
           message: "Personel bulunamadı",
           traceId: request.traceId,
         });
+      }
+      if (existing.status === "TERMINATED") {
+        return reply.status(409).send({ ...TERMINATED_READ_ONLY, traceId: request.traceId });
       }
 
       // Departman değişip ekip gönderilmediyse eski ekip yeni departmana ait olmayabilir
@@ -394,7 +525,7 @@ const personnelRoutes: FastifyPluginAsync = async (fastify) => {
 
       const personnel = await prisma.personnel.findFirst({
         where: { id, organizationId: orgId, deletedAt: null },
-        select: { id: true },
+        select: { id: true, status: true },
       });
       if (!personnel) {
         return reply.status(404).send({
@@ -402,6 +533,9 @@ const personnelRoutes: FastifyPluginAsync = async (fastify) => {
           message: "Personel bulunamadı",
           traceId: request.traceId,
         });
+      }
+      if (personnel.status === "TERMINATED") {
+        return reply.status(409).send({ ...TERMINATED_READ_ONLY, traceId: request.traceId });
       }
 
       await prisma.personnel.update({
@@ -417,7 +551,214 @@ const personnelRoutes: FastifyPluginAsync = async (fastify) => {
     },
   );
 
-  // DELETE /:id — soft delete
+  // GET /:id/history — birleştirilmiş zaman çizelgesi + boyut trendi
+  fastify.get<{ Params: { id: string } }>("/:id/history", async (request, reply) => {
+    const orgId = request.user.orgId!;
+    try {
+      const history = await getPersonnelHistory({
+        organizationId: orgId,
+        personnelId: request.params.id,
+        canViewAnalysis: hasRole(request.user.role, ROLE_GROUPS.analyze),
+        includeArchived: hasRole(request.user.role, ARCHIVE_ROLES),
+      });
+      if (!history) {
+        return reply.status(404).send({
+          code: "NOT_FOUND",
+          message: "Personel bulunamadı",
+          traceId: request.traceId,
+        });
+      }
+      return reply.send({ data: history });
+    } catch (err) {
+      request.log.error(err, "personnel.history failed");
+      return reply.status(500).send({
+        code: "INTERNAL_ERROR",
+        message: "Personel geçmişi alınırken hata oluştu",
+        traceId: request.traceId,
+      });
+    }
+  });
+
+  // POST /:id/terminate — işten çıkar (manage rolleri; plugin preHandler'ı)
+  fastify.post<{ Params: { id: string } }>("/:id/terminate", async (request, reply) => {
+    const orgId = request.user.orgId!;
+    const { id } = request.params;
+
+    let body: z.infer<typeof terminateSchema>;
+    try {
+      body = terminateSchema.parse(request.body);
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        return reply.status(400).send({
+          code: "VALIDATION_ERROR",
+          message: err.errors.map((e) => e.message).join(", "),
+          traceId: request.traceId,
+        });
+      }
+      throw err;
+    }
+
+    try {
+      const personnel = await prisma.personnel.findFirst({
+        where: { id, organizationId: orgId, deletedAt: null },
+        select: { id: true, status: true, hireDate: true },
+      });
+      if (!personnel) {
+        return reply.status(404).send({
+          code: "NOT_FOUND",
+          message: "Personel bulunamadı",
+          traceId: request.traceId,
+        });
+      }
+      if (personnel.status === "TERMINATED") {
+        return reply.status(409).send({
+          code: "ALREADY_TERMINATED",
+          message: "Bu personel zaten işten ayrılmış olarak kayıtlı",
+          traceId: request.traceId,
+        });
+      }
+      // İleri tarihli ayrılış desteklenmez: durum hemen TERMINATED olur (saat dilimi payı: 1 gün)
+      if (body.date.getTime() > Date.now() + 24 * 60 * 60 * 1000) {
+        return reply.status(400).send({
+          code: "VALIDATION_ERROR",
+          message: "Ayrılış tarihi bugünden ileri olamaz",
+          traceId: request.traceId,
+        });
+      }
+      if (personnel.hireDate && body.date < personnel.hireDate) {
+        return reply.status(400).send({
+          code: "VALIDATION_ERROR",
+          message: "Ayrılış tarihi işe giriş tarihinden önce olamaz",
+          traceId: request.traceId,
+        });
+      }
+
+      const [updated, expired] = await prisma.$transaction([
+        prisma.personnel.update({
+          where: { id },
+          data: {
+            status: "TERMINATED",
+            terminationDate: body.date,
+            terminationReason: body.reason,
+            terminationNote: body.note ?? null,
+            // Portal oturumu kapanır; giriş ve yenileme ACTIVE ister (auth.service, authenticatePortal)
+            portalRefreshToken: null,
+          },
+          include: {
+            department: { select: { id: true, name: true } },
+            team: { select: { id: true, name: true } },
+          },
+        }),
+        // Açık HR/PDR oturumları kapanır; tamamlanmış oturumlar ve analizler korunur
+        prisma.assessmentSession.updateMany({
+          where: {
+            personnelId: id,
+            assessment: { organizationId: orgId },
+            status: { in: [...OPEN_SESSION_STATUSES] },
+          },
+          data: { status: "EXPIRED", invitationToken: null },
+        }),
+        // Kullanılmamış portal şifre sıfırlama bağlantıları geçersiz olur
+        prisma.passwordResetToken.deleteMany({
+          where: { personnelId: id, usedAt: null },
+        }),
+        // Değerlendirici olarak açık 360° görevleri kapanır (yarım cevaplar silinir);
+        // tamamlanmış değerlendirmeler ve kişinin kendi sonuçları korunur
+        prisma.reviewAnswer.deleteMany({
+          where: {
+            assignment: {
+              raterPersonnelId: id,
+              status: { in: ["NOT_STARTED", "IN_PROGRESS"] },
+              subject: { cycle: { organizationId: orgId } },
+            },
+          },
+        }),
+        prisma.reviewAssignment.updateMany({
+          where: {
+            raterPersonnelId: id,
+            status: { in: ["NOT_STARTED", "IN_PROGRESS"] },
+            subject: { cycle: { organizationId: orgId } },
+          },
+          data: { status: "DECLINED", declinedAt: new Date() },
+        }),
+        // Yöneticiyse astlarının yöneticisi yalnız İK onayıyla (clearDirectReports) boşaltılır
+        prisma.personnel.updateMany({
+          where: {
+            managerId: id,
+            organizationId: orgId,
+            // Onay yoksa hiçbir satır eşleşmez (işlem dizisi sabit kalsın diye koşul burada)
+            ...(body.clearDirectReports ? {} : { id: { in: [] } }),
+          },
+          data: { managerId: null },
+        }),
+      ]);
+
+      return reply.send({
+        data: { ...toPublicPersonnel(updated), expiredSessions: expired.count },
+      });
+    } catch (err) {
+      request.log.error(err, "personnel.terminate failed");
+      return reply.status(500).send({
+        code: "INTERNAL_ERROR",
+        message: "Personel işten çıkarılırken hata oluştu",
+        traceId: request.traceId,
+      });
+    }
+  });
+
+  // POST /:id/reactivate — ayrılan personeli yeniden etkinleştir (manage rolleri)
+  fastify.post<{ Params: { id: string } }>("/:id/reactivate", async (request, reply) => {
+    const orgId = request.user.orgId!;
+    const { id } = request.params;
+
+    try {
+      const personnel = await prisma.personnel.findFirst({
+        where: { id, organizationId: orgId, deletedAt: null },
+        select: { id: true, status: true },
+      });
+      if (!personnel) {
+        return reply.status(404).send({
+          code: "NOT_FOUND",
+          message: "Personel bulunamadı",
+          traceId: request.traceId,
+        });
+      }
+      if (personnel.status !== "TERMINATED") {
+        return reply.status(409).send({
+          code: "NOT_TERMINATED",
+          message: "Yalnız işten ayrılmış personel yeniden etkinleştirilebilir",
+          traceId: request.traceId,
+        });
+      }
+
+      // Süresi dolan oturumlar geri açılmaz; gerekirse yeni değerlendirme atanır.
+      // Portal şifresi korunur, oturum yeniden giriş ister.
+      const updated = await prisma.personnel.update({
+        where: { id },
+        data: {
+          status: "ACTIVE",
+          terminationDate: null,
+          terminationReason: null,
+          terminationNote: null,
+        },
+        include: {
+          department: { select: { id: true, name: true } },
+          team: { select: { id: true, name: true } },
+        },
+      });
+
+      return reply.send({ data: toPublicPersonnel(updated) });
+    } catch (err) {
+      request.log.error(err, "personnel.reactivate failed");
+      return reply.status(500).send({
+        code: "INTERNAL_ERROR",
+        message: "Personel yeniden etkinleştirilirken hata oluştu",
+        traceId: request.traceId,
+      });
+    }
+  });
+
+  // DELETE /:id — arşivle (soft delete: deletedAt; kayıt ve geçmiş korunur, listelerden gizlenir)
   fastify.delete<{ Params: { id: string } }>(
     "/:id",
     async (request, reply) => {
@@ -447,7 +788,7 @@ const personnelRoutes: FastifyPluginAsync = async (fastify) => {
         request.log.error(err, "personnel.delete failed");
         return reply.status(500).send({
           code: "INTERNAL_ERROR",
-          message: "Personel silinirken hata oluştu",
+          message: "Personel arşivlenirken hata oluştu",
           traceId: request.traceId,
         });
       }

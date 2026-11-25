@@ -10,7 +10,7 @@ export const api = axios.create({
 
 /** LLM çağrıları uzun sürebilir; bu endpoint'ler için zaman aşımı uzatılır. */
 const AI_ENDPOINT =
-  /\/(ai-generate|ai-suggest|ai-analysis|messages|list-abacus-models|test)(\?|$)|\/api\/reports\/generate/;
+  /\/(ai-generate|ai-suggest|ai-analysis|messages|list-abacus-models|test)(\?|$)|\/api\/reports\/generate|\/career-plans\/suggest(\?|$)/;
 const AI_TIMEOUT_MS = 180_000;
 
 let accessToken: string | null = null;

@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -10,6 +11,8 @@ import { toast } from "sonner";
 import { GlassCard } from "@ph/ui";
 import { DateTimePicker } from "@/components/ui/datetime-picker";
 import { useCreateAssessment, useQuestionSetList } from "@/hooks/use-api";
+import { ShareWithEmployeeControl } from "@/components/sharing/ShareWithEmployee";
+import type { ShareOverride } from "@/hooks/use-sharing";
 
 const schema = z
   .object({
@@ -37,6 +40,7 @@ export default function NewAssessmentPage() {
   const createMutation = useCreateAssessment();
   const { data: qsData, isLoading: qsLoading } = useQuestionSetList();
   const questionSets = qsData ?? [];
+  const [shareWithEmployee, setShareWithEmployee] = useState<ShareOverride>(null);
 
   const {
     register,
@@ -62,6 +66,7 @@ export default function NewAssessmentPage() {
         questionSetId: values.questionSetId,
         startsAt: values.startsAt ? new Date(values.startsAt).toISOString() : undefined,
         endsAt: values.endsAt ? new Date(values.endsAt).toISOString() : undefined,
+        shareWithEmployee,
       });
       toast.success("Değerlendirme oluşturuldu");
       router.push("/assessments");
@@ -210,6 +215,9 @@ export default function NewAssessmentPage() {
                 )}
               </div>
             </div>
+
+            {/* Personelle paylaşım */}
+            <ShareWithEmployeeControl value={shareWithEmployee} onChange={setShareWithEmployee} />
           </div>
 
           {/* Submit */}

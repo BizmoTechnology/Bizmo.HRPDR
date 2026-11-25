@@ -647,7 +647,7 @@ export interface PersonnelRow {
   lastName: string;
   email: string;
   position: string;
-  status: "ACTIVE" | "INACTIVE" | "ON_LEAVE";
+  status: "ACTIVE" | "INACTIVE" | "ON_LEAVE" | "TERMINATED";
   experienceYear: number;
   department: { id: string; name: string } | null;
 }
@@ -725,6 +725,8 @@ export interface AssessmentDetail extends AssessmentRow {
   description: string | null;
   questionSetId: string;
   createdBy?: { name: string };
+  /** null = kurum varsayılanı (bkz. hooks/use-sharing.ts) */
+  shareWithEmployee?: boolean | null;
 }
 
 export interface SessionRow {

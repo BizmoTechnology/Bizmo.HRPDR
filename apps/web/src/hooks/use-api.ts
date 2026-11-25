@@ -725,6 +725,8 @@ export interface AssessmentDetail extends AssessmentRow {
   description: string | null;
   questionSetId: string;
   createdBy?: { name: string };
+  /** null = kurum varsayılanı (bkz. hooks/use-sharing.ts) */
+  shareWithEmployee?: boolean | null;
 }
 
 export interface SessionRow {

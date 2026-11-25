@@ -18,6 +18,8 @@ model Organization {
   name      String
   slug      String   @unique
   timezone  String   @default("Europe/Istanbul")
+  /// Kurum ayarları (JSON). Tipli okuma: server/src/lib/sharing.ts → getOrgSettings()
+  settings  Json?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -329,6 +331,10 @@ model Assessment {
 
   startsAt  DateTime?
   endsAt    DateTime?
+
+  /// Sonuçların personelle paylaşımı: null = kurum varsayılanı, true = paylaş, false = paylaşma
+  shareWithEmployee Boolean?
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 

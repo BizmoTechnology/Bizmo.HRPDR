@@ -24,6 +24,8 @@ import {
 import bcrypt from "bcryptjs";
 import { prisma } from "../../lib/prisma.js";
 import { sendMail } from "../../lib/mailer.js";
+import { bizmoIdStatus } from "../bizmo-id/config.js";
+import { setAdminRefreshCookie } from "./cookies.js";
 
 /** development.md §12.1 — auth endpoint'leri için IP başına sınır */
 const authRateLimit = {
@@ -62,24 +64,29 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post("/login", loginRateLimit("email"), async (request, reply) => {
     const body = loginBodySchema.parse(request.body);
 
+    // Merkezi Bizmo.ID modunda yerel giriş yalnız acil durum içindir (SUPER_ADMIN)
+    const sso = bizmoIdStatus();
+    const localLoginRoles = sso.mode === "central" && sso.configured ? ["SUPER_ADMIN"] : undefined;
+
     try {
       const result = await adminLogin(
         fastify,
         body.email,
         body.password,
-        body.rememberMe
+        body.rememberMe,
+        localLoginRoles,
       );
 
-      reply
-        .setCookie("refreshToken", result.tokens.refreshToken, {
-          httpOnly: true,
-          secure: process.env["NODE_ENV"] === "production",
-          sameSite: "strict",
-          maxAge: body.rememberMe ? 60 * 60 * 24 * 30 : 60 * 60 * 24 * 7,
-          path: "/api/auth",
-        })
+      setAdminRefreshCookie(reply, result.tokens.refreshToken, body.rememberMe)
         .send({ data: { accessToken: result.tokens.accessToken, user: result.user } });
-    } catch {
+    } catch (err) {
+      if ((err as Error).message === "LOCAL_LOGIN_DISABLED") {
+        return reply.status(403).send({
+          code: "LOCAL_LOGIN_DISABLED",
+          message: "Bu panele Bizmo.ID ile giriş yapılır",
+          traceId: request.traceId,
+        });
+      }
       reply.status(401).send({
         code: "INVALID_CREDENTIALS",
         message: "E-posta veya şifre hatalı",

@@ -16,7 +16,9 @@ interface AuthState {
   user: AuthUser | null;
   accessToken: string | null;
   isAuthenticated: boolean;
-  setAuth: (user: AuthUser, accessToken: string) => void;
+  /** Oturum Bizmo.ID ile açıldıysa "bizmo-id" (çıkışta Bizmo.ID oturumu da kapatılır) */
+  idp: "bizmo-id" | null;
+  setAuth: (user: AuthUser, accessToken: string, idp?: "bizmo-id" | null) => void;
   clearAuth: () => void;
 }
 
@@ -26,15 +28,16 @@ export const useAuthStore = create<AuthState>()(
       user: null,
       accessToken: null,
       isAuthenticated: false,
+      idp: null,
 
-      setAuth: (user, accessToken) => {
+      setAuth: (user, accessToken, idp = null) => {
         setAccessToken(accessToken);
-        set({ user, accessToken, isAuthenticated: true });
+        set({ user, accessToken, isAuthenticated: true, idp });
       },
 
       clearAuth: () => {
         setAccessToken(null);
-        set({ user: null, accessToken: null, isAuthenticated: false });
+        set({ user: null, accessToken: null, isAuthenticated: false, idp: null });
       },
     }),
     {
@@ -42,6 +45,7 @@ export const useAuthStore = create<AuthState>()(
       partialize: (state) => ({
         user: state.user,
         isAuthenticated: state.isAuthenticated,
+        idp: state.idp,
       }),
     }
   )

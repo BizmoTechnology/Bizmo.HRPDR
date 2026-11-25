@@ -66,6 +66,14 @@ model User {
   twoFactorEnabled Boolean @default(false)
   twoFactorSecret  String?
 
+  /// Bizmo.ID bağlantısı: `externalId` = OIDC `sub`, `externalProvider` = "bizmo-id".
+  /// Rol ve yetki HRPDR'de kalır; ad ve e-posta Bizmo.ID'den eşitlenir.
+  externalId         String?
+  externalProvider   String?
+  /// Hesap Bizmo.ID olayıyla (işten çıkış, erişimin kaldırılması) pasiflendiyse dolu;
+  /// yeniden açan olay yalnız bu durumda hesabı açar (yerelde pasiflenen hesaba dokunmaz).
+  externalDisabledAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -79,6 +87,7 @@ model User {
   createdReviewCycles  ReviewCycle[]        @relation("ReviewCycleCreator")
 
   @@unique([organizationId, email])
+  @@unique([externalProvider, externalId])
 }
 
 // ─────────────────────────────────────────
@@ -179,6 +188,10 @@ model Personnel {
   portalRefreshToken String?
   lastPortalLogin    DateTime?
 
+  /// Personel portalı Bizmo.ID bağlantısı (OIDC `sub`). İK verisi (ad, durum) Bizmo.ID'den yazılmaz.
+  externalId       String? @map("external_id")
+  externalProvider String? @map("external_provider")
+
   importSource String?
   deletedAt    DateTime?
   createdAt    DateTime  @default(now())
@@ -195,6 +208,7 @@ model Personnel {
 
   @@unique([organizationId, employeeId])
   @@unique([organizationId, email])
+  @@unique([externalProvider, externalId])
   @@index([organizationId])
   @@index([departmentId])
   @@index([managerId])
@@ -488,6 +502,57 @@ model ConsentRecord {
 // ─────────────────────────────────────────
 // ŞİFRE SIFIRLAMA
 // ─────────────────────────────────────────
+
+// ─────────────────────────────────────────
+// BİZMO.ID (OIDC TEK GİRİŞ, SCIM)
+// ─────────────────────────────────────────
+
+/// Tek kullanımlık Bizmo.ID giriş akışı. `state` ile başlar (10 dk), callback'te tüketilir;
+/// ardından uygulamaya tek kullanımlık devir kodu (`handoff`, 60 sn) verilir. Değerler
+/// yalnız SHA-256 özetiyle aranır; akış başlatan tarayıcıya httpOnly çerezle bağlıdır.
+model SsoLoginFlow {
+  id           String   @id @default(cuid())
+  stateHash    String   @unique
+  bindingHash  String
+  nonce        String
+  codeVerifier String
+  /// "admin" (yönetim paneli) veya "portal" (personel portalı)
+  app          String
+  returnTo     String
+  rememberMe   Boolean  @default(false)
+  expiresAt    DateTime
+
+  handoffHash String?  @unique
+  /// Eşlenen User.id (admin) veya Personnel.id (portal)
+  subjectId   String?
+  /// Bizmo.ID çıkışında id_token_hint için (devirde httpOnly çereze taşınır, satır silinir)
+  idToken     String?
+  authMeta    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([expiresAt])
+}
+
+/// SCIM 2.0 ile Bizmo.ID'nin gönderdiği kişiler (yerel dizin kopyası). `id` SCIM kaynak kimliğidir.
+/// Bu tablo hesap açmaz: yalnız var olan kullanıcı/personele bağlanır ve onları günceller.
+model BizmoIdIdentity {
+  id             String   @id @default(cuid())
+  externalId     String   @unique
+  userName       String
+  email          String?
+  givenName      String?
+  familyName     String?
+  displayName    String?
+  employeeNumber String?
+  active         Boolean  @default(true)
+  /// Son alınan SCIM kaynağı (şemalar ve uzantılarla)
+  resource       Json
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([userName])
+  @@index([email])
+}
 
 model PasswordResetToken {
   id        String    @id @default(cuid())

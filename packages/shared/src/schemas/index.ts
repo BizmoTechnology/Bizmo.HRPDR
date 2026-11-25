@@ -123,6 +123,8 @@ export const terminatePersonnelSchema = z.object({
     { errorMap: () => ({ message: "Ayrılış nedenini seçin" }) },
   ),
   note: emptyToNull(z.string().trim().max(2000).nullable().optional()),
+  /** Kişi yöneticiyse doğrudan astlarının yöneticisi boşaltılsın mı (İK onayı) */
+  clearDirectReports: z.boolean().optional(),
 });
 
 export const personnelImportRowSchema = z.object({

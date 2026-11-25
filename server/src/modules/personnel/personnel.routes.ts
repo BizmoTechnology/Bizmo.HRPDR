@@ -89,6 +89,8 @@ const terminateSchema = z.object({
     errorMap: () => ({ message: "Geçerli bir ayrılış nedeni seçin" }),
   }),
   note: emptyToNull(z.string().trim().max(2000).nullable().optional()),
+  /** Kişi yöneticiyse doğrudan astlarının managerId'si boşaltılsın mı (İK onayıyla) */
+  clearDirectReports: z.boolean().optional(),
 });
 
 function hasRole(role: string | undefined, roles: readonly string[]) {
@@ -660,9 +662,35 @@ const personnelRoutes: FastifyPluginAsync = async (fastify) => {
         prisma.passwordResetToken.deleteMany({
           where: { personnelId: id, usedAt: null },
         }),
-        // TODO(entegrasyon, Aşama 1): açık 360° atamaları (ReviewAssignment, rater = bu kişi,
-        // NOT_STARTED/IN_PROGRESS) DECLINED olmalı; kişi yöneticiyse astlarının managerId'si
-        // İK onayıyla boşaltılmalı. Modeller 360° oturumunun dalında.
+        // Değerlendirici olarak açık 360° görevleri kapanır (yarım cevaplar silinir);
+        // tamamlanmış değerlendirmeler ve kişinin kendi sonuçları korunur
+        prisma.reviewAnswer.deleteMany({
+          where: {
+            assignment: {
+              raterPersonnelId: id,
+              status: { in: ["NOT_STARTED", "IN_PROGRESS"] },
+              subject: { cycle: { organizationId: orgId } },
+            },
+          },
+        }),
+        prisma.reviewAssignment.updateMany({
+          where: {
+            raterPersonnelId: id,
+            status: { in: ["NOT_STARTED", "IN_PROGRESS"] },
+            subject: { cycle: { organizationId: orgId } },
+          },
+          data: { status: "DECLINED", declinedAt: new Date() },
+        }),
+        // Yöneticiyse astlarının yöneticisi yalnız İK onayıyla (clearDirectReports) boşaltılır
+        prisma.personnel.updateMany({
+          where: {
+            managerId: id,
+            organizationId: orgId,
+            // Onay yoksa hiçbir satır eşleşmez (işlem dizisi sabit kalsın diye koşul burada)
+            ...(body.clearDirectReports ? {} : { id: { in: [] } }),
+          },
+          data: { managerId: null },
+        }),
       ]);
 
       return reply.send({

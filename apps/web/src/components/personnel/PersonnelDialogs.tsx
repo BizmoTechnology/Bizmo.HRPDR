@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useReactivatePersonnel, useTerminatePersonnel } from "@/hooks/use-personnel-history";
+import { useOrgChart } from "@/hooks/use-reviews";
 
 /* ─── Ortak pencere çerçevesi (DESIGN.md §16) ─── */
 
@@ -186,13 +187,25 @@ export function TerminateDialog({
   const [reason, setReason] = useState<TerminationReason | "">("");
   const [note, setNote] = useState("");
   const [errors, setErrors] = useState<Partial<Record<"date" | "reason" | "note", string>>>({});
+  // Org şemasındaki doğrudan astlar: yöneticileri yalnız İK onayıyla boşaltılır
+  const { data: chart } = useOrgChart();
+  const directReports = useMemo(
+    () => (chart ?? []).filter((p) => p.managerId === personnelId),
+    [chart, personnelId],
+  );
+  const [clearReports, setClearReports] = useState(true);
 
   const minDate = useMemo(() => (hireDate ? new Date(hireDate) : undefined), [hireDate]);
   const today = useMemo(() => new Date(), []);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const parsed = terminatePersonnelSchema.safeParse({ date, reason, note });
+    const parsed = terminatePersonnelSchema.safeParse({
+      date,
+      reason,
+      note,
+      clearDirectReports: directReports.length > 0 && clearReports,
+    });
     if (!parsed.success) {
       const next: typeof errors = {};
       for (const issue of parsed.error.issues) {
@@ -244,7 +257,8 @@ export function TerminateDialog({
                 dolmuş sayılır
               </>
             )}
-            . Tamamlanmış testler, analizler ve raporlar korunur; kayıt salt okunur olur.
+            . Açık 360° değerlendirici görevleri kapanır. Tamamlanmış testler, analizler ve
+            raporlar korunur; kayıt salt okunur olur.
           </p>
         </div>
       </div>
@@ -320,6 +334,23 @@ export function TerminateDialog({
             Not yalnız panel kullanıcılarına görünür; personelle paylaşılmaz.
           </span>
         </div>
+
+        {directReports.length > 0 && (
+          <label className="bz-choice-card">
+            <input
+              type="checkbox"
+              checked={clearReports}
+              onChange={(e) => setClearReports(e.target.checked)}
+            />
+            <span className="text-[13px] leading-relaxed text-fg2">
+              <strong className="font-semibold text-foreground">
+                {directReports.length} doğrudan astın yöneticisini boşalt
+              </strong>{" "}
+              ({directReports.map((p) => `${p.firstName} ${p.lastName}`).join(", ")}). Org şemasında en üst
+              düzeye taşınırlar; yeni yöneticiyi sonra atayabilirsiniz.
+            </span>
+          </label>
+        )}
       </div>
 
       <div className="mt-6 flex flex-wrap justify-end gap-2">

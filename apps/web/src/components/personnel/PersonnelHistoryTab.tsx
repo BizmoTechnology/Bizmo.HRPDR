@@ -13,6 +13,7 @@ import {
   History,
   Hourglass,
   PlayCircle,
+  Radar,
   UserMinus,
   UserPlus,
   XCircle,
@@ -21,6 +22,7 @@ import { TERMINATION_REASON_LABELS } from "@ph/shared";
 import { cn } from "@/lib/utils";
 import type {
   HistoryEvent,
+  HistoryReviewResult,
   HistorySession,
   PersonnelHistory,
 } from "@/hooks/use-personnel-history";
@@ -29,7 +31,7 @@ type Filter = "all" | "sessions" | "events";
 
 const FILTERS: { key: Filter; label: string }[] = [
   { key: "all", label: "Tümü" },
-  { key: "sessions", label: "Testler" },
+  { key: "sessions", label: "Testler ve 360°" },
   { key: "events", label: "Olaylar" },
 ];
 
@@ -250,6 +252,58 @@ function EventItem({ e }: { e: HistoryEvent }) {
   );
 }
 
+/** 360° dönem sonucu (kapanmış dönem); rapor bağlantısı yalnız analiz yetkisine */
+function ReviewItem({ r, canViewAnalysis }: { r: HistoryReviewResult; canViewAnalysis: boolean }) {
+  const date = r.releasedAt ?? r.closedAt ?? r.periodEnd;
+  return (
+    <li className="bz-timeline-item" data-tone="info">
+      <span className="bz-timeline-item__dot">
+        <Radar aria-hidden="true" />
+      </span>
+      <div className="min-w-0 flex-1 space-y-1.5">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          {canViewAnalysis ? (
+            <Link
+              href={`/performance/cycles/${r.cycleId}/subjects/${r.id}`}
+              className="text-[14px] font-semibold text-foreground hover:underline focus-visible:underline"
+            >
+              360° · {r.cycleName}
+            </Link>
+          ) : (
+            <span className="text-[14px] font-semibold text-foreground">360° · {r.cycleName}</span>
+          )}
+          <span className="bz-status" data-status={r.released ? "approved" : "done"}>
+            {r.released ? "Yayınlandı" : "Kapandı"}
+          </span>
+        </div>
+        <p className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[12.5px] text-fg3">
+          {date && (
+            <time dateTime={date} className="tabular-nums">
+              {r.released ? "Yayınlandı" : "Kapandı"} · {fmtDate(date)}
+            </time>
+          )}
+          {canViewAnalysis && r.totalRaters !== null && (
+            <span className="tabular-nums">
+              {r.completedRaters} / {r.totalRaters} değerlendirici
+            </span>
+          )}
+          {canViewAnalysis && (
+            <span className="text-fg2">
+              <ScoreText value={r.overallScore} />
+            </span>
+          )}
+        </p>
+        {canViewAnalysis && (r.selfScore !== null || r.othersScore !== null) && (
+          <p className="text-[12.5px] text-fg2 tabular-nums">
+            Öz {r.selfScore?.toLocaleString("tr-TR") ?? "—"} · Diğerleri{" "}
+            {r.othersScore?.toLocaleString("tr-TR") ?? "—"}
+          </p>
+        )}
+      </div>
+    </li>
+  );
+}
+
 export function PersonnelHistoryTab({ history }: { history: PersonnelHistory }) {
   const [filter, setFilter] = useState<Filter>("all");
 
@@ -260,6 +314,10 @@ export function PersonnelHistoryTab({ history }: { history: PersonnelHistory }) 
   const eventsById = useMemo(
     () => new Map(history.events.map((e) => [e.id, e])),
     [history.events],
+  );
+  const reviewsById = useMemo(
+    () => new Map(history.reviews.map((r) => [r.id, r])),
+    [history.reviews],
   );
 
   const entries = history.timeline.filter((t) =>
@@ -313,8 +371,8 @@ export function PersonnelHistoryTab({ history }: { history: PersonnelHistory }) 
               const e = eventsById.get(t.eventId);
               return e ? <EventItem key={t.id} e={e} /> : null;
             }
-            // TODO(entegrasyon, Aşama 1): 360° dönem sonucu öğesi (history.reviews)
-            return null;
+            const r = reviewsById.get(t.reviewId);
+            return r ? <ReviewItem key={t.id} r={r} canViewAnalysis={history.canViewAnalysis} /> : null;
           })}
         </ol>
       )}

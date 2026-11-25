@@ -10,6 +10,11 @@ import {
 } from "../../services/scoring.service.js";
 import { getSessionSnapshot } from "../../services/session-questions.service.js";
 import { portalSessionWhere } from "../sessions/sessions.routes.js";
+import {
+  getPendingReviewTasks,
+  getSharedCareerPlan,
+  getSharedReviewResults,
+} from "../../services/portal-performance.service.js";
 
 /**
  * Personel portalı "Panelim" uç noktaları (prefix: /api/portal/me)
@@ -268,9 +273,9 @@ const portalMeRoutes: FastifyPluginAsync = async (fastify) => {
       }),
     );
 
-    // TODO(entegrasyon): 360° değerlendirici görevleri (Review* modelleri) buraya
-    // `reviews` olarak eklenecek; şimdilik boş liste.
-    return reply.send({ data: { assessments: data, reviews: [] as unknown[] } });
+    // 360° değerlendirici görevleri (bu kişinin değerlendirmesi beklenenler)
+    const reviews = await getPendingReviewTasks(request.user.sub);
+    return reply.send({ data: { assessments: data, reviews } });
   });
 
   // ── GET /results — Paylaşılan sonuçlar ───────
@@ -284,13 +289,10 @@ const portalMeRoutes: FastifyPluginAsync = async (fastify) => {
     return reply.send({
       data: {
         assessments,
-        // TODO(entegrasyon): 360° sonuçları — getSubjectResults() ile yayınlanmış (released)
-        // ve resolveShare(cycle.shareWithEmployee, settings.shareResultsDefault) true olan
-        // dönemler; anonimlik eşiği altındaki puanlar dönmez.
-        reviews: [] as unknown[],
-        // TODO(entegrasyon): APPROVED ve resolveShare(plan.shareWithEmployee, ...) true olan
-        // en güncel kariyer planı (CareerPlan); yoksa null.
-        careerPlan: null as unknown,
+        // Yayınlanmış ve etkin paylaşımı açık 360° sonuçları (anonimlik eşiği uygulanmış)
+        reviews: await getSharedReviewResults(personnelId, orgId, settings.shareResultsDefault),
+        // Onaylı ve etkin paylaşımı açık en güncel kariyer planı
+        careerPlan: await getSharedCareerPlan(personnelId, orgId, settings.shareResultsDefault),
       },
     });
   });

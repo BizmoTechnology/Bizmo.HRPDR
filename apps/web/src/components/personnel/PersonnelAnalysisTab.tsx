@@ -204,12 +204,15 @@ export function PersonnelAnalysisTab({ history }: { history: PersonnelHistory })
 
   if (points.length === 0) {
     return (
-      <div className="bz-empty py-12">
-        <TrendingUp className="h-7 w-7 text-fg3" aria-hidden="true" />
-        <p className="bz-empty__title text-[15px]">Henüz skorlu test yok</p>
-        <p className="bz-empty__text">
-          Tamamlanan testlerin boyut skorları oluştukça trend ve karşılaştırma burada görünür.
-        </p>
+      <div className="space-y-6">
+        <div className="bz-empty py-12">
+          <TrendingUp className="h-7 w-7 text-fg3" aria-hidden="true" />
+          <p className="bz-empty__title text-[15px]">Henüz skorlu test yok</p>
+          <p className="bz-empty__text">
+            Tamamlanan testlerin boyut skorları oluştukça trend ve karşılaştırma burada görünür.
+          </p>
+        </div>
+        <Review360Comparison history={history} latest={null} />
       </div>
     );
   }
@@ -294,12 +297,94 @@ export function PersonnelAnalysisTab({ history }: { history: PersonnelHistory })
 
       <ComparisonTable points={points} dims={dims} />
 
-      {history.reviews.length === 0 && (
-        <p className="text-[12.5px] text-fg3">
-          360° değerlendirme sonuçları yayınlandığında bu karşılaştırmaya eklenir.
-        </p>
-      )}
+      <Review360Comparison history={history} latest={latest} />
     </div>
+  );
+}
+
+/**
+ * HR/PDR ile 360° karşılaştırması: son skorlu test ile son kapanmış 360° dönemi. 360° puanları
+ * grup ağırlıklıdır ve anonimlik eşiği altındaki gruplar dahil değildir (sunucu uygular).
+ */
+function Review360Comparison({
+  history,
+  latest,
+}: {
+  history: PersonnelHistory;
+  latest: HistoryTrendPoint | null;
+}) {
+  const scored = history.reviews.filter((r) => r.dimensionScores);
+  const review = scored[scored.length - 1] ?? null;
+  if (!review) {
+    return (
+      <p className="text-[12.5px] text-fg3">
+        Kapanmış bir 360° dönemi olduğunda HR/PDR skorlarıyla karşılaştırma burada görünür.
+      </p>
+    );
+  }
+  const dims = history.trend.dimensions.filter(
+    (d) => review.dimensionScores?.[d] != null || latest?.scores[d] != null,
+  );
+  return (
+    <section aria-labelledby="compare-360-title">
+      <h3 id="compare-360-title" className="bz-record__group">
+        HR/PDR ile 360° karşılaştırması
+      </h3>
+      <p className="mb-2 text-[12.5px] text-fg3">
+        {latest ? `${latest.label} (${fmtDay(latest.date)})` : "Skorlu test yok"} ·{" "}
+        360° {review.cycleName}
+        {review.completedRaters !== null && ` · ${review.completedRaters} değerlendirici`}. 360° puanı grup
+        ağırlıklıdır; anonimlik eşiğinin altındaki gruplar dahil değildir.
+      </p>
+      <div className="overflow-x-auto rounded-[var(--bz-radius-md)] border border-border">
+        <table className="bz-table">
+          <caption className="sr-only">Boyut skorları: son HR/PDR testi ve son 360° dönemi</caption>
+          <thead>
+            <tr>
+              <th scope="col">Boyut</th>
+              <th scope="col" className="is-num">HR/PDR</th>
+              <th scope="col" className="is-num">360°</th>
+              <th scope="col" className="is-num">Fark</th>
+            </tr>
+          </thead>
+          <tbody>
+            {dims.map((d) => {
+              const a = latest?.scores[d] ?? null;
+              const b = review.dimensionScores?.[d] ?? null;
+              return (
+                <tr key={d}>
+                  <th scope="row" className="whitespace-nowrap text-left font-medium">
+                    <span className="inline-flex items-center gap-2">
+                      <span className={cn("h-2.5 w-2.5 flex-none rounded-full", dimensionColor(d).bar)} aria-hidden="true" />
+                      {DIMENSION_LABELS[d] ?? d}
+                    </span>
+                  </th>
+                  <td className="is-num tabular-nums">{a != null ? num(a) : <span className="text-fg3">—</span>}</td>
+                  <td className="is-num tabular-nums">{b != null ? num(b) : <span className="text-fg3">—</span>}</td>
+                  <td className="is-num">
+                    <Delta value={a != null && b != null ? b - a : null} />
+                  </td>
+                </tr>
+              );
+            })}
+            <tr className="font-semibold">
+              <th scope="row" className="text-left">Genel skor</th>
+              <td className="is-num tabular-nums">{latest?.overall != null ? num(latest.overall) : "—"}</td>
+              <td className="is-num tabular-nums">{review.overallScore != null ? num(review.overallScore) : "—"}</td>
+              <td className="is-num">
+                <Delta
+                  value={
+                    latest?.overall != null && review.overallScore != null
+                      ? review.overallScore - latest.overall
+                      : null
+                  }
+                />
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 

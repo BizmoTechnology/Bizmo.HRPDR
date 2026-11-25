@@ -22,12 +22,15 @@ export function ShareWithEmployeeControl({
   onChange,
   disabled,
   label = "Sonuçları personelle paylaş",
+  requirement = "İK onayı verilip rapor oluşturulduktan sonra personel sonucunu portalında görür.",
   className,
 }: {
   value: ShareOverride | undefined;
   onChange: (next: ShareOverride) => void;
   disabled?: boolean;
   label?: string;
+  /** Paylaşım açıkken personelin görmesi için gereken ön koşul (kayıt türüne göre) */
+  requirement?: string;
   className?: string;
 }) {
   const labelId = useId();
@@ -79,7 +82,7 @@ export function ShareWithEmployeeControl({
         )}
         <span>
           {effective
-            ? "Etkin değer: paylaşılır. İK onayı verilip rapor oluşturulduktan sonra personel sonucunu portalında görür."
+            ? `Etkin değer: paylaşılır. ${requirement}`
             : "Etkin değer: paylaşılmaz. Sonuç personelin portalında görünmez."}
           {choice === "default" && " Ayarlar → Personelle paylaşım bölümündeki kurum varsayılanı uygulanır."}
         </span>

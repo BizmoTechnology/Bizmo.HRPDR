@@ -32,11 +32,13 @@ import {
   useReviewCycle,
   useSaveAssignments,
   useSuggestRaters,
+  useUpdateReviewCycle,
   type ReviewAssignmentStatus,
   type ReviewCycleDetail,
   type SubjectPlan,
 } from "@/hooks/use-reviews";
 import { Dialog } from "@/components/performance/Dialog";
+import { ShareStatusChip, ShareWithEmployeeControl } from "@/components/sharing/ShareWithEmployee";
 import { RaterBoard, type BoardPerson } from "@/components/performance/RaterBoard";
 import { SubjectPicker } from "@/components/performance/SubjectPicker";
 import {
@@ -88,6 +90,7 @@ export default function ReviewCycleDetailPage() {
   const remind = useRemindRaters();
   const save = useSaveAssignments();
   const suggest = useSuggestRaters();
+  const updateCycle = useUpdateReviewCycle();
 
   const [plan, setPlan] = useState<SubjectPlan[]>([]);
   const [confirm, setConfirm] = useState<"close" | "delete" | "activate" | null>(null);
@@ -228,6 +231,7 @@ export default function ReviewCycleDetailPage() {
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="bz-page-header__title">{cycle.name}</h1>
             <CycleStatusBadge status={cycle.status} />
+            <ShareStatusChip value={cycle.shareWithEmployee} />
           </div>
           <p className="bz-page-header__sub">
             {FREQUENCY_LABEL[cycle.frequency]} · {cycle.questionSet.name}
@@ -524,6 +528,27 @@ export default function ReviewCycleDetailPage() {
             <div className="bz-alert bz-alert--info" role="status">
               <Lock aria-hidden="true" />
               <p>Bireysel 360° sonuçlarını yalnız İK ve analist rolleri görebilir.</p>
+            </div>
+          )}
+          {canManage && (
+            <div className="bz-card p-4">
+              <ShareWithEmployeeControl
+                value={cycle.shareWithEmployee}
+                disabled={updateCycle.isPending}
+                label="Yayınlanan sonuçları personelle paylaş"
+            requirement="Personel, yalnız yayınladığınız 360° sonucunu portalında görür."
+                onChange={async (next) => {
+                  try {
+                    await updateCycle.mutateAsync({ id: cycle.id, data: { shareWithEmployee: next } });
+                    toast.success("Paylaşım tercihi kaydedildi");
+                  } catch (err) {
+                    toast.error(apiErrorMessage(err, "Paylaşım tercihi kaydedilemedi"));
+                  }
+                }}
+              />
+              <p className="bz-hint mt-1">
+                Personel yalnız yayınladığınız sonucu ve paylaşım açıksa görür; eşik altındaki gruplar orada da gizli kalır.
+              </p>
             </div>
           )}
           {cycle.status !== "CLOSED" && (

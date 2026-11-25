@@ -226,6 +226,8 @@ export interface CycleInput {
   raterWeights: RaterWeights;
   anonymityMinRaters: number;
   includeSelf: boolean;
+  /** Personelle paylaşım: null = kurum varsayılanı */
+  shareWithEmployee?: boolean | null;
 }
 
 /* ─── Sorgu anahtarları ─── */

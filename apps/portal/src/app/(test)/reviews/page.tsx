@@ -62,9 +62,9 @@ export default function ReviewsPage() {
         transition={{ duration: 0.35, ease: [0.25, 0.46, 0.45, 0.94] }}
       >
         <div className="mb-5 flex items-center justify-between gap-2">
-          <Link href="/welcome" className="bz-btn bz-btn--ghost bz-btn--sm text-fg2">
+          <Link href="/home" className="bz-btn bz-btn--ghost bz-btn--sm text-fg2">
             <ArrowLeft />
-            Ana ekran
+            Panelim
           </Link>
           <div className="flex items-center gap-2">
             <AppMark size="sm" />

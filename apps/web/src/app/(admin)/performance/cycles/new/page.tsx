@@ -27,6 +27,8 @@ import { RaterBoard } from "@/components/performance/RaterBoard";
 import { SubjectPicker } from "@/components/performance/SubjectPicker";
 import { FREQUENCY_LABEL, personName } from "@/components/performance/shared";
 import { usePermissions } from "@/lib/roles";
+import { ShareWithEmployeeControl } from "@/components/sharing/ShareWithEmployee";
+import type { ShareOverride } from "@/hooks/use-sharing";
 
 const STEPS = ["Bilgiler", "Form ve ağırlıklar", "Değerlendiriciler", "Önizle ve başlat"] as const;
 const RELATIONS: ReviewRelation[] = ["SELF", "MANAGER", "PEER", "SUBORDINATE"];
@@ -57,6 +59,7 @@ export default function NewReviewCyclePage() {
   const [weights, setWeights] = useState<RaterWeights>(DEFAULT_WEIGHTS);
   const [minRaters, setMinRaters] = useState(3);
   const [includeSelf, setIncludeSelf] = useState(true);
+  const [shareWithEmployee, setShareWithEmployee] = useState<ShareOverride>(null);
 
   // 3 · Değerlendiriciler
   const [plan, setPlan] = useState<SubjectPlan[]>([]);
@@ -154,6 +157,7 @@ export default function NewReviewCyclePage() {
         raterWeights: weights,
         anonymityMinRaters: minRaters,
         includeSelf,
+        shareWithEmployee,
       });
       cycleId = cycle.id;
       await saveAssignments.mutateAsync({ id: cycle.id, subjects: plan });
@@ -408,6 +412,15 @@ export default function NewReviewCyclePage() {
               <span className="bz-hint">Öz puan ile diğerleri arasındaki fark kör noktaları gösterir.</span>
             </div>
           </div>
+          <ShareWithEmployeeControl
+            value={shareWithEmployee}
+            onChange={setShareWithEmployee}
+            label="Sonuçları personelle paylaş"
+            requirement="Personel, dönem kapanıp İK sonucu yayınladıktan sonra portalında görür."
+          />
+          <p className="bz-hint -mt-3">
+            Paylaşım yalnız İK sonucu yayınladıktan sonra geçerli olur; kapanmış dönemde de değiştirilebilir.
+          </p>
           <div className="bz-callout flex gap-2">
             <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
             <p className="text-[13px]">
@@ -479,6 +492,12 @@ export default function NewReviewCyclePage() {
                 <dt className="text-xs font-semibold text-fg3">Ağırlıklar</dt>
                 <dd className="text-foreground">
                   {RELATIONS.map((r) => `${RELATION_LABEL[r]} ${weights[r]}`).join(" · ")}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs font-semibold text-fg3">Personelle paylaşım</dt>
+                <dd className="text-foreground">
+                  {shareWithEmployee === null ? "Kurum varsayılanı" : shareWithEmployee ? "Paylaş" : "Paylaşma"}
                 </dd>
               </div>
               <div>

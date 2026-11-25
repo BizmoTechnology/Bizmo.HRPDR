@@ -39,6 +39,7 @@ import {
   type CareerStepStatus,
   type CareerSuggestion,
 } from "@/hooks/use-career-plans";
+import { ShareWithEmployeeControl } from "@/components/sharing/ShareWithEmployee";
 import { AiNotConnectedNotice } from "@/components/ai/AiNotConnectedNotice";
 import { CareerStepsEditor } from "./career/CareerStepsEditor";
 import { formatIsoDay } from "./career/CareerDateField";
@@ -612,6 +613,8 @@ function DraftEditor({
             Adım ekle
           </button>
         )}
+
+        {canManage && <CareerShareControl personnelId={personnelId} plan={plan} />}
       </div>
 
       <div className="bz-card__footer flex flex-wrap items-center justify-between gap-2">
@@ -730,6 +733,7 @@ function ApprovedPlan({
           onStatusChange={canManage ? setStatus : undefined}
           pendingStepId={pendingStep}
         />
+        {canManage && <CareerShareControl personnelId={personnelId} plan={plan} />}
       </div>
       {canManage && (
         <div className="bz-card__footer flex flex-wrap items-center justify-between gap-2">
@@ -748,6 +752,33 @@ function ApprovedPlan({
         </div>
       )}
     </section>
+  );
+}
+
+/** Kariyer planını personelin portalında paylaşma tercihi (yalnız onaylı plan portalda görünür) */
+function CareerShareControl({ personnelId, plan }: { personnelId: string; plan: CareerPlan }) {
+  const update = useUpdateCareerPlan(personnelId);
+  return (
+    <div className="border-t border-divider pt-4">
+      <ShareWithEmployeeControl
+        value={plan.shareWithEmployee}
+        disabled={update.isPending}
+        label="Kariyer yol haritasını personelle paylaş"
+            requirement="Plan onaylandığında personel portalında görünür."
+        onChange={(next) =>
+          update.mutate(
+            { planId: plan.id, shareWithEmployee: next },
+            {
+              onSuccess: () => toast.success("Paylaşım tercihi kaydedildi"),
+              onError: (err) => toast.error(apiErrorMessage(err, "Paylaşım tercihi kaydedilemedi")),
+            },
+          )
+        }
+      />
+      <p className="bz-hint mt-1">
+        Personel portalında yalnız onaylanmış plan görünür; İK iç notları paylaşılmaz.
+      </p>
+    </div>
   );
 }
 

@@ -138,16 +138,26 @@ export interface HistoryEvent {
   note?: string | null;
 }
 
-/** 360° dönem sonucu: entegrasyondan sonra dolar (şimdilik sunucu boş dizi döner) */
+/**
+ * 360° dönem sonucu (kapanmış dönemler). Skorlar yalnız analiz yetkisine dolu döner ve
+ * anonimlik eşiği altındaki eş düzey / ast grupları hiçbir değere katılmaz.
+ */
 export interface HistoryReviewResult {
+  /** ReviewSubject.id */
   id: string;
   cycleId: string;
   cycleName: string;
   periodStart: string | null;
   periodEnd: string | null;
+  closedAt: string | null;
   releasedAt: string | null;
+  released: boolean;
   overallScore: number | null;
+  selfScore: number | null;
+  othersScore: number | null;
   dimensionScores: DimensionScoreMap | null;
+  completedRaters: number | null;
+  totalRaters: number | null;
 }
 
 export type HistoryTimelineEntry =

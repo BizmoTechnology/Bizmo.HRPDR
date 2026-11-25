@@ -21,6 +21,7 @@ import {
 import { GlassCard, useTheme } from "@ph/ui";
 import { DIMENSION_DESCRIPTIONS, DIMENSION_LABELS } from "@ph/shared";
 import { AppMark } from "@/components/AppMark";
+import { CareerPlanSection, ReviewResultsSection, ReviewTasksSection } from "@/components/home/PerformanceSections";
 import { errorMessage, getPersonnel, hasToken, logout } from "@/lib/api";
 import {
   getProfile,
@@ -162,9 +163,13 @@ export default function HomePage() {
           ) : (
             <div className="space-y-8">
               <TasksSection tasks={pending} onOpen={() => router.push("/welcome")} />
-              <ResultsSection results={shared} />
-              {/* TODO(entegrasyon): results.reviews (360° sonuçları) ve results.careerPlan
-                  (onaylı kariyer yol haritası) burada ayrı bölümler olarak gösterilecek. */}
+              <ReviewTasksSection tasks={tasks?.reviews ?? []} />
+              <ResultsSection
+                results={shared}
+                hideEmpty={(results?.reviews.length ?? 0) > 0 || !!results?.careerPlan}
+              />
+              <ReviewResultsSection results={results?.reviews ?? []} />
+              <CareerPlanSection plan={results?.careerPlan ?? null} />
             </div>
           )}
         </motion.div>
@@ -288,7 +293,9 @@ function TasksSection({ tasks, onOpen }: { tasks: PortalTask[]; onOpen: () => vo
   );
 }
 
-function ResultsSection({ results }: { results: PortalAssessmentResult[] }) {
+function ResultsSection({ results, hideEmpty }: { results: PortalAssessmentResult[]; hideEmpty?: boolean }) {
+  // Başka paylaşılan sonuç (360°, kariyer) varken boş "sonuç yok" kartı gösterilmez
+  if (results.length === 0 && hideEmpty) return null;
   return (
     <section aria-labelledby="results-title">
       <SectionTitle id="results-title" icon={Star} title="Sonuçlarım" count={results.length} />

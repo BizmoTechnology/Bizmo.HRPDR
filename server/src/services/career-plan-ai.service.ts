@@ -5,6 +5,7 @@ import { HttpError } from "../lib/http-error.js";
 import { isApprovedForAi, requireActiveAiConfig } from "../lib/ai-connection.js";
 import { completeChat } from "../lib/llm.js";
 import { extractJson, hasAiConsent } from "./session-analysis.service.js";
+import { getSubjectResults } from "./review-results.service.js";
 
 /**
  * AI destekli kariyer planı önerisi (performans paketi, Aşama 3).
@@ -234,23 +235,74 @@ export function makeIdentityRedactor(identity: {
   return <T,>(value: T) => walk(value) as T;
 }
 
+/** 360° yetkinlik anahtarları prompt'ta Türkçe etiketle gider */
+const DIMENSION_LABELS_TR: Record<string, string> = {
+  LOGICAL_ALGORITHMIC: "Mantıksal / algoritmik",
+  LEADERSHIP: "Liderlik",
+  SOCIAL_INTELLIGENCE: "Sosyal zeka",
+  GROWTH_POTENTIAL: "Gelişim potansiyeli",
+  DOMAIN_ALIGNMENT: "Alan uyumu",
+};
+
+/** Prompt'a en çok bu kadar 360° dönemi girer (en yeniler) */
+const MAX_360_CYCLES = 2;
+
 /**
- * ── 360° ENTEGRASYON NOKTASI ──────────────────────────────
- * 360° modülü (Aşama 1) bu dala birleştirildiğinde burada
- * `getSubjectResults()` (server/src/services/review-results.service.ts) çağrılır ve
- * yalnızca YAYINLANMIŞ (released) döngülerin, anonimlik eşiğini geçen toplulaştırılmış
- * sonuçları `Review360Input` biçimine çevrilir. Değerlendiren kimliği ve ham yorum
- * prompt'a girmez. Bu dalda 360° modeli olmadığı için boş liste döner.
+ * Yayınlanmış (RELEASED) 360° sonuçları → `Review360Input`.
  *
- * Örnek (birleştirme sonrası):
- *   const results = await getSubjectResults({ organizationId, subjectId: personnelId });
- *   return results.filter((r) => r.releasedAt).slice(0, 2).map(toReview360Input);
+ * Kapılar:
+ * - Yalnız İK'nın yayınladığı sonuçlar (yayın = İK onayı).
+ * - Kişinin en son AI rızası (ConsentRecord AI_ASSESSMENT) kabul edilmiş olmalı; rıza yoksa
+ *   ya da geri çekildiyse 360° verisi AI'a hiç gitmez.
+ * - Puanlar `getSubjectResults()` ile hesaplanır: anonimlik eşiği altındaki eş düzey / ast
+ *   grupları hiçbir değere katılmaz. Değerlendiren kimliği ve serbest yorum metni prompt'a
+ *   girmez; temalar yalnız form maddelerinin metnidir (güçlü yan / kör nokta).
  */
 export async function collectReleased360Results(
-  _organizationId: string,
-  _personnelId: string,
+  organizationId: string,
+  personnelId: string,
 ): Promise<Review360Input[]> {
-  return [];
+  const consent = await prisma.consentRecord.findFirst({
+    where: { personnelId, consentType: "AI_ASSESSMENT" },
+    orderBy: { acceptedAt: "desc" },
+    select: { accepted: true },
+  });
+  if (!consent?.accepted) return [];
+
+  const subjects = await prisma.reviewSubject.findMany({
+    where: { personnelId, status: "RELEASED", cycle: { organizationId, status: "CLOSED" } },
+    orderBy: { releasedAt: "desc" },
+    take: MAX_360_CYCLES,
+    select: { id: true },
+  });
+
+  const out: Review360Input[] = [];
+  for (const sub of subjects) {
+    const r = await getSubjectResults(sub.id, {
+      viewer: { kind: "admin", organizationId, role: "ANALYST" },
+    });
+    const averages: Record<string, number> = {};
+    const gaps: Record<string, number> = {};
+    for (const d of r.dimensions) {
+      const label = DIMENSION_LABELS_TR[d.dimension] ?? d.dimension;
+      if (d.others !== null) averages[label] = d.others;
+      if (d.gap !== null && Math.abs(d.gap) >= 1.5) gaps[label] = d.gap;
+    }
+    if (Object.keys(averages).length === 0) continue;
+    const themes = [
+      ...r.strengths.map((i) => `Güçlü yan: ${i.text}`),
+      ...r.blindSpots.slice(0, 3).map((i) => `Kör nokta: ${i.text}`),
+      ...r.developmentAreas.map((i) => `Gelişim alanı: ${i.text}`),
+    ].slice(0, 8);
+    out.push({
+      cycleName: r.cycle.name,
+      releasedAt: r.subject.releasedAt,
+      averages,
+      ...(Object.keys(gaps).length > 0 && { gaps }),
+      themes,
+    });
+  }
+  return out;
 }
 
 /**

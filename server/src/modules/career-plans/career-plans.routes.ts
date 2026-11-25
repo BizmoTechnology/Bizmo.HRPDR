@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { CareerPlan, Prisma } from "@prisma/client";
 import { prisma } from "../../lib/prisma.js";
 import { HttpError } from "../../lib/http-error.js";
+import { shareOverrideSchema } from "../../lib/sharing.js";
 import { aiRateLimit } from "../../lib/rate-limit.js";
 import { requireRole, ROLE_GROUPS } from "../../middleware/authenticate.js";
 import {
@@ -85,6 +86,8 @@ const updateSchema = z
     targetRole: targetRoleSchema,
     horizonMonths: horizonSchema.optional(),
     steps: stepsSchema.optional(),
+    /** Personelle paylaşım: null = kurum varsayılanı (lib/sharing.ts resolveShare) */
+    shareWithEmployee: shareOverrideSchema.optional(),
   })
   .strict();
 
@@ -338,6 +341,8 @@ const careerPlansRoutes: FastifyPluginAsync = async (fastify) => {
             steps: (body.steps ?? (base ? readSteps(base.steps) : [])) as Prisma.InputJsonValue,
             version: await nextVersion(tx, personnelId),
             basedOnVersion: base?.version ?? null,
+            // Revizyon önceki sürümün paylaşım tercihini devralır
+            shareWithEmployee: base?.shareWithEmployee ?? null,
             createdById: request.user.sub,
           },
         });
@@ -363,6 +368,8 @@ const careerPlansRoutes: FastifyPluginAsync = async (fastify) => {
       }
 
       const data: Prisma.CareerPlanUpdateInput = {};
+      // Paylaşım tercihi taslakta da onaylı planda da değiştirilebilir
+      if (body.shareWithEmployee !== undefined) data.shareWithEmployee = body.shareWithEmployee;
       if (plan.status === "APPROVED") {
         if (body.targetRole !== undefined || body.horizonMonths !== undefined) {
           throw new HttpError(

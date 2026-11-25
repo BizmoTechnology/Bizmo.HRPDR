@@ -22,10 +22,21 @@ export interface PortalTask {
   answeredCount: number;
 }
 
+/** 360° değerlendirici görevi (sunucu: services/portal-performance.service.ts) */
+export interface PortalReviewTask {
+  assignmentId: string;
+  status: "NOT_STARTED" | "IN_PROGRESS";
+  relation: "SELF" | "MANAGER" | "PEER" | "SUBORDINATE";
+  subject: { firstName: string; lastName: string; position: string };
+  cycle: { id: string; name: string; dueAt: string | null };
+  questionCount: number;
+  answeredCount: number;
+}
+
 export interface PortalTasks {
   assessments: PortalTask[];
-  /** TODO(entegrasyon): 360° değerlendirici görevleri */
-  reviews: unknown[];
+  /** Bekleyen 360° değerlendirici görevleri */
+  reviews: PortalReviewTask[];
 }
 
 export interface PortalAssessmentResult {
@@ -41,12 +52,57 @@ export interface PortalAssessmentResult {
   careerPaths: { shortTerm: string | null; midTerm: string | null; longTerm: string | null } | null;
 }
 
+export interface PortalReviewItem {
+  text: string;
+  dimension: string;
+  self: number | null;
+  others: number | null;
+}
+
+/** Yayınlanmış ve paylaşılan 360° sonucu; eşik altındaki gruplar `visible: false` ve puansız */
+export interface PortalReviewResult {
+  subjectId: string;
+  cycle: { id: string; name: string; periodStart: string | null; periodEnd: string | null };
+  releasedAt: string | null;
+  anonymityMinRaters: number;
+  overall: { self: number | null; others: number | null; weighted: number | null };
+  groups: Array<{
+    relation: PortalReviewTask["relation"];
+    label: string;
+    completed: number;
+    visible: boolean;
+    hiddenReason: "INSUFFICIENT_RATERS" | "NO_RATERS" | null;
+    overall: number | null;
+  }>;
+  dimensions: Array<{
+    dimension: string;
+    self: number | null;
+    others: number | null;
+    weighted: number | null;
+    gap: number | null;
+  }>;
+  strengths: PortalReviewItem[];
+  developmentAreas: PortalReviewItem[];
+  blindSpots: PortalReviewItem[];
+  hiddenStrengths: PortalReviewItem[];
+  comments: Array<{ relation: PortalReviewTask["relation"]; questionText: string; text: string }>;
+}
+
+export interface PortalCareerPlan {
+  id: string;
+  version: number;
+  targetRole: string | null;
+  horizonMonths: number;
+  approvedAt: string | null;
+  steps: Array<{ id: string; title: string; type: string; targetDate: string | null; status: string }>;
+}
+
 export interface PortalResults {
   assessments: PortalAssessmentResult[];
-  /** TODO(entegrasyon): yayınlanmış ve paylaşılan 360° sonuçları */
-  reviews: unknown[];
-  /** TODO(entegrasyon): onaylı ve paylaşılan kariyer planı */
-  careerPlan: unknown | null;
+  /** Yayınlanmış ve paylaşılan 360° sonuçları */
+  reviews: PortalReviewResult[];
+  /** Onaylı ve paylaşılan kariyer yol haritası */
+  careerPlan: PortalCareerPlan | null;
 }
 
 export const getProfile = () =>

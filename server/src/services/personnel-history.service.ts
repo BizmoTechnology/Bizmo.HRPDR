@@ -9,6 +9,7 @@ import {
   type DimensionScores,
 } from "./scoring.service.js";
 import { parseSnapshot } from "./session-questions.service.js";
+import { getSubjectResults } from "./review-results.service.js";
 
 /**
  * Personel geçmişi: bir kişinin tüm HR/PDR oturumları, personel olayları (işe giriş,
@@ -70,18 +71,29 @@ export interface HistoryEvent {
 }
 
 /**
- * 360° dönem sonucu (Aşama 1 entegrasyonu). Şimdilik boş döner; alan adları
- * `review-results.service.ts → getSubjectResults()` çıktısına göre entegrasyonda kesinleşir.
+ * 360° dönem sonucu: kapanmış dönemlerde kişinin değerlendirilen kaydı (ReviewSubject).
+ * Skorlar `getSubjectResults()` ile hesaplanır, yani anonimlik eşiği altındaki eş düzey /
+ * ast grupları hiçbir değere katılmaz. Skorlar yalnız analyze grubuna dolu döner.
  */
 export interface HistoryReviewResult {
+  /** ReviewSubject.id */
   id: string;
   cycleId: string;
   cycleName: string;
   periodStart: string | null;
   periodEnd: string | null;
+  closedAt: string | null;
   releasedAt: string | null;
+  /** Personelle paylaşım için yayınlandı mı */
+  released: boolean;
+  /** Grup ağırlıklı birleşik puan (0–10) */
   overallScore: number | null;
+  selfScore: number | null;
+  othersScore: number | null;
+  /** Boyut başına grup ağırlıklı puan */
   dimensionScores: DimensionScores | null;
+  completedRaters: number | null;
+  totalRaters: number | null;
 }
 
 export type HistoryTimelineEntry =
@@ -287,11 +299,52 @@ export async function getPersonnelHistory(params: {
     });
   }
 
-  // TODO(entegrasyon, Aşama 1): 360° dönem sonuçları. `review-results.service.ts` içindeki
-  // `getSubjectResults({ organizationId, personnelId, canViewAnalysis })` ile doldurulacak;
-  // yalnız yayınlanmış (released) sonuçlar ve anonimlik eşiği uygulanmış grup ortalamaları.
-  // Her sonuç timeline'a `{ kind: "review", date: releasedAt ?? periodEnd }` olarak eklenir.
+  // 360° dönem sonuçları: yalnız kapanmış (sonucu dondurulmuş) dönemler. Devam eden dönemin
+  // anlık sonucu dönem panosundan görülür; geçmişe kesinleşmiş sonuç girer.
+  const subjects = await prisma.reviewSubject.findMany({
+    where: { personnelId, cycle: { organizationId, status: "CLOSED" } },
+    orderBy: { createdAt: "asc" },
+    select: {
+      id: true,
+      status: true,
+      releasedAt: true,
+      cycle: { select: { id: true, name: true, periodStart: true, periodEnd: true, closedAt: true } },
+    },
+  });
   const reviews: HistoryReviewResult[] = [];
+  for (const sub of subjects) {
+    const base: HistoryReviewResult = {
+      id: sub.id,
+      cycleId: sub.cycle.id,
+      cycleName: sub.cycle.name,
+      periodStart: iso(sub.cycle.periodStart),
+      periodEnd: iso(sub.cycle.periodEnd),
+      closedAt: iso(sub.cycle.closedAt),
+      releasedAt: iso(sub.releasedAt),
+      released: sub.status === "RELEASED",
+      overallScore: null,
+      selfScore: null,
+      othersScore: null,
+      dimensionScores: null,
+      completedRaters: null,
+      totalRaters: null,
+    };
+    if (canViewAnalysis) {
+      // Rol kontrolü çağıranda yapıldı (canViewAnalysis = ROLE_GROUPS.analyze)
+      const r = await getSubjectResults(sub.id, {
+        viewer: { kind: "admin", organizationId, role: "ANALYST" },
+      });
+      const dims: DimensionScores = {};
+      for (const d of r.dimensions) if (d.weighted !== null) dims[d.dimension] = d.weighted;
+      base.overallScore = r.overall.weighted;
+      base.selfScore = r.overall.self;
+      base.othersScore = r.overall.others;
+      base.dimensionScores = Object.keys(dims).length > 0 ? dims : null;
+      base.completedRaters = r.completedRaters;
+      base.totalRaters = r.totalRaters;
+    }
+    reviews.push(base);
+  }
 
   const timeline: HistoryTimelineEntry[] = [
     ...events.map((e) => ({ kind: "event" as const, id: e.id, date: e.date, eventId: e.id })),
@@ -304,7 +357,7 @@ export async function getPersonnelHistory(params: {
     ...reviews.map((r) => ({
       kind: "review" as const,
       id: `review-${r.id}`,
-      date: r.releasedAt ?? r.periodEnd ?? new Date(0).toISOString(),
+      date: r.releasedAt ?? r.closedAt ?? r.periodEnd ?? new Date(0).toISOString(),
       reviewId: r.id,
     })),
   ].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)); // en yeni üstte

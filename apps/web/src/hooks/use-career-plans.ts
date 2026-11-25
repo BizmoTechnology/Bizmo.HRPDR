@@ -135,6 +135,8 @@ export function useUpdateCareerPlan(personnelId: string) {
       targetRole?: string | null;
       horizonMonths?: number;
       steps?: CareerStep[];
+      /** Personelle paylaşım: null = kurum varsayılanı */
+      shareWithEmployee?: boolean | null;
     }) =>
       api
         .patch<{ data: CareerPlan }>(`${base(personnelId)}/${planId}`, body)

@@ -5,6 +5,7 @@ import { prisma } from "../../lib/prisma.js";
 import { HttpError } from "../../lib/http-error.js";
 import { isMailerConfigured } from "../../lib/mailer.js";
 import { assertQuestionSetInOrg } from "../../lib/tenant.js";
+import { shareOverrideSchema } from "../../lib/sharing.js";
 import {
   requireRole,
   requireRoleForWrites,
@@ -57,7 +58,8 @@ const cycleBaseSchema = z.object({
   raterWeights: weightsSchema.default(DEFAULT_RATER_WEIGHTS),
   anonymityMinRaters: z.number().int().min(MIN_ANONYMITY).max(20).default(3),
   includeSelf: z.boolean().default(true),
-  shareWithEmployee: z.boolean().nullable().optional(),
+  /** Personelle paylaşım: null = kurum varsayılanı (lib/sharing.ts resolveShare) */
+  shareWithEmployee: shareOverrideSchema.optional(),
 });
 
 const createSchema = cycleBaseSchema.refine(
@@ -248,7 +250,11 @@ export const reviewCycleRoutes: FastifyPluginAsync = async (fastify) => {
     const body = updateSchema.parse(request.body);
 
     if (cycle.status === "CLOSED") {
-      throw new HttpError("Kapanmış dönem düzenlenemez", 409, "CYCLE_CLOSED");
+      // Kapanmış dönemde yalnız personelle paylaşım tercihi değişebilir
+      const others = Object.entries(body).filter(([k, v]) => k !== "shareWithEmployee" && v !== undefined);
+      if (others.length > 0) {
+        throw new HttpError("Kapanmış dönemde yalnız paylaşım tercihi değiştirilebilir", 409, "CYCLE_CLOSED");
+      }
     }
     if (cycle.status === "ACTIVE") {
       // Başlamış dönemde form, ağırlık ve anonimlik eşiği değişmez: aksi halde

@@ -1,14 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { motion } from "framer-motion";
 import { Eye, EyeOff, BrainCircuit, Cog, Target, BarChart3, AlertCircle, UserRound } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { loginSchema, type LoginInput } from "@ph/shared";
+import { loginSchema, ssoErrorMessage, type LoginInput } from "@ph/shared";
 import { api, setAccessToken } from "@/lib/api";
+import { bizmoIdLoginUrl, fetchAuthMode, type AuthModeInfo } from "@/lib/bizmo-id";
+import { BizmoIdButton } from "@/components/layout/BizmoIdButton";
 import { useAuthStore } from "@/store/auth.store";
 import { cn } from "@/lib/utils";
 import { AppMark } from "@/components/layout/AppMark";
@@ -19,17 +21,40 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [ssoError, setSsoError] = useState<{ code: string; message: string } | null>(null);
+  const [authMode, setAuthMode] = useState<AuthModeInfo | null>(null);
+  const [showEmergency, setShowEmergency] = useState(false);
   const router = useRouter();
   const setAuth = useAuthStore((s) => s.setAuth);
 
   const {
     register,
     handleSubmit,
+    watch,
     formState: { errors },
   } = useForm<LoginInput>({
     resolver: zodResolver(loginSchema),
     defaultValues: { rememberMe: false },
   });
+  const rememberMe = watch("rememberMe");
+
+  useEffect(() => {
+    void fetchAuthMode().then(setAuthMode);
+    // Bizmo.ID dönüşündeki hata kodu bir kez gösterilir, adres çubuğundan kaldırılır
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("sso_error");
+    if (code) {
+      setSsoError({ code: code.slice(0, 40), message: ssoErrorMessage(code, "admin") ?? "" });
+      params.delete("sso_error");
+      const rest = params.toString();
+      window.history.replaceState(null, "", `${window.location.pathname}${rest ? `?${rest}` : ""}`);
+    }
+  }, []);
+
+  const bizmoIdVisible = !!authMode?.bizmoId.enabled;
+  // Merkezi modda şifreli giriş yalnız acil durum içindir (süper yönetici)
+  const emergencyOnly = authMode?.localLogin === "super_admin";
+  const showPasswordForm = !emergencyOnly || showEmergency;
 
   const onSubmit = async (data: LoginInput) => {
     setIsLoading(true);
@@ -37,6 +62,7 @@ export default function LoginPage() {
     try {
       const res = await api.post("/api/auth/login", data);
       const { accessToken, user } = res.data.data;
+      setSsoError(null);
       setAccessToken(accessToken);
       setAuth(user, accessToken);
       toast.success(`Hoş geldiniz, ${user.name}!`);
@@ -147,6 +173,45 @@ export default function LoginPage() {
             </h2>
             <p className="mt-1 text-[13.5px] text-fg2">Yönetim paneline giriş yapın.</p>
 
+            {ssoError && (
+              <div role="alert" className="bz-alert bz-alert--danger mt-5">
+                <AlertCircle />
+                <div>
+                  <p className="bz-alert__title">Bizmo.ID ile giriş yapılamadı</p>
+                  <p>{ssoError.message}</p>
+                  <p className="mt-1 text-xs opacity-80">Destek kodu: SSO-{ssoError.code}</p>
+                </div>
+              </div>
+            )}
+
+            {bizmoIdVisible && authMode && (
+              <div className="mt-6">
+                <BizmoIdButton
+                  info={authMode.bizmoId}
+                  href={bizmoIdLoginUrl({ rememberMe: !!rememberMe })}
+                />
+                {showPasswordForm && (
+                  <div className="mt-5 flex items-center gap-3 text-xs text-fg3" aria-hidden="true">
+                    <span className="h-px flex-1 bg-divider" />
+                    veya e-posta ve şifreyle
+                    <span className="h-px flex-1 bg-divider" />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {emergencyOnly && !showEmergency && (
+              <p className="mt-5 text-center">
+                <button
+                  type="button"
+                  className="bz-link text-[13px]"
+                  onClick={() => setShowEmergency(true)}
+                >
+                  Yönetici girişi (acil durum)
+                </button>
+              </p>
+            )}
+
             {formError && (
               <div role="alert" className="bz-alert bz-alert--danger mt-5">
                 <AlertCircle />
@@ -157,7 +222,11 @@ export default function LoginPage() {
               </div>
             )}
 
-            <form method="post" onSubmit={handleSubmit(onSubmit)} className="mt-6 space-y-4">
+            <form
+              method="post"
+              onSubmit={handleSubmit(onSubmit)}
+              className={cn("space-y-4", bizmoIdVisible ? "mt-4" : "mt-6", !showPasswordForm && "hidden")}
+            >
               {/* E-posta */}
               <div className="bz-form-row">
                 <label htmlFor="login-email" className="bz-label">

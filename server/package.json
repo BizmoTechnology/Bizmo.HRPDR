@@ -12,7 +12,8 @@
     "prisma:migrate:prod": "prisma migrate deploy",
     "prisma:seed": "tsx prisma/seed.ts",
     "prisma:studio": "prisma studio",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "test": "tsx --test \"src/**/*.test.ts\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.24.0",
@@ -32,6 +33,7 @@
     "dotenv": "^17.4.2",
     "fastify": "^4.28.0",
     "fastify-plugin": "^4.5.1",
+    "jose": "^6.2.18",
     "jsonwebtoken": "^9.0.2",
     "nodemailer": "^10.2.1",
     "openai": "^4.52.0",

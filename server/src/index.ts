@@ -13,6 +13,9 @@ import jwtPlugin from "./plugins/jwt.js";
 import { registerErrorHandlers } from "./plugins/error-handler.js";
 import { authenticate, authenticatePortal } from "./middleware/authenticate.js";
 import authRoutes from "./modules/auth/auth.routes.js";
+import bizmoIdRoutes from "./modules/bizmo-id/bizmo-id.routes.js";
+import scimRoutes from "./modules/bizmo-id/scim.routes.js";
+import { bizmoIdStatus } from "./modules/bizmo-id/config.js";
 import departmentsRoutes from "./modules/departments/departments.routes.js";
 import teamsRoutes from "./modules/teams/teams.routes.js";
 import personnelRoutes from "./modules/personnel/personnel.routes.js";
@@ -137,6 +140,8 @@ app.get("/health/ready", async (_request, reply) => {
 // ── Routes ────────────────────────────────────────
 
 await app.register(authRoutes, { prefix: "/api/auth" });
+await app.register(bizmoIdRoutes, { prefix: "/api/auth" });
+await app.register(scimRoutes, { prefix: "/scim/v2" });
 await app.register(departmentsRoutes, { prefix: "/api/departments" });
 await app.register(teamsRoutes, { prefix: "/api/teams" });
 await app.register(personnelRoutes, { prefix: "/api/personnel" });
@@ -163,6 +168,12 @@ const PORT = parseInt(process.env["PORT"] ?? "3001", 10);
 try {
   await app.listen({ port: PORT, host: "0.0.0.0" });
   app.log.info(`🚀 API sunucusu http://0.0.0.0:${PORT} adresinde çalışıyor`);
+
+  const sso = bizmoIdStatus();
+  if (sso.mode !== "local") {
+    if (sso.configured) app.log.info({ mode: sso.mode }, "Bizmo.ID ile giriş açık");
+    else app.log.warn({ mode: sso.mode, problems: sso.problems }, "Bizmo.ID bağlı değil: yapılandırma eksik");
+  }
 
   // Yarıda kalan AI analizlerini başlangıçta ve periyodik olarak yeniden kuyruğa al
   const sweep = () =>

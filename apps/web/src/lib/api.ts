@@ -20,7 +20,8 @@ let onAuthFailure: (() => void) | null = null;
  * 401 yanıtında yenilenmeyecek kimlik doğrulama çağrıları (ör. hatalı şifre).
  * logout / change-password gibi oturum gerektiren çağrılar bu listede değildir.
  */
-const PUBLIC_AUTH_ENDPOINT = /\/api\/auth\/(login|refresh|forgot-password|reset-password)(\?|$)/;
+const PUBLIC_AUTH_ENDPOINT =
+  /\/api\/auth\/(login|refresh|forgot-password|reset-password|mode|bizmo-id\/exchange|bizmo-id\/logout)(\?|$)/;
 
 /** Kalıcı oturum bilgisi (auth store, localStorage "ph-auth") var mı? */
 function hasSessionHint(): boolean {

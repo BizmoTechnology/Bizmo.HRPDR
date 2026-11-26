@@ -3,6 +3,7 @@ import "../src/env.js";
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { seedRespondents } from "./seed-respondents.js";
+import { seedSectorTemplates } from "./seed-sector-templates.js";
 import { seedReviews } from "./seed-reviews.js";
 import { seedHistory } from "./seed-history.js";
 
@@ -332,6 +333,15 @@ async function main() {
       now,
     });
   }
+
+  // ── Sektörel soru şablonları (talaşlı imalat) ──
+  // Örnek değerlendirme varsayılan seti kullanır; şablonlar ondan sonra eklenir.
+  const sector = await seedSectorTemplates({
+    prisma,
+    organizationId: org.id,
+    createdById: admin.id,
+  });
+  for (const name of sector.created) console.log(`✅ QuestionSet (şablon): ${name}`);
 
   // ── Org şeması ve örnek 360° dönemi ──
   await seedReviews({ prisma, organizationId: org.id, createdById: hrManager.id, now: new Date() });

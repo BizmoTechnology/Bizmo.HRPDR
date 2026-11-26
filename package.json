@@ -22,6 +22,7 @@
     "type-check": "npm run type-check --workspaces --if-present",
     "db:migrate": "npm run prisma:migrate -w server",
     "db:seed": "npm run prisma:seed -w server",
+    "db:seed:sector": "npm run prisma:seed:sector -w server",
     "db:studio": "npm run prisma:studio -w server",
     "docker:dev": "docker compose up -d postgres redis",
     "docker:down": "docker compose down",

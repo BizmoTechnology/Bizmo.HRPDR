@@ -1,8 +1,13 @@
+import { keyedChoiceScore, parseQuestionScoring } from "../lib/question-scoring.js";
+
 /**
  * Skor sözleşmesi (development.md §4.1) — tek kaynak.
  *
  * - Tüm boyut skorları 0.0–10.0 aralığında, bir ondalık hassasiyetle saklanır.
- * - SCALE cevapları minScale/maxScale aralığından 0–10 bandına normalize edilir.
+ * - SCALE cevapları minScale/maxScale aralığından 0–10 bandına normalize edilir;
+ *   ters puanlanan maddelerde (`scoring.reverse`) ölçek ters çevrilir.
+ * - Puan anahtarlı MULTIPLE_CHOICE cevapları (`scoring.key`) anahtardaki
+ *   puan aralığından 0–10 bandına normalize edilir; anahtarsız olanlar puanlanmaz.
  * - effectiveQuestionWeight = Question.weight × (QuestionSetItem.customWeight ?? 1)
  *   (boyut ağırlığı yalnızca bileşik/genel skorda uygulanır).
  */
@@ -26,11 +31,14 @@ export interface ScorableQuestion {
   customWeight?: number | null;
   minScale?: number | null;
   maxScale?: number | null;
+  /** `Question.scoring` (bkz. lib/question-scoring.ts); eski snapshot'larda yoktur */
+  scoring?: unknown;
 }
 
 export interface ScorableAnswer {
   questionId: string;
   scaleValue: number | null;
+  choiceKey?: string | null;
 }
 
 export function roundScore(value: number): number {
@@ -42,7 +50,30 @@ function isDimension(v: string): v is Dimension {
   return (DIMENSIONS as readonly string[]).includes(v);
 }
 
-/** SCALE cevaplarından deterministik boyut skorları (AI gerektirmez). */
+/** Tek cevabın deterministik puanı (0–10, yuvarlanmamış); puanlanamıyorsa `null`. */
+export function scoreAnswer(q: ScorableQuestion, a: ScorableAnswer | undefined): number | null {
+  if (!a) return null;
+  const scoring = parseQuestionScoring(q.scoring);
+
+  if (q.type === "SCALE") {
+    const value = a.scaleValue;
+    if (value === null || value === undefined) return null;
+    const min = q.minScale ?? 1;
+    const max = q.maxScale ?? 10;
+    if (max <= min) return null;
+    const position = scoring?.reverse ? max - value : value - min;
+    return (position / (max - min)) * 10;
+  }
+
+  if (q.type === "MULTIPLE_CHOICE") return keyedChoiceScore(scoring, a.choiceKey);
+
+  return null;
+}
+
+/**
+ * SCALE ve puan anahtarlı MULTIPLE_CHOICE cevaplarından deterministik boyut
+ * skorları (AI gerektirmez). Açık uçlu cevaplar AI analizinde değerlendirilir.
+ */
 export function computeScaleScores(
   questions: ScorableQuestion[],
   answers: ScorableAnswer[],
@@ -51,20 +82,15 @@ export function computeScaleScores(
   const acc = new Map<Dimension, { sum: number; weight: number }>();
 
   for (const q of questions) {
-    if (q.type !== "SCALE" || !isDimension(q.dimension)) continue;
-    const value = byQuestion.get(q.id)?.scaleValue;
-    if (value === null || value === undefined) continue;
+    if (!isDimension(q.dimension)) continue;
+    const score = scoreAnswer(q, byQuestion.get(q.id));
+    if (score === null) continue;
 
-    const min = q.minScale ?? 1;
-    const max = q.maxScale ?? 10;
-    if (max <= min) continue;
-
-    const normalized = ((value - min) / (max - min)) * 10;
     const weight = (q.weight ?? 1) * (q.customWeight ?? 1);
     if (weight <= 0) continue;
 
     const cur = acc.get(q.dimension) ?? { sum: 0, weight: 0 };
-    cur.sum += normalized * weight;
+    cur.sum += score * weight;
     cur.weight += weight;
     acc.set(q.dimension, cur);
   }

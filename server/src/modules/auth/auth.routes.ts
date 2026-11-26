@@ -24,6 +24,8 @@ import {
 import bcrypt from "bcryptjs";
 import { prisma } from "../../lib/prisma.js";
 import { sendMail } from "../../lib/mailer.js";
+import { bizmoIdStatus } from "../bizmo-id/config.js";
+import { setAdminRefreshCookie } from "./cookies.js";
 
 /** development.md §12.1 — auth endpoint'leri için IP başına sınır */
 const authRateLimit = {
@@ -62,24 +64,29 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post("/login", loginRateLimit("email"), async (request, reply) => {
     const body = loginBodySchema.parse(request.body);
 
+    // Merkezi Bizmo.ID modunda yerel giriş yalnız acil durum içindir (SUPER_ADMIN)
+    const sso = bizmoIdStatus();
+    const localLoginRoles = sso.mode === "central" && sso.configured ? ["SUPER_ADMIN"] : undefined;
+
     try {
       const result = await adminLogin(
         fastify,
         body.email,
         body.password,
-        body.rememberMe
+        body.rememberMe,
+        localLoginRoles,
       );
 
-      reply
-        .setCookie("refreshToken", result.tokens.refreshToken, {
-          httpOnly: true,
-          secure: process.env["NODE_ENV"] === "production",
-          sameSite: "strict",
-          maxAge: body.rememberMe ? 60 * 60 * 24 * 30 : 60 * 60 * 24 * 7,
-          path: "/api/auth",
-        })
+      setAdminRefreshCookie(reply, result.tokens.refreshToken, body.rememberMe)
         .send({ data: { accessToken: result.tokens.accessToken, user: result.user } });
-    } catch {
+    } catch (err) {
+      if ((err as Error).message === "LOCAL_LOGIN_DISABLED") {
+        return reply.status(403).send({
+          code: "LOCAL_LOGIN_DISABLED",
+          message: "Bu panele Bizmo.ID ile giriş yapılır",
+          traceId: request.traceId,
+        });
+      }
       reply.status(401).send({
         code: "INVALID_CREDENTIALS",
         message: "E-posta veya şifre hatalı",
@@ -214,11 +221,13 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post("/forgot-password", authRateLimit, async (request, reply) => {
     const { email } = forgotPasswordBodySchema.parse(request.body);
 
-    const user = await prisma.user.findFirst({
-      where: { email, deletedAt: null, isActive: true },
+    // Aynı e-posta birden fazla kurumda kayıtlı olabilir: her hesap için ayrı bağlantı
+    const users = await prisma.user.findMany({
+      where: { email: { equals: email.trim(), mode: "insensitive" }, deletedAt: null, isActive: true },
+      take: 10,
     });
 
-    if (user) {
+    for (const user of users) {
       const token = await createPasswordResetToken(user.id);
       const appUrl = (process.env["APP_URL"] ?? "http://localhost:3000").replace(/\/$/, "");
       const resetUrl = `${appUrl}/reset-password?token=${encodeURIComponent(token)}`;

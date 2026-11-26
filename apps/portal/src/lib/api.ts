@@ -138,4 +138,12 @@ export async function logout() {
     // Sunucuya ulaşılamasa da yerel oturum temizlenir
   }
   clearSession();
+  // Bizmo.ID ile açılan oturumda Bizmo.ID oturumu da kapatılır; tarayıcı Bizmo.ID'nin
+  // çıkış adresine gider ve giriş ekranına döner (çağıranın yönlendirmesi beklenmez)
+  const { portalBizmoIdLogoutUrl } = await import("./bizmo-id");
+  const endSessionUrl = await portalBizmoIdLogoutUrl();
+  if (endSessionUrl && typeof window !== "undefined") {
+    window.location.assign(endSessionUrl);
+    await new Promise<never>(() => undefined);
+  }
 }

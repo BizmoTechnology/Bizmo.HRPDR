@@ -16,7 +16,6 @@ import {
   Loader2,
   Search,
   Star,
-  GripVertical,
   Sparkles,
   BrainCircuit,
   Library,
@@ -27,6 +26,7 @@ import { cn } from "@/lib/utils";
 import { apiErrorMessage } from "@/lib/api";
 import { dimensionColor } from "@/lib/dimension-colors";
 import { AiNotConnectedNotice } from "@/components/ai/AiNotConnectedNotice";
+import { SortableItemList } from "@/components/question-sets/SortableItemList";
 import {
   useQuestionSet,
   useDeleteQuestionSet,
@@ -381,66 +381,55 @@ export default function QuestionSetDetailPage() {
             </button>
           </div>
         ) : (
-          <ol className="divide-y divide-divider">
-            {[...items]
-              .sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0))
-              .map((item: any, idx: number) => {
-                const q = item.question;
-                if (!q) return null;
-                const dimColors = dimensionColor(q.dimension);
-                const weight = item.customWeight ?? q.weight;
-                return (
-                  <li
-                    key={item.id}
-                    className="group -mx-2 flex items-start gap-3 rounded-xl px-2 py-3 transition-colors hover:bg-hover"
-                  >
-                    <div className="flex items-center gap-1 pt-0.5 shrink-0">
-                      <GripVertical className="h-4 w-4 text-fg3 opacity-0 group-hover:opacity-60 transition-opacity" aria-hidden="true" />
-                      <span className="text-xs tabular-nums text-fg3 font-semibold w-5 text-right">
-                        {idx + 1}
-                      </span>
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-foreground leading-relaxed">
-                        {q.text}
-                      </p>
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1.5">
-                        <span
-                          className={cn(
-                            "bz-chip text-foreground",
-                            dimColors.bg,
-                          )}
-                        >
-                          <span
-                            className={cn("h-1.5 w-1.5 rounded-full", dimColors.bar)}
-                            aria-hidden="true"
-                          />
-                          {DIMENSION_LABELS[q.dimension]}
-                        </span>
-                        <span className="text-xs text-fg3">
-                          {QUESTION_TYPE_LABELS[q.type] ?? q.type}
-                          {" · "}
-                          {QUESTION_PHASE_LABELS[q.phase] ?? q.phase}
-                          {weight !== 1 && (
-                            <>
-                              {" · "}Ağırlık{" "}
-                              <b className="tabular-nums">{weight}</b>
-                            </>
-                          )}
-                        </span>
-                        {q.scoring?.reverse && <span className="bz-chip">Ters madde</span>}
-                        {q.scoring?.key && <span className="bz-chip">Puan anahtarlı</span>}
-                        {sourceTags(q.tags).length > 0 && (
-                          <span className="text-xs text-fg3">
-                            Kaynak: {sourceTags(q.tags).join(" · ")}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </li>
-                );
-              })}
-          </ol>
+          <SortableItemList
+            items={[...items].sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0)).filter((it: any) => it.question)}
+            label={(item: any) => item.question.text}
+            disabled={updateMutation.isPending}
+            onReorder={async (next: any[]) => {
+              // Sıra 1..n olarak yeniden verilir; mevcut buildItemsPayload sözleşmesi korunur
+              const { items: payload } = buildItemsPayload(
+                next.map((it, i) => ({ ...it, order: i + 1 })),
+                [],
+              );
+              try {
+                await updateMutation.mutateAsync({ id, data: { items: payload } });
+                toast.success("Soru sırası kaydedildi", { duration: 1800 });
+              } catch (err) {
+                toast.error(apiErrorMessage(err, "Sıra kaydedilemedi"));
+              }
+            }}
+            renderItem={(item: any) => {
+              const q = item.question;
+              const dimColors = dimensionColor(q.dimension);
+              const weight = item.customWeight ?? q.weight;
+              return (
+                <>
+                  <p className="text-sm text-foreground leading-relaxed">{q.text}</p>
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1.5">
+                    <span className={cn("bz-chip text-foreground", dimColors.bg)}>
+                      <span className={cn("h-1.5 w-1.5 rounded-full", dimColors.bar)} aria-hidden="true" />
+                      {DIMENSION_LABELS[q.dimension]}
+                    </span>
+                    <span className="text-xs text-fg3">
+                      {QUESTION_TYPE_LABELS[q.type] ?? q.type}
+                      {" · "}
+                      {QUESTION_PHASE_LABELS[q.phase] ?? q.phase}
+                      {weight !== 1 && (
+                        <>
+                          {" · "}Ağırlık <b className="tabular-nums">{weight}</b>
+                        </>
+                      )}
+                    </span>
+                    {q.scoring?.reverse && <span className="bz-chip">Ters madde</span>}
+                    {q.scoring?.key && <span className="bz-chip">Puan anahtarlı</span>}
+                    {sourceTags(q.tags).length > 0 && (
+                      <span className="text-xs text-fg3">Kaynak: {sourceTags(q.tags).join(" · ")}</span>
+                    )}
+                  </div>
+                </>
+              );
+            }}
+          />
         )}
       </GlassCard>
 

@@ -89,6 +89,8 @@ export const PORTAL_ACCESS_TTL = "1h";
 const PORTAL_REFRESH_TTL_SEC = 60 * 60 * 24;
 
 const BCRYPT_ROUNDS = 12;
+/** Kayıtlı olmayan hesaplarda karşılaştırma süresini eşitlemek için (hiçbir şifreye karşılık gelmez) */
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync(randomUUID(), BCRYPT_ROUNDS);
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 60 dakika
 
 export interface TokenPair {
@@ -127,19 +129,36 @@ export async function adminLogin(
   fastify: FastifyInstance,
   email: string,
   password: string,
-  rememberMe: boolean
+  rememberMe: boolean,
+  /** Merkezi Bizmo.ID modunda yerel girişe izin verilen roller (yoksa herkes) */
+  localLoginRoles?: readonly string[],
 ) {
-  const user = await prisma.user.findFirst({
-    where: { email, deletedAt: null },
+  // E-posta yalnız kurum içinde benzersiz (@@unique([organizationId, email])): şifresi
+  // eşleşen tek aktif hesap kabul edilir; birden fazla eşleşmede genel hata döner.
+  const candidates = await prisma.user.findMany({
+    where: { email: { equals: email.trim(), mode: "insensitive" }, deletedAt: null, isActive: true },
     include: { organization: true },
+    orderBy: { id: "asc" },
+    take: 10,
   });
 
-  if (!user || !user.isActive) {
+  // Hesap yokken de bcrypt çalışır: yanıt süresinden e-postanın kayıtlı olup olmadığı anlaşılmasın
+  if (candidates.length === 0) {
+    await bcrypt.compare(password, DUMMY_PASSWORD_HASH);
     throw new Error("INVALID_CREDENTIALS");
   }
 
-  const valid = await bcrypt.compare(password, user.password);
-  if (!valid) throw new Error("INVALID_CREDENTIALS");
+  let user: (typeof candidates)[number] | null = null;
+  for (const candidate of candidates) {
+    if (!(await bcrypt.compare(password, candidate.password))) continue;
+    if (user) throw new Error("INVALID_CREDENTIALS");
+    user = candidate;
+  }
+  if (!user) throw new Error("INVALID_CREDENTIALS");
+  // Şifre doğrulandıktan sonra denetlenir: önce denetlemek hesabın rolünü sızdırırdı
+  if (localLoginRoles && !localLoginRoles.includes(user.role)) {
+    throw new Error("LOCAL_LOGIN_DISABLED");
+  }
 
   await prisma.user.update({
     where: { id: user.id },
@@ -172,7 +191,6 @@ export async function portalLogin(
 ) {
   const personnel = await prisma.personnel.findFirst({
     where: { employeeId, deletedAt: null },
-    include: { organization: true },
   });
 
   if (!personnel || !personnel.portalPasswordHash || personnel.status !== "ACTIVE") {
@@ -182,6 +200,24 @@ export async function portalLogin(
   const valid = await bcrypt.compare(password, personnel.portalPasswordHash);
   if (!valid) throw new Error("INVALID_CREDENTIALS");
 
+  return issuePortalSession(fastify, personnel);
+}
+
+/**
+ * Doğrulanmış personel için portal oturumu açar (şifre ve SMS kodu girişi ortak):
+ * access + refresh token üretir, refresh özetini kayda ekler, son girişi işler.
+ */
+export async function issuePortalSession(
+  fastify: FastifyInstance,
+  personnel: {
+    id: string;
+    organizationId: string;
+    employeeId: string;
+    firstName: string;
+    lastName: string;
+    preferredLanguage: string;
+  },
+) {
   await prisma.personnel.update({
     where: { id: personnel.id },
     data: { lastPortalLogin: new Date() },

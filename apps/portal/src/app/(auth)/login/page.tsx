@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { AppMark } from "@/components/AppMark";
+import { BizmoIdPortalLogin } from "@/components/BizmoIdPortalLogin";
 import { api, errorMessage, saveSession } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -43,7 +44,7 @@ export default function PortalLoginPage() {
       const { accessToken, refreshToken, personnel } = res.data.data;
       saveSession({ accessToken, refreshToken, personnel });
       toast.success(`Hoş geldiniz, ${personnel.firstName}!`);
-      router.replace("/welcome");
+      router.replace("/home");
     } catch (err: unknown) {
       // Giriş hatası kart içinde kalıcı uyarı olarak gösterilir (DESIGN.md §39: durumlar .bz-alert ile)
       setFormError(errorMessage(err, "Sicil numarası veya şifre hatalı"));
@@ -78,6 +79,8 @@ export default function PortalLoginPage() {
             Değerlendirmeye başlamak için sicil numaranız ve şifrenizle giriş yapın.
           </p>
 
+          <BizmoIdPortalLogin />
+
           {formError && (
             <div role="alert" className="bz-alert bz-alert--danger mt-5">
               <AlertCircle />
@@ -88,7 +91,7 @@ export default function PortalLoginPage() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit(onSubmit)} className="mt-6 space-y-4">
+          <form method="post" onSubmit={handleSubmit(onSubmit)} className="mt-6 space-y-4">
             {/* Sicil no */}
             <div className="bz-form-row">
               <label htmlFor="portal-employee-id" className="bz-label">

@@ -12,6 +12,7 @@ import { ROLE_LABELS } from "@ph/shared";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/auth.store";
 import { api } from "@/lib/api";
+import { bizmoIdLogoutUrl } from "@/lib/bizmo-id";
 import { useNotificationList, useMarkNotificationRead } from "@/hooks/use-api";
 import { findNavItem } from "./nav";
 
@@ -92,14 +93,22 @@ export function Topbar({
   }, [userMenuOpen, notifOpen]);
 
   const handleLogout = async () => {
+    const viaBizmoId = useAuthStore.getState().idp === "bizmo-id";
     try {
       await api.post("/api/auth/logout");
     } catch {
       // Hata olsa bile yerel oturumu temizle
     }
+    // Oturum Bizmo.ID ile açıldıysa Bizmo.ID oturumu da kapatılır; aksi halde sonraki
+    // "Bizmo.ID ile giriş" şifre sormadan içeri alırdı
+    const endSessionUrl = await bizmoIdLogoutUrl(viaBizmoId);
     clearAuth();
     // Sonraki kullanıcı önbellekteki verileri görmesin
     queryClient.clear();
+    if (endSessionUrl) {
+      window.location.assign(endSessionUrl);
+      return;
+    }
     toast.success("Oturumunuz kapatıldı");
     router.replace("/login");
   };

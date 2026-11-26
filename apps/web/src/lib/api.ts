@@ -10,7 +10,7 @@ export const api = axios.create({
 
 /** LLM çağrıları uzun sürebilir; bu endpoint'ler için zaman aşımı uzatılır. */
 const AI_ENDPOINT =
-  /\/(ai-generate|ai-suggest|ai-analysis|messages|list-abacus-models|test)(\?|$)|\/api\/reports\/generate/;
+  /\/(ai-generate|ai-suggest|ai-analysis|messages|list-abacus-models|test)(\?|$)|\/api\/reports\/generate|\/career-plans\/suggest(\?|$)/;
 const AI_TIMEOUT_MS = 180_000;
 
 let accessToken: string | null = null;
@@ -20,7 +20,8 @@ let onAuthFailure: (() => void) | null = null;
  * 401 yanıtında yenilenmeyecek kimlik doğrulama çağrıları (ör. hatalı şifre).
  * logout / change-password gibi oturum gerektiren çağrılar bu listede değildir.
  */
-const PUBLIC_AUTH_ENDPOINT = /\/api\/auth\/(login|refresh|forgot-password|reset-password)(\?|$)/;
+const PUBLIC_AUTH_ENDPOINT =
+  /\/api\/auth\/(login|refresh|forgot-password|reset-password|mode|bizmo-id\/exchange|bizmo-id\/logout)(\?|$)/;
 
 /** Kalıcı oturum bilgisi (auth store, localStorage "ph-auth") var mı? */
 function hasSessionHint(): boolean {

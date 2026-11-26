@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { AnimatePresence } from "framer-motion";
 import { AiChatDock } from "@/components/ai-chat/AiChatDock";
+import { usePermissions } from "@/lib/roles";
 import { CommandPalette } from "./CommandPalette";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
@@ -16,6 +17,7 @@ const COLLAPSED_KEY = "sidebarCollapsed";
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const { canAnalyze } = usePermissions();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -86,7 +88,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {paletteOpen ? <CommandPalette onClose={() => setPaletteOpen(false)} /> : null}
       </AnimatePresence>
       {/* AI asistan sayfasında yüzen asistan düğmesi aynı sohbeti açacağı için gösterilmez */}
-      {pathname !== "/ai-chat" ? (
+      {canAnalyze && pathname !== "/ai-chat" ? (
         <div className="bz-no-print">
           <AiChatDock />
         </div>

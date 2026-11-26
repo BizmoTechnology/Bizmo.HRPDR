@@ -4,6 +4,12 @@ import { prisma } from "../../lib/prisma.js";
 import { isHttpError } from "../../lib/http-error.js";
 import { requireActiveAiConfig } from "../../lib/ai-connection.js";
 import { generateHrAssistantReply } from "../../services/ai-chat.service.js";
+import { requireRole, ROLE_GROUPS } from "../../middleware/authenticate.js";
+import { aiRateLimit } from "../../lib/rate-limit.js";
+
+/** LLM'e gönderilen geçmiş: son mesajlar, toplam karakter sınırı içinde */
+const MAX_DIALOGUE_MESSAGES = 20;
+const MAX_DIALOGUE_CHARS = 60_000;
 
 const createConversationSchema = z.object({
   title: z.string().max(200).optional(),
@@ -15,6 +21,8 @@ const sendMessageSchema = z.object({
 
 const aiChatRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.addHook("onRequest", fastify.authenticate);
+  // Bağlam personelin analiz/skor verisini içerir: raporlarla aynı rol grubu
+  fastify.addHook("preHandler", requireRole(ROLE_GROUPS.analyze));
 
   // POST /conversations
   fastify.post("/conversations", async (request, reply) => {
@@ -176,6 +184,7 @@ const aiChatRoutes: FastifyPluginAsync = async (fastify) => {
   // POST /conversations/:id/messages
   fastify.post<{ Params: { id: string } }>(
     "/conversations/:id/messages",
+    { config: aiRateLimit("ai-chat") },
     async (request, reply) => {
       const orgId = request.user.orgId!;
       const userId = request.user.sub;
@@ -223,10 +232,15 @@ const aiChatRoutes: FastifyPluginAsync = async (fastify) => {
           orderBy: { createdAt: "asc" },
         });
 
-        const dialogue = all.map((m) => ({
-          role: m.role as "user" | "assistant",
-          content: m.content,
-        }));
+        // Sondan geriye doğru sınır içinde kalan mesajlar; ilk mesaj kullanıcıdan olmalı
+        const dialogue: Array<{ role: "user" | "assistant"; content: string }> = [];
+        let chars = 0;
+        for (const m of all.slice(-MAX_DIALOGUE_MESSAGES).reverse()) {
+          if (dialogue.length > 0 && chars + m.content.length > MAX_DIALOGUE_CHARS) break;
+          chars += m.content.length;
+          dialogue.unshift({ role: m.role as "user" | "assistant", content: m.content });
+        }
+        while (dialogue.length > 1 && dialogue[0]!.role !== "user") dialogue.shift();
 
         const aiResult = await generateHrAssistantReply({
           organizationId: orgId,
@@ -289,12 +303,11 @@ const aiChatRoutes: FastifyPluginAsync = async (fastify) => {
             traceId: request.traceId,
           });
         }
-        const message =
-          err instanceof Error ? err.message : "AI yanıtı oluşturulamadı";
+        // Sağlayıcı/Prisma ayrıntısı istemciye dönmez (anahtar parçası, iç adres sızabilir)
         request.log.error(err, "aiChat.sendMessage failed");
         return reply.status(502).send({
           code: "AI_CHAT_FAILED",
-          message,
+          message: "AI yanıtı oluşturulamadı. Lütfen biraz sonra tekrar deneyin.",
           traceId: request.traceId,
         });
       }

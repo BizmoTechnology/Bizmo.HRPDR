@@ -9,19 +9,15 @@ type AuthPreHandler = (
 declare module "fastify" {
   interface FastifyRequest {
     traceId: string;
-    user?: JwtPayload;
+    /** `authenticate` / `authenticatePortal` sonrasında dolu */
+    user: JwtPayload;
+    jwtVerify<T extends object = JwtPayload>(): Promise<T>;
   }
 
   interface FastifyInstance {
+    jwt: { sign(payload: object, options?: { expiresIn?: string }): string };
     authenticate: AuthPreHandler;
     authenticatePortal: AuthPreHandler;
-  }
-}
-
-declare module "@fastify/jwt" {
-  interface FastifyJWT {
-    payload: JwtPayload;
-    user: JwtPayload;
   }
 }
 

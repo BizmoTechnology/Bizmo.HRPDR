@@ -18,6 +18,8 @@ model Organization {
   name      String
   slug      String   @unique
   timezone  String   @default("Europe/Istanbul")
+  /// Kurum ayarları (JSON). Tipli okuma: server/src/lib/sharing.ts → getOrgSettings()
+  settings  Json?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -31,6 +33,7 @@ model Organization {
   aiConfigs        AiConfig[]
   aiPromptTemplates AiPromptTemplate[]
   aiChatConversations AiChatConversation[]
+  reviewCycles      ReviewCycle[]
 }
 
 // ─────────────────────────────────────────
@@ -63,6 +66,14 @@ model User {
   twoFactorEnabled Boolean @default(false)
   twoFactorSecret  String?
 
+  /// Bizmo.ID bağlantısı: `externalId` = OIDC `sub`, `externalProvider` = "bizmo-id".
+  /// Rol ve yetki HRPDR'de kalır; ad ve e-posta Bizmo.ID'den eşitlenir.
+  externalId         String?
+  externalProvider   String?
+  /// Hesap Bizmo.ID olayıyla (işten çıkış, erişimin kaldırılması) pasiflendiyse dolu;
+  /// yeniden açan olay yalnız bu durumda hesabı açar (yerelde pasiflenen hesaba dokunmaz).
+  externalDisabledAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -73,8 +84,10 @@ model User {
   notifications        Notification[]       @relation("UserNotifications")
   analysisReviews      AnalysisReview[]     @relation("AnalysisReviewer")
   aiChatConversations  AiChatConversation[]
+  createdReviewCycles  ReviewCycle[]        @relation("ReviewCycleCreator")
 
   @@unique([organizationId, email])
+  @@unique([externalProvider, externalId])
 }
 
 // ─────────────────────────────────────────
@@ -123,6 +136,8 @@ enum PersonnelStatus {
   ACTIVE
   INACTIVE
   ON_LEAVE
+  /// İşten ayrıldı: portal kapalı, kayıt salt okunur (geçmiş korunur)
+  TERMINATED
 }
 
 enum PersonnelShift {
@@ -151,6 +166,11 @@ model Personnel {
   team         Team?       @relation(fields: [teamId], references: [id], onDelete: SetNull)
   teamId       String?
 
+  // Org şeması (360° değerlendirici önerisi): doğrudan yönetici
+  manager       Personnel?  @relation("PersonnelManager", fields: [managerId], references: [id], onDelete: SetNull)
+  managerId     String?
+  directReports Personnel[] @relation("PersonnelManager")
+
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
   organizationId String
 
@@ -159,9 +179,18 @@ model Personnel {
   notes      String?
   avatarUrl  String?
 
+  /// İşten ayrılış (status = TERMINATED): tarih, neden kodu, serbest not
+  terminationDate   DateTime?
+  terminationReason String?
+  terminationNote   String?
+
   portalPasswordHash String?  @map("portal_password_hash")
   portalRefreshToken String?
   lastPortalLogin    DateTime?
+
+  /// Personel portalı Bizmo.ID bağlantısı (OIDC `sub`). İK verisi (ad, durum) Bizmo.ID'den yazılmaz.
+  externalId       String? @map("external_id")
+  externalProvider String? @map("external_provider")
 
   importSource String?
   deletedAt    DateTime?
@@ -173,11 +202,16 @@ model Personnel {
   consentRecords      ConsentRecord[]
   passwordResetTokens PasswordResetToken[] @relation("PersonnelPasswordReset")
   notifications       Notification[]       @relation("PersonnelNotifications")
+  reviewSubjects      ReviewSubject[]      @relation("ReviewSubjectPersonnel")
+  reviewAssignments   ReviewAssignment[]   @relation("ReviewAssignmentRater")
+  careerPlans         CareerPlan[]
 
   @@unique([organizationId, employeeId])
   @@unique([organizationId, email])
+  @@unique([externalProvider, externalId])
   @@index([organizationId])
   @@index([departmentId])
+  @@index([managerId])
 }
 
 // ─────────────────────────────────────────
@@ -266,6 +300,7 @@ model QuestionSet {
 
   items       QuestionSetItem[]
   assessments Assessment[]
+  reviewCycles ReviewCycle[]
 
   @@index([organizationId])
 }
@@ -313,6 +348,10 @@ model Assessment {
 
   startsAt  DateTime?
   endsAt    DateTime?
+
+  /// Sonuçların personelle paylaşımı: null = kurum varsayılanı, true = paylaş, false = paylaşma
+  shareWithEmployee Boolean?
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
@@ -466,6 +505,57 @@ model ConsentRecord {
 // ─────────────────────────────────────────
 // ŞİFRE SIFIRLAMA
 // ─────────────────────────────────────────
+
+// ─────────────────────────────────────────
+// BİZMO.ID (OIDC TEK GİRİŞ, SCIM)
+// ─────────────────────────────────────────
+
+/// Tek kullanımlık Bizmo.ID giriş akışı. `state` ile başlar (10 dk), callback'te tüketilir;
+/// ardından uygulamaya tek kullanımlık devir kodu (`handoff`, 60 sn) verilir. Değerler
+/// yalnız SHA-256 özetiyle aranır; akış başlatan tarayıcıya httpOnly çerezle bağlıdır.
+model SsoLoginFlow {
+  id           String   @id @default(cuid())
+  stateHash    String   @unique
+  bindingHash  String
+  nonce        String
+  codeVerifier String
+  /// "admin" (yönetim paneli) veya "portal" (personel portalı)
+  app          String
+  returnTo     String
+  rememberMe   Boolean  @default(false)
+  expiresAt    DateTime
+
+  handoffHash String?  @unique
+  /// Eşlenen User.id (admin) veya Personnel.id (portal)
+  subjectId   String?
+  /// Bizmo.ID çıkışında id_token_hint için (devirde httpOnly çereze taşınır, satır silinir)
+  idToken     String?
+  authMeta    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([expiresAt])
+}
+
+/// SCIM 2.0 ile Bizmo.ID'nin gönderdiği kişiler (yerel dizin kopyası). `id` SCIM kaynak kimliğidir.
+/// Bu tablo hesap açmaz: yalnız var olan kullanıcı/personele bağlanır ve onları günceller.
+model BizmoIdIdentity {
+  id             String   @id @default(cuid())
+  externalId     String   @unique
+  userName       String
+  email          String?
+  givenName      String?
+  familyName     String?
+  displayName    String?
+  employeeNumber String?
+  active         Boolean  @default(true)
+  /// Son alınan SCIM kaynağı (şemalar ve uzantılarla)
+  resource       Json
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([userName])
+  @@index([email])
+}
 
 model PasswordResetToken {
   id        String    @id @default(cuid())
@@ -685,4 +775,197 @@ model AuditLog {
 
   @@index([createdAt])
   @@index([userId])
+}
+
+// ─── 360° değerlendirme ───
+// Çok değerlendiricili, dönemsel değerlendirme. HR/PDR akışından (Assessment /
+// AssessmentSession) bağımsızdır. Değerlendiriciler de Personnel kaydıdır ve
+// personel portalından girer.
+
+enum ReviewFrequency {
+  ANNUAL
+  SEMI_ANNUAL
+  QUARTERLY
+  ADHOC
+}
+
+enum ReviewCycleStatus {
+  DRAFT
+  ACTIVE
+  CLOSED
+}
+
+enum ReviewRelation {
+  SELF
+  MANAGER
+  PEER
+  SUBORDINATE
+}
+
+enum ReviewSubjectStatus {
+  OPEN
+  CLOSED
+  RELEASED
+}
+
+enum ReviewAssignmentStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  DECLINED
+}
+
+model ReviewCycle {
+  id          String            @id @default(cuid())
+  name        String
+  description String?
+  frequency   ReviewFrequency   @default(ADHOC)
+  status      ReviewCycleStatus @default(DRAFT)
+  periodStart DateTime?
+  periodEnd   DateTime?
+  dueAt       DateTime?
+
+  /// Grup ağırlıkları: { SELF, MANAGER, PEER, SUBORDINATE } (0–100)
+  raterWeights       Json
+  /// Eş düzey ve ast grupları en az bu kadar tamamlanmış değerlendirici varsa gösterilir
+  anonymityMinRaters Int      @default(3)
+  includeSelf        Boolean  @default(true)
+  /// null = sistem varsayılanı (Organization.settings); paylaşım mantığı ayrı modülde
+  shareWithEmployee  Boolean?
+
+  questionSet         QuestionSet @relation(fields: [questionSetId], references: [id], onDelete: Restrict)
+  questionSetId       String
+  /// Dönem başlatılınca dondurulan form (QuestionSetSnapshot)
+  questionSetSnapshot Json?
+
+  createdBy   User   @relation("ReviewCycleCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  createdById String
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  organizationId String
+
+  activatedAt DateTime?
+  closedAt    DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  subjects ReviewSubject[]
+
+  @@index([organizationId, status])
+}
+
+model ReviewSubject {
+  id     String              @id @default(cuid())
+  status ReviewSubjectStatus @default(OPEN)
+
+  cycle   ReviewCycle @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  cycleId String
+
+  /// Değerlendirilen kişi
+  personnel   Personnel @relation("ReviewSubjectPersonnel", fields: [personnelId], references: [id], onDelete: Restrict)
+  personnelId String
+
+  releasedAt   DateTime?
+  releasedById String?
+  /// Dönem kapanınca dondurulan anonim özet (SubjectResultSummary)
+  resultJson   Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  assignments ReviewAssignment[]
+
+  @@unique([cycleId, personnelId])
+  @@index([personnelId])
+}
+
+model ReviewAssignment {
+  id       String                 @id @default(cuid())
+  relation ReviewRelation
+  status   ReviewAssignmentStatus @default(NOT_STARTED)
+
+  subject   ReviewSubject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  subjectId String
+
+  rater            Personnel @relation("ReviewAssignmentRater", fields: [raterPersonnelId], references: [id], onDelete: Restrict)
+  raterPersonnelId String
+
+  startedAt      DateTime?
+  completedAt    DateTime?
+  declinedAt     DateTime?
+  reminderSentAt DateTime?
+  reminderCount  Int       @default(0)
+
+  /// Değerlendirici başladığında dönemin formundan kopyalanır
+  questionSetSnapshot Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  answers ReviewAnswer[]
+
+  @@unique([subjectId, raterPersonnelId])
+  @@index([raterPersonnelId, status])
+}
+
+model ReviewAnswer {
+  id          String  @id @default(cuid())
+  /// Form anlık görüntüsündeki soru kimliği
+  questionId  String
+  scaleValue  Int?
+  choiceKey   String?
+  textAnswer  String?
+  durationSec Int?
+
+  assignment   ReviewAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  assignmentId String
+
+  answeredAt DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([assignmentId, questionId])
+}
+
+// ─── Kariyer planı ───
+// AI önerir, İK karar verir: öneri (aiSuggestion) yalnızca İK onaylı ve AI rızalı
+// değerlendirmelerden üretilir; İK taslağa alır, düzenler ve onaylar.
+// Her plan bir sürümdür (version); yeni sürüm onaylanınca önceki onaylı plan arşivlenir.
+
+enum CareerPlanStatus {
+  DRAFT
+  APPROVED
+  ARCHIVED
+}
+
+model CareerPlan {
+  id             String           @id @default(cuid())
+  personnel      Personnel        @relation(fields: [personnelId], references: [id], onDelete: Cascade)
+  personnelId    String
+  /// Kiracı yalıtımı: her sorgu organizationId ile filtrelenir
+  organizationId String
+  status         CareerPlanStatus @default(DRAFT)
+  targetRole     String?
+  horizonMonths  Int              @default(12)
+  /// Sıralı adımlar: [{ id, title, type: TRAINING|MENTORING|PROJECT|ROLE|OTHER, targetDate, status: TODO|IN_PROGRESS|DONE, note }]
+  steps          Json             @default("[]")
+  /// Son AI önerisi (önizleme); İK "Taslağa al" deyince adımlara kopyalanır
+  aiSuggestion   Json?
+  aiModel        String?
+  aiSuggestedAt  DateTime?
+  /// Öneride kullanılan kaynaklar (oturum kimlikleri, değerlendirme adları, tarihler)
+  sourceSummary  Json?
+  /// null: kurum varsayılanı (paylaşım mantığı ayrı modülde)
+  shareWithEmployee Boolean?
+  version        Int              @default(1)
+  /// Bu sürümün kopyalandığı önceki sürüm
+  basedOnVersion Int?
+  createdById    String?
+  approvedById   String?
+  approvedAt     DateTime?
+  archivedAt     DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@unique([personnelId, version])
+  @@index([organizationId, personnelId])
 }

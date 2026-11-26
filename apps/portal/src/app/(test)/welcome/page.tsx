@@ -5,11 +5,12 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   ClipboardList, Clock, MessageCircle, ArrowRight,
-  Shield, Loader2, CalendarX2, AlertCircle, LogOut, RotateCcw, ChevronDown,
+  Shield, Loader2, CalendarX2, AlertCircle, LogOut, RotateCcw, ChevronDown, LayoutDashboard,
 } from "lucide-react";
 import { toast } from "sonner";
 import { GlassCard } from "@ph/ui";
 import { AppMark } from "@/components/AppMark";
+import { ReviewsEntryLink } from "@/components/ReviewsEntryLink";
 import { api, errorMessage, getPersonnel, hasToken, logout } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -336,7 +337,17 @@ export default function WelcomePage() {
           )}
         </GlassCard>
 
-        <div className="mt-4 flex justify-center">
+        {!loading && <ReviewsEntryLink />}
+
+        <div className="mt-4 flex justify-center gap-2">
+          <button
+            type="button"
+            onClick={() => router.push("/home")}
+            className="bz-btn bz-btn--ghost bz-btn--sm text-fg2"
+          >
+            <LayoutDashboard />
+            Panelim
+          </button>
           <button
             type="button"
             onClick={handleLogout}

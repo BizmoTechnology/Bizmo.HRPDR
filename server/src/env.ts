@@ -16,7 +16,14 @@ const repoRoot = path.resolve(serverRoot, "..");
 dotenv.config({ path: path.join(serverRoot, ".env") });
 dotenv.config({ path: path.join(repoRoot, ".env") });
 
-const isProduction = process.env["NODE_ENV"] === "production";
+/**
+ * Güvensiz geliştirme varsayılanlarına yalnızca açıkça development/test ortamında
+ * izin verilir. NODE_ENV unutulmuş (boş) ya da "staging" gibi bir sunucu üretim
+ * kurallarıyla başlar; aksi halde herkesin bildiği "dev-access-secret" ile token
+ * imzalanabilirdi.
+ */
+const nodeEnv = process.env["NODE_ENV"] ?? "";
+const isDevLike = nodeEnv === "development" || nodeEnv === "test";
 
 function fail(message: string): never {
   // Logger henüz hazır değil; doğrudan stderr.
@@ -37,13 +44,14 @@ const refreshSecret = process.env["JWT_REFRESH_SECRET"] ?? "";
 
 const weakSecret = (s: string) => s.length < 32 || s.startsWith("change-me");
 
-if (isProduction) {
-  if (weakSecret(jwtSecret)) fail("JWT_SECRET üretimde en az 32 karakter ve rastgele olmalı.");
-  if (weakSecret(refreshSecret)) fail("JWT_REFRESH_SECRET üretimde en az 32 karakter ve rastgele olmalı.");
+if (!isDevLike) {
+  const where = nodeEnv ? `NODE_ENV=${nodeEnv}` : "NODE_ENV tanımsız (geliştirme için NODE_ENV=development verin)";
+  if (weakSecret(jwtSecret)) fail(`JWT_SECRET en az 32 karakter ve rastgele olmalı (${where}).`);
+  if (weakSecret(refreshSecret)) fail(`JWT_REFRESH_SECRET en az 32 karakter ve rastgele olmalı (${where}).`);
   if (jwtSecret === refreshSecret) fail("JWT_SECRET ve JWT_REFRESH_SECRET farklı olmalı.");
   const key = process.env["ENCRYPTION_KEY"] ?? "";
   if (!/^[0-9a-fA-F]{64}$/.test(key) || /^0+$/.test(key)) {
-    fail("ENCRYPTION_KEY üretimde 64 karakterlik rastgele hex olmalı.");
+    fail(`ENCRYPTION_KEY 64 karakterlik rastgele hex olmalı (${where}).`);
   }
 } else {
   if (!jwtSecret) warn("JWT_SECRET tanımlı değil; geliştirme için geçici bir değer kullanılıyor.");

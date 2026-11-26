@@ -17,6 +17,7 @@ import {
   useMarkAllNotificationsRead,
 } from "@/hooks/use-api";
 import { toast } from "sonner";
+import { SharingSettingsCard } from "@/components/sharing/SharingSettingsCard";
 
 interface NotificationUi {
   id: string;
@@ -200,10 +201,15 @@ export default function SettingsPage() {
             </GlassCard>
           </motion.div>
 
+          {/* Personelle paylaşım */}
+          <motion.div variants={item} className="min-w-0">
+            <SharingSettingsCard />
+          </motion.div>
+
           {/* Güvenlik */}
           <motion.div variants={item}>
             <GlassCard hover={false} className="p-0">
-              <form onSubmit={handlePasswordSubmit}>
+              <form method="post" onSubmit={handlePasswordSubmit}>
                 <div className="p-5">
                   <SectionHeader icon={Lock} title="Güvenlik" sub="Giriş şifrenizi değiştirin" />
 

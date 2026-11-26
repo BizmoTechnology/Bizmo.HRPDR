@@ -7,6 +7,7 @@ import { normalizeQuestionOptions } from "../../lib/question-options.js";
 import { questionScoringInputSchema, questionScoringIssue } from "../../lib/question-scoring.js";
 import { requireRoleForWrites, ROLE_GROUPS } from "../../middleware/authenticate.js";
 import { generateAiQuestions } from "../../services/question-ai-generate.service.js";
+import { aiRateLimit } from "../../lib/rate-limit.js";
 
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
@@ -49,7 +50,18 @@ const createSchema = z.object({
   language: z.string().max(10).default("tr"),
 });
 
-const updateSchema = createSchema.partial();
+const scaleRangeOk = (v: { minScale?: number; maxScale?: number }) =>
+  v.minScale == null || v.maxScale == null || v.minScale < v.maxScale;
+const scaleRangeError = { message: "minScale, maxScale değerinden küçük olmalı", path: ["minScale"] };
+
+const updateSchema = createSchema.partial().refine(scaleRangeOk, scaleRangeError);
+
+const aiGenerateSchema = z.object({
+  dimension: dimensionEnum,
+  questionTypes: z.array(typeEnum).max(5).optional(),
+  count: z.coerce.number().int().min(1).max(10).default(5),
+  context: z.string().max(2000).optional(),
+});
 
 /** Puanlama kuralını soru tipi ve seçeneklerle doğrular; Json null'ı Prisma'ya çevirir. */
 function scoringData(
@@ -130,28 +142,20 @@ const questionRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   // POST /ai-generate — AI ile soru üret
-  fastify.post<{
-    Body: {
-      dimension: string;
-      questionTypes?: string[];
-      count?: number;
-      context?: string;
-    };
-  }>("/ai-generate", async (request, reply) => {
+  fastify.post("/ai-generate", { config: aiRateLimit("ai-generate") }, async (request, reply) => {
     const orgId = request.user.orgId!;
 
     try {
-      const { dimension, questionTypes, count = 5, context } = request.body;
-
-      if (!dimension || !dimensionEnum.safeParse(dimension).success) {
+      const parsed = aiGenerateSchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
         return reply.status(400).send({
           code: "VALIDATION_ERROR",
-          message: "Geçerli bir boyut seçin: " + dimensionEnum.options.join(", "),
+          message:
+            "Geçerli bir boyut (" + dimensionEnum.options.join(", ") + ") ve en çok 10 soru seçin",
           traceId: request.traceId,
         });
       }
-
-      const clampedCount = Math.min(Math.max(1, count), 10);
+      const { dimension, questionTypes, count: clampedCount, context } = parsed.data;
 
       const questions = await generateAiQuestions({
         organizationId: orgId,
@@ -170,11 +174,10 @@ const questionRoutes: FastifyPluginAsync = async (fastify) => {
           traceId: request.traceId,
         });
       }
-      const message = err instanceof Error ? err.message : "AI soru üretimi sırasında hata oluştu";
       request.log.error(err, "questions.aiGenerate failed");
       return reply.status(500).send({
         code: "AI_GENERATE_ERROR",
-        message,
+        message: "AI soru üretimi sırasında hata oluştu. Lütfen biraz sonra tekrar deneyin.",
         traceId: request.traceId,
       });
     }
@@ -185,7 +188,7 @@ const questionRoutes: FastifyPluginAsync = async (fastify) => {
     const orgId = request.user.orgId!;
 
     try {
-      const body = createSchema.parse(request.body);
+      const body = createSchema.refine(scaleRangeOk, scaleRangeError).parse(request.body);
       const scoring = scoringData(body.scoring, body.type, body.options);
 
       const question = await prisma.question.create({

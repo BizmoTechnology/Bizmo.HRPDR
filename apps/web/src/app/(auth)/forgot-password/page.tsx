@@ -51,7 +51,7 @@ export default function ForgotPasswordPage() {
           </p>
         </div>
       ) : (
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <form method="post" onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div className="bz-form-row">
             <label htmlFor="forgot-email" className="bz-label">
               E-posta

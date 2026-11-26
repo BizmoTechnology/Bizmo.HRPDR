@@ -8,6 +8,8 @@ import {
   Settings,
   BrainCircuit,
   Sparkles,
+  Radar,
+  Network,
   type LucideIcon,
 } from "lucide-react";
 import { usePermissions } from "@/lib/roles";
@@ -44,11 +46,18 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
+    title: "Performans",
+    items: [
+      { label: "360° dönemleri", href: "/performance/cycles", icon: Radar, keywords: ["360", "dönem", "performans", "geri bildirim", "değerlendirici"] },
+      { label: "Org şeması", href: "/performance/org-chart", icon: Network, keywords: ["organizasyon", "yönetici", "hiyerarşi", "şema"] },
+    ],
+  },
+  {
     title: "Analiz",
     items: [
       { label: "Analitik", href: "/analytics", icon: BarChart3, keywords: ["istatistik", "grafik"] },
       { label: "Raporlar", href: "/reports", icon: FileText, keywords: ["pdf", "çıktı"], requires: "analyze" },
-      { label: "AI asistan", href: "/ai-chat", icon: Sparkles, keywords: ["sohbet", "chat", "terfi", "amir", "aday"] },
+      { label: "AI asistan", href: "/ai-chat", icon: Sparkles, keywords: ["sohbet", "chat", "terfi", "amir", "aday"], requires: "analyze" },
     ],
   },
   {

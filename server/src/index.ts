@@ -2,7 +2,6 @@ import { JWT_ACCESS_SECRET } from "./env.js";
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
-import jwt from "@fastify/jwt";
 import cookie from "@fastify/cookie";
 import rateLimit from "@fastify/rate-limit";
 import swagger from "@fastify/swagger";
@@ -10,9 +9,13 @@ import swaggerUi from "@fastify/swagger-ui";
 import fp from "fastify-plugin";
 
 import traceIdPlugin from "./plugins/traceId.js";
+import jwtPlugin from "./plugins/jwt.js";
 import { registerErrorHandlers } from "./plugins/error-handler.js";
 import { authenticate, authenticatePortal } from "./middleware/authenticate.js";
 import authRoutes from "./modules/auth/auth.routes.js";
+import bizmoIdRoutes from "./modules/bizmo-id/bizmo-id.routes.js";
+import scimRoutes from "./modules/bizmo-id/scim.routes.js";
+import { bizmoIdStatus } from "./modules/bizmo-id/config.js";
 import departmentsRoutes from "./modules/departments/departments.routes.js";
 import teamsRoutes from "./modules/teams/teams.routes.js";
 import personnelRoutes from "./modules/personnel/personnel.routes.js";
@@ -27,6 +30,10 @@ import reportsRoutes from "./modules/reports/reports.routes.js";
 import aiConfigRoutes, { aiStatusRoutes } from "./modules/ai-config/ai-config.routes.js";
 import notificationsRoutes from "./modules/notifications/notifications.routes.js";
 import aiChatRoutes from "./modules/ai-chat/ai-chat.routes.js";
+import performanceRoutes from "./modules/review-cycles/index.js";
+import careerPlansRoutes from "./modules/career-plans/career-plans.routes.js";
+import orgSettingsRoutes from "./modules/org-settings/org-settings.routes.js";
+import portalMeRoutes from "./modules/portal-me/portal-me.routes.js";
 import { requeueStaleAnalyses } from "./services/session-analysis.service.js";
 
 /** TRUST_PROXY: boş/false → güvenme, sayı → proxy atlama sayısı (nginx için 1), aksi halde IP/CIDR listesi */
@@ -74,9 +81,9 @@ await app.register(helmet, {
 
 await app.register(cookie);
 
-await app.register(jwt, {
+await app.register(fp(jwtPlugin), {
   secret: JWT_ACCESS_SECRET,
-  sign: { expiresIn: process.env["JWT_EXPIRES_IN"] ?? "15m" },
+  expiresIn: process.env["JWT_EXPIRES_IN"] ?? "15m",
 });
 
 await app.register(rateLimit, {
@@ -85,20 +92,27 @@ await app.register(rateLimit, {
   hook: "preHandler",
 });
 
-await app.register(swagger, {
-  openapi: {
-    info: { title: "PotansiyelHaritası API", version: "1.1.0" },
-    components: {
-      securitySchemes: {
-        bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "JWT" },
+// API dokümantasyonu (tüm uç noktaların haritası) yalnızca geliştirmede ya da
+// ENABLE_API_DOCS=true ile açılır.
+const apiDocsEnabled =
+  process.env["NODE_ENV"] === "development" || process.env["ENABLE_API_DOCS"] === "true";
+
+if (apiDocsEnabled) {
+  await app.register(swagger, {
+    openapi: {
+      info: { title: "PotansiyelHaritası API", version: "1.1.0" },
+      components: {
+        securitySchemes: {
+          bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "JWT" },
+        },
       },
     },
-  },
-});
+  });
 
-await app.register(swaggerUi, {
-  routePrefix: "/api/docs",
-});
+  await app.register(swaggerUi, {
+    routePrefix: "/api/docs",
+  });
+}
 
 await app.register(fp(traceIdPlugin));
 
@@ -126,6 +140,8 @@ app.get("/health/ready", async (_request, reply) => {
 // ── Routes ────────────────────────────────────────
 
 await app.register(authRoutes, { prefix: "/api/auth" });
+await app.register(bizmoIdRoutes, { prefix: "/api/auth" });
+await app.register(scimRoutes, { prefix: "/scim/v2" });
 await app.register(departmentsRoutes, { prefix: "/api/departments" });
 await app.register(teamsRoutes, { prefix: "/api/teams" });
 await app.register(personnelRoutes, { prefix: "/api/personnel" });
@@ -140,6 +156,10 @@ await app.register(aiConfigRoutes, { prefix: "/api/ai-config" });
 await app.register(aiStatusRoutes, { prefix: "/api/ai-status" });
 await app.register(notificationsRoutes, { prefix: "/api/notifications" });
 await app.register(aiChatRoutes, { prefix: "/api/ai-chat" });
+await app.register(performanceRoutes, { prefix: "/api" });
+await app.register(careerPlansRoutes, { prefix: "/api/personnel/:personnelId/career-plans" });
+await app.register(orgSettingsRoutes, { prefix: "/api/org-settings" });
+await app.register(portalMeRoutes, { prefix: "/api/portal/me" });
 
 // ── Start ─────────────────────────────────────────
 
@@ -148,6 +168,12 @@ const PORT = parseInt(process.env["PORT"] ?? "3001", 10);
 try {
   await app.listen({ port: PORT, host: "0.0.0.0" });
   app.log.info(`🚀 API sunucusu http://0.0.0.0:${PORT} adresinde çalışıyor`);
+
+  const sso = bizmoIdStatus();
+  if (sso.mode !== "local") {
+    if (sso.configured) app.log.info({ mode: sso.mode }, "Bizmo.ID ile giriş açık");
+    else app.log.warn({ mode: sso.mode, problems: sso.problems }, "Bizmo.ID bağlı değil: yapılandırma eksik");
+  }
 
   // Yarıda kalan AI analizlerini başlangıçta ve periyodik olarak yeniden kuyruğa al
   const sweep = () =>

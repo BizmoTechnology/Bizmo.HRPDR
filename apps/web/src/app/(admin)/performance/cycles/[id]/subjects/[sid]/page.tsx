@@ -528,6 +528,14 @@ function Report({
                           <span className={`h-1.5 w-1.5 rounded-full ${c.bar}`} aria-hidden="true" />
                           {dimLabel(i.dimension)}
                         </span>
+                        {i.reverse && (
+                          <span
+                            className="bz-chip bz-chip--sm mt-1 ml-1"
+                            title="Ters puanlanan madde: puan çevrildi, yüksek puan olumlu demektir"
+                          >
+                            Ters madde
+                          </span>
+                        )}
                       </td>
                       <td className="is-num">{formatScore(i.self)}</td>
                       {visibleOthers.map((g) => (

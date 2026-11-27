@@ -89,6 +89,18 @@ const questionSetRoutes: FastifyPluginAsync = async (fastify) => {
         },
       });
 
+      // 360° için yazılmış (başkası hakkında, "360" etiketli) soru sayısı.
+      // Sihirbaz bu sayıyla öz değerlendirme setlerini ayırıp uyarı gösterir.
+      const form360 = await prisma.questionSetItem.groupBy({
+        by: ["questionSetId"],
+        where: {
+          questionSetId: { in: sets.map((s) => s.id) },
+          question: { tags: { has: "360" } },
+        },
+        _count: { _all: true },
+      });
+      const form360ById = new Map(form360.map((g) => [g.questionSetId, g._count._all]));
+
       const data = sets.map((s) => ({
         id: s.id,
         name: s.name,
@@ -102,6 +114,7 @@ const questionSetRoutes: FastifyPluginAsync = async (fastify) => {
         weightGrowth: s.weightGrowth,
         weightDomain: s.weightDomain,
         itemCount: s._count.items,
+        form360Count: form360ById.get(s.id) ?? 0,
         createdBy: s.createdBy,
         createdAt: s.createdAt,
         updatedAt: s.updatedAt,

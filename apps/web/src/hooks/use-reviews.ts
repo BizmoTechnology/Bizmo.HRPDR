@@ -135,6 +135,8 @@ export interface ItemResult {
   others: number | null;
   gap: number | null;
   byGroup: Partial<Record<ReviewRelation, number>>;
+  /** Ters puanlanan madde: puan çevrilmiştir (yüksek = olumlu); metin olumsuz ifadedir */
+  reverse?: boolean;
 }
 
 export interface SubjectResults {

@@ -74,7 +74,10 @@ export default function NewReviewCyclePage() {
 
   const people = useMemo(() => (chart ?? []).filter((p) => p.status === "ACTIVE"), [chart]);
   const byId = useMemo(() => new Map(people.map((p) => [p.id, p])), [people]);
-  const activeSets = (sets ?? []).filter((s) => s.isActive !== false);
+  // 360° formları (başkası hakkında yazılmış sorular) önce listelenir
+  const activeSets = (sets ?? [])
+    .filter((s) => s.isActive !== false)
+    .sort((a, b) => Number((b.form360Count ?? 0) > 0) - Number((a.form360Count ?? 0) > 0));
   const selectedSet = activeSets.find((s) => s.id === questionSetId);
 
   const weightTotal = RELATIONS.reduce((a, r) => a + (weights[r] || 0), 0);
@@ -324,6 +327,7 @@ export default function NewReviewCyclePage() {
               {activeSets.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name} ({s._count?.items ?? s.itemCount ?? 0} soru)
+                  {(s.form360Count ?? 0) > 0 ? " · 360° formu" : ""}
                 </option>
               ))}
             </select>
@@ -332,6 +336,19 @@ export default function NewReviewCyclePage() {
               başlatılınca dondurulur.
             </span>
             {touched && errors.questionSet && <span className="bz-error-text">{errors.questionSet}</span>}
+            {selectedSet && (selectedSet.form360Count ?? 0) === 0 && (
+              <div className="bz-alert bz-alert--warning mt-2" role="status">
+                <AlertTriangle aria-hidden="true" />
+                <div>
+                  <p className="bz-alert__title">Bu set 360° için yazılmamış</p>
+                  <p className="text-[13px]">
+                    Sorular kişinin kendisine sorulacak biçimde (“rolünüzü anlatır mısınız?”) yazılmış. 360°’de
+                    yönetici, eş düzey ve astlar başkası hakkında cevap verir; “360” etiketli sorulardan oluşan bir
+                    form seçmeniz önerilir.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
 
           <fieldset>
@@ -523,8 +540,8 @@ export default function NewReviewCyclePage() {
                   {belowThreshold.map(({ s, rel, n }) => (
                     <li key={`${s.personnelId}-${rel}`}>
                       {personName(byId.get(s.personnelId) ?? { firstName: "?", lastName: "" })}:{" "}
-                      {RELATION_LABEL[rel].toLocaleLowerCase("tr")} grubunda {n} kişi var; eşik {minRaters}. Hepsi
-                      tamamlamazsa bu grubun sonucu gizlenir.
+                      {RELATION_LABEL[rel].toLocaleLowerCase("tr")} grubunda {n} kişi var; eşik {minRaters}. Bu grubun
+                      sonucu raporda gizli kalır; görünmesi için en az {minRaters} kişi atayın.
                     </li>
                   ))}
                   {noRaters.map((s) => (

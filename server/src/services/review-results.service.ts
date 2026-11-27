@@ -28,12 +28,14 @@
 import { createHash } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma.js";
+import { parseQuestionScoring } from "../lib/question-scoring.js";
 import { HttpError } from "../lib/http-error.js";
 import {
   DIMENSIONS,
   computeOverallScore,
   computeScaleScores,
   roundScore,
+  scoreAnswer,
   type Dimension,
   type DimensionScores,
 } from "./scoring.service.js";
@@ -119,6 +121,8 @@ export interface ItemResult {
   others: number | null;
   gap: number | null;
   byGroup: Partial<Record<ReviewRelationKey, number>>;
+  /** Ters puanlanan madde: puan çevrilmiştir; metin olumsuz ifadedir */
+  reverse: boolean;
 }
 
 export interface CommentResult {
@@ -231,13 +235,13 @@ function weightedMean(
   return total > 0 ? sum / total : null;
 }
 
-/** SCALE cevabını 0–10 bandına çevirir (computeScaleScores ile aynı formül) */
+/**
+ * SCALE cevabını 0–10 bandına çevirir. Boyut puanlarıyla (computeScaleScores) aynı
+ * kuralı kullanır; ters puanlanan maddelerde (`scoring.reverse`) ölçek ters çevrilir.
+ */
 function normalizeScale(q: SnapshotQuestion, value: number | null | undefined): number | null {
   if (value === null || value === undefined) return null;
-  const min = q.minScale ?? 1;
-  const max = q.maxScale ?? 10;
-  if (max <= min) return null;
-  return ((value - min) / (max - min)) * 10;
+  return scoreAnswer(q, { questionId: q.id, scaleValue: value });
 }
 
 /** Deterministik karıştırma: sıra tamamlanma zamanını ele vermez, her çağrıda aynıdır */
@@ -424,10 +428,15 @@ export async function getSubjectResults(
       others: round1(others),
       gap: self !== null && others !== null ? Math.round((self - others) * 10) / 10 : null,
       byGroup,
+      reverse: parseQuestionScoring(q.scoring)?.reverse === true,
     });
   }
 
-  const withOthers = items.filter((i) => i.others !== null);
+  // Öne çıkan listeler (güçlü yan, gelişim alanı, kör nokta) yalnız düz ifadelerden
+  // seçilir: ters maddenin metni olumsuzdur ("Kolayca strese girerim"), yüksek
+  // puanla "güçlü yan" diye gösterilmesi okuyanı yanıltır. Detay tablosunda kalır.
+  const highlightable = items.filter((i) => !i.reverse);
+  const withOthers = highlightable.filter((i) => i.others !== null);
   const strengths = [...withOthers]
     .filter((i) => i.others! >= STRENGTH_THRESHOLD)
     .sort((a, b) => b.others! - a.others!)
@@ -437,10 +446,10 @@ export async function getSubjectResults(
     .filter((i) => !strengthIds.has(i.questionId))
     .sort((a, b) => a.others! - b.others!)
     .slice(0, 3);
-  const blindSpots = items
+  const blindSpots = highlightable
     .filter((i) => i.gap !== null && i.gap >= GAP_THRESHOLD)
     .sort((a, b) => b.gap! - a.gap!);
-  const hiddenStrengths = items
+  const hiddenStrengths = highlightable
     .filter((i) => i.gap !== null && i.gap <= -GAP_THRESHOLD)
     .sort((a, b) => a.gap! - b.gap!);
 

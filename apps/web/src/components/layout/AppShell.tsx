@@ -79,7 +79,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <div className="bz-shell__main print:min-h-0 print:rounded-none print:border-0 print:shadow-none">
         <Topbar onOpenMobileNav={() => setMobileOpen(true)} onOpenPalette={() => setPaletteOpen(true)} />
-        <main className="bz-shell__content px-4 pb-24 pt-5 sm:px-6 sm:pt-6 lg:pb-10 print:p-0">
+        <main className="bz-shell__content px-4 pb-24 pt-5 sm:px-6 sm:pt-6 print:p-0">
           <div className="mx-auto w-full max-w-[var(--bz-content-max)]">{children}</div>
         </main>
       </div>

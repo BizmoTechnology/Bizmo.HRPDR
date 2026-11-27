@@ -78,42 +78,16 @@ const PLAN: Array<{ subject: string; ratings: DemoRating[] }> = [
   },
 ];
 
-export async function seedReviews(params: {
+/**
+ * Örnek 360° formunu ("360" etiketli davranış ifadeleri) ekler; varsa dokunmaz.
+ * Örnek dönem oluşturmaz: mevcut veritabanına `npm run prisma:seed:360-form` ile eklenebilir.
+ */
+export async function seed360Form(params: {
   prisma: PrismaClient;
   organizationId: string;
   createdById: string;
-  now: Date;
-}): Promise<void> {
-  const { prisma, organizationId, createdById, now } = params;
-
-  const people = await prisma.personnel.findMany({
-    where: { organizationId, employeeId: { in: ["P001", "P002", "P003", "P004", "P005", "P006", "P007", "P008"] } },
-    select: { id: true, employeeId: true, managerId: true },
-  });
-  const byEmp = new Map(people.map((p) => [p.employeeId, p]));
-  if (byEmp.size < 8) {
-    console.warn(`⚠️ 360° seed: P001–P008'in hepsi yok (${byEmp.size}); atlandı`);
-    return;
-  }
-  const id = (emp: string) => byEmp.get(emp)!.id;
-
-  // ── Org şeması (yalnız yöneticisi boş olanlara yazılır; elle yapılan düzenleme ezilmez) ──
-  const hierarchy: Record<string, string> = {
-    P001: "P002",
-    P005: "P002",
-    P006: "P002",
-    P008: "P002",
-    P007: "P003",
-  };
-  for (const [emp, mgr] of Object.entries(hierarchy)) {
-    await prisma.personnel.updateMany({
-      where: { id: id(emp), managerId: null },
-      data: { managerId: id(mgr) },
-    });
-  }
-  console.log("✅ Org şeması: P002 → P001/P005/P006/P008, P003 → P007");
-
-  // ── 360° soru seti ──
+}): Promise<{ created: boolean }> {
+  const { prisma, organizationId, createdById } = params;
   for (const q of QUESTIONS) {
     await prisma.question.upsert({
       where: { id: q.id },
@@ -151,6 +125,46 @@ export async function seedReviews(params: {
     });
   }
   console.log(`✅ QuestionSet: 360° Yetkinlik Formu (örnek) (${QUESTIONS.length} soru)`);
+  return { created: !existingSet };
+}
+
+export async function seedReviews(params: {
+  prisma: PrismaClient;
+  organizationId: string;
+  createdById: string;
+  now: Date;
+}): Promise<void> {
+  const { prisma, organizationId, createdById, now } = params;
+
+  const people = await prisma.personnel.findMany({
+    where: { organizationId, employeeId: { in: ["P001", "P002", "P003", "P004", "P005", "P006", "P007", "P008"] } },
+    select: { id: true, employeeId: true, managerId: true },
+  });
+  const byEmp = new Map(people.map((p) => [p.employeeId, p]));
+  if (byEmp.size < 8) {
+    console.warn(`⚠️ 360° seed: P001–P008'in hepsi yok (${byEmp.size}); atlandı`);
+    return;
+  }
+  const id = (emp: string) => byEmp.get(emp)!.id;
+
+  // ── Org şeması (yalnız yöneticisi boş olanlara yazılır; elle yapılan düzenleme ezilmez) ──
+  const hierarchy: Record<string, string> = {
+    P001: "P002",
+    P005: "P002",
+    P006: "P002",
+    P008: "P002",
+    P007: "P003",
+  };
+  for (const [emp, mgr] of Object.entries(hierarchy)) {
+    await prisma.personnel.updateMany({
+      where: { id: id(emp), managerId: null },
+      data: { managerId: id(mgr) },
+    });
+  }
+  console.log("✅ Org şeması: P002 → P001/P005/P006/P008, P003 → P007");
+
+  // ── 360° soru seti ──
+  await seed360Form({ prisma, organizationId, createdById });
 
   // ── Örnek dönem ──
   if (await prisma.reviewCycle.findUnique({ where: { id: CYCLE_ID } })) {

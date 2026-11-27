@@ -750,6 +750,8 @@ export interface QuestionSetRow {
   isDefault: boolean;
   version: number;
   itemCount?: number;
+  /** "360" etiketli (başkası hakkında yazılmış) soru sayısı */
+  form360Count?: number;
   weightLogical?: number;
   weightLeadership?: number;
   weightSocial?: number;
